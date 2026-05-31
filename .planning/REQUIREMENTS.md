@@ -28,17 +28,17 @@ Requirements for initial release. Each maps to roadmap phases.
 - [ ] **FMT-02**: Trezarr parses and writes ASS/SSA, translating only dialogue text and leaving override tags (`{\an8}`, `\pos`, fonts), drawing commands, `\N` breaks, and `[Script Info]`/`[V4+ Styles]` headers byte-identical
 - [ ] **FMT-03**: Trezarr preserves karaoke (`\k`) lines without corruption (verbatim if remapping is unsafe)
 - [ ] **FMT-04**: Trezarr parses and writes VTT, round-tripping cue settings/positioning
-- [ ] **FMT-05**: Output subtitles use correct sidecar naming (`Show.S01E01.vi.srt`, matching the video basename and ISO-639 `vi`), are written atomically (temp+rename), and are valid UTF-8
+- [x] **FMT-05**: Output subtitles use correct sidecar naming (`Show.S01E01.vi.srt`, matching the video basename and ISO-639 `vi`), are written atomically (temp+rename), and are valid UTF-8
 
 ### Translation Engine
 
 - [x] **ENG-01**: User can configure a user-provided OpenAI-SDK-compatible endpoint (base URL, model, API key) that powers all translation
-- [ ] **ENG-02**: Trezarr batches/chunks long subtitle files within token limits without splitting a sentence or scene across batch boundaries
-- [ ] **ENG-03**: Each batch is translated with a surrounding-line context window (read-only lines before/after) for conversational coherence
+- [x] **ENG-02**: Trezarr batches/chunks long subtitle files within token limits without splitting a sentence or scene across batch boundaries
+- [x] **ENG-03**: Each batch is translated with a surrounding-line context window (read-only lines before/after) for conversational coherence
 - [ ] **ENG-04**: Trezarr runs a two-pass pipeline — Pass 1 analyzes the full file + media metadata to build/update the Series Bible before Pass 2 translates any line
 - [ ] **ENG-05**: Trezarr runs an LLM self-review pass over translated output, checking Series Bible adherence (pronouns/terms/register) and correcting violations before finalizing
-- [ ] **ENG-06**: A hard pre-write validation gate verifies cue-count match, no untranslated lines, monotonic timestamps, and format integrity — failing files are quarantined, never written
-- [ ] **ENG-07**: A failed or rejected translation can be retried/re-run idempotently, reusing existing Series Bible state
+- [x] **ENG-06**: A hard pre-write validation gate verifies cue-count match, no untranslated lines, monotonic timestamps, and format integrity — failing files are quarantined, never written
+- [x] **ENG-07**: A failed or rejected translation can be retried/re-run idempotently, reusing existing Series Bible state
 
 ### Series Bible (Consistency Engine)
 
@@ -120,14 +120,14 @@ Which phases cover which requirements. Populated during roadmap creation.
 | FMT-02 | Phase 9 | Pending |
 | FMT-03 | Phase 9 | Pending |
 | FMT-04 | Phase 9 | Pending |
-| FMT-05 | Phase 2 | Pending |
+| FMT-05 | Phase 2 | Complete |
 | ENG-01 | Phase 1 | Complete |
-| ENG-02 | Phase 2 | Pending |
-| ENG-03 | Phase 2 | Pending |
+| ENG-02 | Phase 2 | Complete |
+| ENG-03 | Phase 2 | Complete |
 | ENG-04 | Phase 5 | Pending |
 | ENG-05 | Phase 6 | Pending |
-| ENG-06 | Phase 2 | Pending |
-| ENG-07 | Phase 2 | Pending |
+| ENG-06 | Phase 2 | Complete |
+| ENG-07 | Phase 2 | Complete |
 | BIBLE-01 | Phase 4 | Pending |
 | BIBLE-02 | Phase 4 | Pending |
 | BIBLE-03 | Phase 5 | Pending |
