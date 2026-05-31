@@ -143,6 +143,17 @@ def _check_monotonic(doc: SubDoc) -> None:
                 failing_indices=[i],
             ))
 
+        # Monotonic-start check: flag backward jumps (cue starts before previous cue started).
+        # This is distinct from the overlap check: a cue at [3000ms, 4000ms] after a cue at
+        # [5000ms, 10000ms] has start_ms < prev_start_ms but does NOT satisfy the overlap
+        # condition below — the backward jump would pass silently without this guard.
+        if prev_start_ms is not None and start_ms < prev_start_ms:
+            raise GateError(GateFailure(
+                5,
+                f"Cue {i} starts before previous cue: start={start_ms}ms < prev_start={prev_start_ms}ms",
+                failing_indices=[i],
+            ))
+
         # Overlap check: only flag when this cue starts after the previous cue started
         # (simultaneous/duplicate-start cues are accepted as concurrent display lines).
         if (

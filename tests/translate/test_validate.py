@@ -193,6 +193,35 @@ def test_gate_nonmonotonic():
     )
 
 
+def test_gate_backward_jump():
+    """Cue that starts before previous cue (backward jump) raises GateError(check=5) (WR-01).
+
+    cue0 = [5000ms, 10000ms], cue1 = [3000ms, 4000ms]: cue1 starts before cue0,
+    which is a non-monotonic ordering violation.  The original overlap check missed
+    this because 3000 > 5000 is False (the first conjunct was false).
+    """
+    validate_mod = pytest.importorskip("trezarr.translate.validate")
+    GateError = validate_mod.GateError
+    validate_subdoc = validate_mod.validate_subdoc
+
+    # cue0: 5000ms–10000ms, cue1: 3000ms–4000ms (backward start)
+    src_line1 = _make_line(1, start_tc="00:00:05,000", end_tc="00:00:10,000", text="Xin chào bạn")
+    src_line2 = _make_line(2, start_tc="00:00:03,000", end_tc="00:00:04,000", text="Tôi ổn cảm ơn")
+    trn_line1 = _make_line(1, start_tc="00:00:05,000", end_tc="00:00:10,000", text="Xin chào bạn")
+    trn_line2 = _make_line(2, start_tc="00:00:03,000", end_tc="00:00:04,000", text="Tôi ổn cảm ơn")
+
+    src = _make_doc([src_line1, src_line2])
+    trn = _make_doc([trn_line1, trn_line2])
+
+    with pytest.raises(GateError) as exc_info:
+        validate_subdoc(trn, src, _settings())
+
+    assert exc_info.value.failure.check == 5, (
+        f"Expected GateError.failure.check == 5 (backward jump in timestamps), "
+        f"got {exc_info.value.failure.check}"
+    )
+
+
 def test_gate_sentinel_orphan():
     """Translated SubLine containing <<T0>> raises GateError(check=6) (ENG-06)."""
     validate_mod = pytest.importorskip("trezarr.translate.validate")
