@@ -32,7 +32,6 @@ import pytest
 # ──────────────────────────────────────────────────────────────────────────────
 
 
-@pytest.mark.xfail(strict=False, reason="Plan 03-03: trezarr.arr.sonarr.discover_sonarr_items not yet implemented")
 def test_sonarr_discovers_monitored_series(httpx_mock):
     """discover_sonarr_items returns episode-level MediaItems for monitored series (INTG-01)."""
     sonarr_mod = pytest.importorskip("trezarr.arr.sonarr")
@@ -74,7 +73,6 @@ def test_sonarr_discovers_monitored_series(httpx_mock):
     assert "Show.S01E01.mkv" in str(items[0].local_path)
 
 
-@pytest.mark.xfail(strict=False, reason="Plan 03-03: trezarr.arr.sonarr.discover_sonarr_items not yet implemented")
 def test_sonarr_filters_unmonitored(httpx_mock):
     """discover_sonarr_items skips series with monitored=False (INTG-01).
 
@@ -237,7 +235,6 @@ def test_radarr_skips_missing_file(httpx_mock):
 # ──────────────────────────────────────────────────────────────────────────────
 
 
-@pytest.mark.xfail(strict=False, reason="Plan 03-03: _normalize_arr_host not yet implemented (03-REVIEWS.md MEDIUM #15)")
 def test_normalize_arr_host_bare_ip():
     """A bare IP / hostname passes through unchanged."""
     sonarr_mod = pytest.importorskip("trezarr.arr.sonarr")
@@ -246,7 +243,6 @@ def test_normalize_arr_host_bare_ip():
     assert _normalize_arr_host("192.168.1.10") == "192.168.1.10"
 
 
-@pytest.mark.xfail(strict=False, reason="Plan 03-03: _normalize_arr_host not yet implemented (03-REVIEWS.md MEDIUM #15)")
 def test_normalize_arr_host_full_url_with_scheme():
     """A full URL with scheme has the scheme stripped."""
     sonarr_mod = pytest.importorskip("trezarr.arr.sonarr")
@@ -255,7 +251,6 @@ def test_normalize_arr_host_full_url_with_scheme():
     assert _normalize_arr_host("https://sonarr.example/api") == "sonarr.example"
 
 
-@pytest.mark.xfail(strict=False, reason="Plan 03-03: _normalize_arr_host not yet implemented (03-REVIEWS.md MEDIUM #15)")
 def test_normalize_arr_host_full_url_with_port():
     """A full URL with scheme and port strips both — port is passed via the `port=` kwarg, not via host."""
     sonarr_mod = pytest.importorskip("trezarr.arr.sonarr")
@@ -270,7 +265,6 @@ def test_normalize_arr_host_full_url_with_port():
 # ──────────────────────────────────────────────────────────────────────────────
 
 
-@pytest.mark.xfail(strict=False, reason="Plan 03-03: trezarr.arr.DiscoveryError not yet implemented (03-REVIEWS.md MEDIUM #10)")
 def test_discovery_error_raised_on_http_error(httpx_mock):
     """HTTP 401 from Sonarr raises trezarr.arr.DiscoveryError (typed exception, INTG-01).
 
