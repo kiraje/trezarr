@@ -1,0 +1,58 @@
+# Trezarr Configuration Example
+#
+# Copy this file to /config/config.yaml (inside the Docker container) or to the
+# path specified by TREZARR_CONFIG_PATH if running outside Docker.
+#
+# Environment variable overrides: any setting below can be overridden by setting
+# a TREZARR_<FIELD_NAME> environment variable (uppercase). For example:
+#   TREZARR_LLM_API_KEY=sk-... overrides llm_api_key below.
+#
+# In production, set llm_api_key via the TREZARR_LLM_API_KEY environment variable
+# rather than writing your key into this file — it prevents accidental exposure in
+# config backups or logs.
+
+# --- LLM Endpoint ---
+# Base URL for your OpenAI-SDK-compatible LLM endpoint.
+# Examples: https://api.openai.com/v1  |  http://ollama:11434/v1  |  http://lmstudio:1234/v1
+llm_base_url: "http://localhost:1234/v1"
+
+# API key for the LLM endpoint. Override via TREZARR_LLM_API_KEY env var in production.
+# The key is stored as a SecretStr and is never written to logs or API responses.
+llm_api_key: "not-set"
+
+# Model identifier passed to the endpoint on every LLM call.
+# Must match a model name the endpoint recognizes.
+llm_model: "gpt-4o"
+
+# --- Reliability ---
+# Number of automatic retries the OpenAI SDK will attempt on transient errors
+# (429 rate-limit with Retry-After, 5xx, timeout). Default: 4.
+# Do NOT add tenacity on top of this — the SDK already handles exponential backoff.
+llm_max_retries: 4
+
+# Total timeout (seconds) for a single LLM HTTP request, including retries.
+# Increase for slow local endpoints. Default: 120.0.
+llm_request_timeout: 120.0
+
+# --- Concurrency ---
+# Maximum number of LLM API calls in flight simultaneously.
+# Enforced by asyncio.Semaphore inside LLMClient. Lower this for endpoints with
+# strict rate limits; raise it for fast, unconstrained endpoints. Default: 4.
+llm_max_concurrency: 4
+
+# --- Structured Output Mode ---
+# Controls which response_format tier the LLM client uses.
+#   auto        — try json_schema (Tier 1), fall back to json_object (Tier 2),
+#                 then plain text (Tier 3) on each failure (recommended)
+#   json_schema — always use Tier 1; raise on 400/422 instead of falling back
+#   json_object — always use Tier 2 (json_object JSON mode)
+#   text        — always use Tier 3 (plain text; caller uses delimited-text protocol)
+# Default: "auto"
+llm_structured_output_mode: "auto"
+
+# --- Context Window ---
+# Approximate context-window size (tokens) of the configured model.
+# Used by Phase 2+ batching logic to size translation chunks.
+# Common values: 8192 (small local), 32768 (mid-tier), 131072 (GPT-4o).
+# Default: 32768
+llm_context_window: 32768

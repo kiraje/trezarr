@@ -1,0 +1,26 @@
+[project]
+name = "trezarr"
+version = "0.1.0"
+description = "Automated Vietnamese subtitle translator for the Bazarr/*arr self-hosted media stack"
+requires-python = ">=3.12"
+dependencies = [
+    "openai>=2.38.0",
+    "pydantic>=2.13.4",
+    "pydantic-settings[yaml]>=2.14.1",
+    "charset-normalizer>=3.4.7",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.4.2",
+    "pytest-asyncio>=1.2.0",
+    "ruff>=0.0.1",
+]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
