@@ -441,11 +441,15 @@ async def translate_file(
     batches = batch_subdoc(source_doc, settings)
 
     # Step 7: Dispatch all batches concurrently via asyncio.gather
+    # ONLY catch BatchValidationError (retry-exhausted batch gate failure → quarantine).
+    # openai.APIError and any other exception propagate: the file stays out of "done"
+    # and is retried on the next poll cycle.  Pitfall 5 / D-18: SDK handles transport
+    # failures; never permanently quarantine on a transient endpoint error.
     try:
         batch_results = await asyncio.gather(
             *[_translate_batch(b, llm_client, settings) for b in batches]
         )
-    except (BatchValidationError, Exception) as exc:
+    except BatchValidationError as exc:
         reason = str(exc)
         quarantine_path = _write_quarantine(path, reason, [], settings)
         ledger.record(LedgerEntry(

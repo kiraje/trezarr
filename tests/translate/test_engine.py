@@ -151,6 +151,44 @@ async def test_quarantine_on_retry_exhaustion(settings_factory):
     assert exc_info.value is not None
 
 
+async def test_translate_file_non_batch_error_propagates(settings_factory, tmp_path):
+    """Non-BatchValidationError (e.g. RuntimeError) propagates out of translate_file — not quarantined (CR-01).
+
+    D-18 / Pitfall 5: only BatchValidationError (retry-exhausted gate failure) should produce a
+    quarantine artifact.  A transport error or programming error must propagate so the file is
+    retried on the next poll and no permanent quarantine record is created.
+    """
+    engine_mod = pytest.importorskip("trezarr.translate.engine")
+    from unittest.mock import patch, AsyncMock
+    from trezarr.translate.engine import translate_file
+    from trezarr.output.ledger import Ledger
+
+    settings = settings_factory()
+
+    src = tmp_path / "Show.S01E01.en.srt"
+    src.write_text("1\n00:00:01,000 --> 00:00:03,000\nHello\n", encoding="utf-8")
+
+    ledger_path = tmp_path / "ledger.json"
+    ledger = Ledger(ledger_path)
+
+    from trezarr.llm.client import LLMClient
+    client = LLMClient(settings)
+
+    # Simulate an openai-style transport error (RuntimeError stands in for openai.APIError)
+    transport_error = RuntimeError("simulated transport error")
+
+    # Patch _translate_batch to raise the transport error directly
+    with patch("trezarr.translate.engine._translate_batch", new=AsyncMock(side_effect=transport_error)):
+        with pytest.raises(RuntimeError, match="simulated transport error"):
+            await translate_file(src, settings, client, ledger)
+
+    # No quarantine entry must have been recorded — the error must have propagated
+    entry = ledger.check(str(src))
+    assert entry is None or entry.status != "quarantined", (
+        "Non-BatchValidationError must NOT produce a quarantine ledger entry (CR-01 / Pitfall 5)"
+    )
+
+
 async def test_translate_file_skip_unchanged(settings_factory, tmp_path):
     """translate_file returns TranslationResult(status='skipped') when ledger says done + matching hash (ENG-07)."""
     engine_mod = pytest.importorskip("trezarr.translate.engine")
