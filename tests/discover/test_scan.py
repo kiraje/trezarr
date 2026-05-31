@@ -278,6 +278,80 @@ def test_idempotency_retranslate_on_change(tmp_path):
     assert eligible is True, f"Changed source must trigger re-translate (got reason: {reason!r})"
 
 
+def test_is_eligible_retries_quarantined(tmp_path):
+    """A ledger entry with status='quarantined' makes the source eligible for retry (WR-08, D-30 Case 3).
+
+    D-30 promises that a previously-quarantined item retries on every subsequent
+    run. Pre-WR-08 this branch was completely untested — a refactor that
+    accidentally turned Case 3 into a skip would have slipped through.
+    """
+    scan_mod = pytest.importorskip("trezarr.discover.scan")
+    is_eligible = getattr(scan_mod, "is_eligible", None) or pytest.importorskip(
+        "trezarr.discover.gap"
+    ).is_eligible
+
+    src = tmp_path / "Show.S01E14.en.srt"
+    src.write_text("1\n00:00:01,000 --> 00:00:03,000\nHello\n", encoding="utf-8")
+
+    ledger = _make_minimal_ledger(
+        tmp_path,
+        entries=[
+            dict(
+                source_path=str(src),
+                output_path=None,
+                status="quarantined",
+                content_hash="x" * 16,
+                quarantine_path=str(tmp_path / "quarantine" / "Show.S01E14.json"),
+            )
+        ],
+    )
+
+    eligible, reason = is_eligible(src, ledger)
+    assert eligible is True, (
+        f"Quarantined item must be eligible for retry (D-30, WR-08); got reason={reason!r}"
+    )
+    assert "quarantin" in reason.lower(), (
+        f"Expected the reason string to mention quarantine, got {reason!r}"
+    )
+
+
+def test_is_eligible_resumes_in_progress(tmp_path):
+    """A ledger entry with status='in_progress' makes the source eligible for resume (WR-08, Case 4).
+
+    A run that crashed mid-translate leaves the ledger record at
+    status='in_progress' (created at start, never updated to done/quarantined).
+    The next run must pick it up. Pre-WR-08 this defensive recovery path was
+    completely untested.
+    """
+    scan_mod = pytest.importorskip("trezarr.discover.scan")
+    is_eligible = getattr(scan_mod, "is_eligible", None) or pytest.importorskip(
+        "trezarr.discover.gap"
+    ).is_eligible
+
+    src = tmp_path / "Show.S01E15.en.srt"
+    src.write_text("1\n00:00:01,000 --> 00:00:03,000\nHello\n", encoding="utf-8")
+
+    ledger = _make_minimal_ledger(
+        tmp_path,
+        entries=[
+            dict(
+                source_path=str(src),
+                output_path=None,
+                status="in_progress",
+                content_hash="y" * 16,
+            )
+        ],
+    )
+
+    eligible, reason = is_eligible(src, ledger)
+    assert eligible is True, (
+        f"in_progress item must be eligible for resume (WR-08); got reason={reason!r}"
+    )
+    assert "in_progress" in reason.lower() or "resuming" in reason.lower(), (
+        f"Expected reason to mention in_progress / resuming, got {reason!r}"
+    )
+
+
 def test_foreign_vi(tmp_path):
     """AUTO-04: never re-process our own output. A ledger entry must keep the vi sidecar 'ours'.
 
