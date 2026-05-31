@@ -14,7 +14,7 @@ Trezarr is built leaves-first, novel-logic-last. We start by proving the mechani
 Decimal phases appear between their surrounding integers in numeric order.
 
 - [x] **Phase 1: Codec & LLM Client Foundation** - Parse/serialize SRT and call the user's OpenAI-compatible endpoint as isolated, testable leaves (completed 2026-05-31)
-- [ ] **Phase 2: Mechanical Translation Core + Validation Gate** - Single-pass translate a parsed file and write a valid sidecar, gated by a hard pre-write quality check
+- [x] **Phase 2: Mechanical Translation Core + Validation Gate** - Single-pass translate a parsed file and write a valid sidecar, gated by a hard pre-write quality check (completed 2026-05-31)
 - [ ] **Phase 3: \*arr Integration + First Vertical Slice** - Discover a real episode via Sonarr/Radarr and translate it to a sidecar end-to-end (de-risk path-mapping & permissions)
 - [ ] **Phase 4: Series Bible Store & Schema** - Persistent, versioned, lockable per-series consistency store carried forward across episodes
 - [ ] **Phase 5: Three-Pass Pronoun Engine** - Analyze → translate with the directed Address Map + speaker/addressee attribution to apply correct Vietnamese pronouns
@@ -58,7 +58,7 @@ Decimal phases appear between their surrounding integers in numeric order.
   3. A passing translation is written as `Show.S01E01.vi.srt` (matching the video basename, ISO-639 `vi`) atomically (temp+rename) and as valid UTF-8
   4. A failed or rejected translation can be re-run idempotently without duplicating or corrupting output
 
-**Plans:** 2/3 plans executed
+**Plans:** 3/3 plans complete
 **Wave 1**
 
 - [x] 02-01-PLAN.md — Wave 0: test scaffold — tests/translate/ and tests/output/ RED stubs for all Phase 2 modules (ENG-02, ENG-03, ENG-06, ENG-07, FMT-05)
@@ -66,7 +66,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-- [ ] 02-03-PLAN.md — Wave 2: engine.py + ledger.py + tenacity install — translate_file() entry point, numbered-line protocol, batch retry/quarantine, idempotency ledger
+- [x] 02-03-PLAN.md — Wave 2: engine.py + ledger.py + tenacity install — translate_file() entry point, numbered-line protocol, batch retry/quarantine, idempotency ledger
 
 ### Phase 3: \*arr Integration + First Vertical Slice
 
@@ -197,7 +197,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Codec & LLM Client Foundation | 3/3 | Complete    | 2026-05-31 |
-| 2. Mechanical Translation Core + Validation Gate | 2/3 | In Progress|  |
+| 2. Mechanical Translation Core + Validation Gate | 3/3 | Complete   | 2026-05-31 |
 | 3. \*arr Integration + First Vertical Slice | 0/TBD | Not started | - |
 | 4. Series Bible Store & Schema | 0/TBD | Not started | - |
 | 5. Three-Pass Pronoun Engine | 0/TBD | Not started | - |
