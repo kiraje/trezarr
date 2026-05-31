@@ -2,15 +2,11 @@
 
 Verifies that the client never exceeds max_concurrency simultaneous in-flight LLM
 calls, regardless of how many coroutines are awaiting it concurrently.
-
-Marked xfail(strict=False) until Plan 03 ships the LLMClient.
 """
 import asyncio
-import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 
-@pytest.mark.xfail(strict=False, reason="LLMClient not yet implemented (Plan 03)")
 async def test_semaphore_caps_concurrent_calls():
     """LLMClient with max_concurrency=2 allows at most 2 simultaneous in-flight calls.
 
@@ -39,13 +35,24 @@ async def test_semaphore_caps_concurrent_calls():
         active -= 1
         return MagicMock(choices=[MagicMock(message=MagicMock(content="ok"))])
 
+    def _make_bad_request_error():
+        """Minimal openai.BadRequestError to drive Tier-1 → Tier-2 fallback."""
+        import openai
+
+        mock_response = MagicMock()
+        mock_response.status_code = 400
+        mock_response.headers = {}
+        return openai.BadRequestError("Bad Request", response=mock_response, body={})
+
     messages = [{"role": "user", "content": "test"}]
     with patch.object(client._client.chat.completions, "create", side_effect=_fake_call):
-        # Also patch .parse() to avoid it being called before .create()
+        # Patch .parse() to raise a *typed* OpenAI error so auto-mode falls back
+        # to .create() (Tier 2). A bare Exception would now propagate by design
+        # (WR-04): only openai.APIError subclasses trigger a tier downgrade.
         with patch.object(
             client._client.chat.completions,
             "parse",
-            side_effect=Exception("force text path"),
+            side_effect=_make_bad_request_error(),
         ):
             await asyncio.gather(*[client.call(messages) for _ in range(5)])
 

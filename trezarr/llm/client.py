@@ -60,18 +60,31 @@ class LLMClient:
         self,
         messages: list[dict],
         response_model: type[BaseModel] | None = None,
-    ) -> str:
+    ) -> BaseModel | str:
         """Make an LLM call, applying the configured structured-output tier strategy.
 
         Args:
-            messages: Chat messages in OpenAI format.
+            messages: Chat messages in OpenAI format.  Must be a non-empty list.
             response_model: Optional Pydantic model for structured output (Tier 1).
                 If None, skips Tier 1 and starts at Tier 2.
 
         Returns:
-            The LLM response content as a string.  For Tier 1/2 this is JSON; for Tier 3
-            it is plain text (caller is responsible for parsing via delimited-text protocol).
+            When Tier 1 (json_schema) succeeds with a ``response_model``, the parsed
+            Pydantic object (``response_model`` instance) is returned — the typed
+            structured output (CR-02).  Otherwise the raw response content string is
+            returned: for Tier 2 this is JSON; for Tier 3 it is plain text (caller is
+            responsible for parsing via the delimited-text protocol).
+
+        Raises:
+            ValueError: if ``messages`` is empty (WR-05 — fail fast at the boundary).
+            RuntimeError: if the model refuses structured output, or returns empty
+                content on any tier (CR-02 — never return ``None``).
         """
+        # WR-05: validate input at the boundary so malformed input fails clearly
+        # here rather than deep inside the SDK with an opaque error.
+        if not messages:
+            raise ValueError("messages must be a non-empty list of chat messages")
+
         async with self._semaphore:  # D-06: enforce concurrency cap
             return await self._call_with_fallback(messages, response_model)
 
@@ -79,7 +92,7 @@ class LLMClient:
         self,
         messages: list[dict],
         response_model: type[BaseModel] | None,
-    ) -> str:
+    ) -> BaseModel | str:
         """Internal dispatch implementing the three-tier degradation (D-04).
 
         Tier 1 — json_schema: uses chat.completions.parse() with a Pydantic model as
@@ -113,17 +126,33 @@ class LLMClient:
                     messages=messages,
                     **parse_kwargs,
                 )
-                return parsed.choices[0].message.content  # type: ignore[return-value]
+                msg = parsed.choices[0].message
+                # CR-02: a model refusal carries no usable output — surface it
+                # instead of silently returning None.
+                if getattr(msg, "refusal", None):
+                    raise RuntimeError(
+                        f"LLM refused structured output: {msg.refusal}"
+                    )
+                # CR-02: when a response_model was requested and the SDK parsed it,
+                # return the *typed* Pydantic object — the whole point of Tier 1.
+                if response_model is not None and getattr(msg, "parsed", None) is not None:
+                    return msg.parsed
+                content = msg.content
+                if content is None:
+                    raise RuntimeError("LLM returned empty content (Tier 1)")
+                return content
             except (openai.BadRequestError, openai.UnprocessableEntityError):
                 if mode == "json_schema":
                     raise  # D-04: pinned mode — 400/422 propagates, no fallback
                 # mode == "auto": fall through to Tier 2
-            except Exception:
+            except openai.APIError:
+                # WR-04: only OpenAI SDK transport/API errors trigger a tier
+                # downgrade.  TypeError/AttributeError/KeyError from a genuine
+                # bug in call construction (or a malformed `messages` arg) MUST
+                # propagate — never silently downgrade a programming error.
                 if mode == "json_schema":
-                    raise  # pinned mode — all errors propagate
-                # mode == "auto": any other error also triggers fallback
-                # (in production, the SDK wraps network errors into typed openai
-                # exceptions; this branch handles test injection via side_effect)
+                    raise  # pinned mode — propagate
+                # mode == "auto": SDK error → fall through to Tier 2
 
         # ── Tier 2: json_object ────────────────────────────────────────────────
         if mode in ("auto", "json_object"):
@@ -133,7 +162,10 @@ class LLMClient:
                     messages=messages,
                     response_format={"type": "json_object"},
                 )
-                return resp.choices[0].message.content  # type: ignore[return-value]
+                content = resp.choices[0].message.content
+                if content is None:
+                    raise RuntimeError("LLM returned empty content (Tier 2)")
+                return content
             except (openai.BadRequestError, openai.UnprocessableEntityError):
                 if mode == "json_object":
                     raise  # D-04: pinned mode never falls back — propagate to caller
@@ -144,4 +176,7 @@ class LLMClient:
             model=self._model,
             messages=messages,
         )
-        return resp.choices[0].message.content  # type: ignore[return-value]
+        content = resp.choices[0].message.content
+        if content is None:
+            raise RuntimeError("LLM returned empty content (Tier 3)")
+        return content
