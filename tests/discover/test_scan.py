@@ -4,13 +4,10 @@ All imports from trezarr.discover.* are deferred inside each test function body
 so pytest collection succeeds before the implementation exists. Tests skip
 cleanly via pytest.importorskip when the module is absent (Wave 0 / Wave 1).
 
-Status after Plan 03-04 (Wave 3 — GREEN):
-  - find_source_sub / is_eligible / scan_for_eligible_items are implemented.
-  - 9 of 10 stubs are now plain GREEN — the strict-non-strict scaffolding
-    decorator has been removed.
-  - 1 stub (test_scan_returns_eligible_item_and_scan_stats) still depends on
-    ``trezarr.cli.MediaItem`` which Plan 03-05 lands; its decorator remains
-    in place with a reason pointing to Plan 03-05.
+Status after Plan 03-05 (Wave 4 — GREEN):
+  - All 10 stubs are now plain GREEN. trezarr.cli.MediaItem now exists,
+    so test_scan_returns_eligible_item_and_scan_stats had its xfail marker
+    removed (per 03-REVIEWS.md HIGH #3 xfail-removal policy).
 
 Covers:
   AUTO-01  find_source_sub(): highest-priority language wins, None when absent,
@@ -297,10 +294,6 @@ def test_foreign_vi(tmp_path):
 # ──────────────────────────────────────────────────────────────────────────────
 
 
-@pytest.mark.xfail(
-    strict=False,
-    reason="Plan 03-05: depends on trezarr.cli.MediaItem (different shape than trezarr.arr.sonarr.MediaItem); marker stays until cli.py lands",
-)
 def test_scan_returns_eligible_item_and_scan_stats(tmp_path):
     """scan_for_eligible_items returns a 2-tuple (list[EligibleItem], ScanStats).
 

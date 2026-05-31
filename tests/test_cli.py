@@ -4,8 +4,8 @@ All imports from trezarr.cli are deferred inside each test function body so
 pytest collection succeeds before the implementation exists. Tests skip cleanly
 via pytest.importorskip when the module is absent (Wave 0 / Wave 1).
 
-Stubs are marked @pytest.mark.xfail(strict=False) — they are RED scaffolding.
-Plan 03-05 removes the xfail markers when the implementation lands.
+Status after Plan 03-05 (Wave 4 — GREEN): all 7 stubs are now plain GREEN; the
+xfail markers have been removed per 03-REVIEWS.md HIGH #3 (xfail-removal policy).
 
 Convention: _run_once() is async (the underlying translate_file() pipeline is
 async), but it returns an `int` exit code rather than calling sys.exit() — per
@@ -54,7 +54,6 @@ def _make_media_item(tmp_path, name: str = "Show.S01E01.en.srt"):
 # ──────────────────────────────────────────────────────────────────────────────
 
 
-@pytest.mark.xfail(strict=False, reason="Plan 03-05: _run_once batch loop not yet implemented")
 async def test_batch_run_continues_past_failure(tmp_path, settings_factory):
     """A per-item failure in translate_file is logged + counted, the next item is still processed (D-30)."""
     cli_mod = pytest.importorskip("trezarr.cli")
@@ -92,10 +91,6 @@ async def test_batch_run_continues_past_failure(tmp_path, settings_factory):
     assert exit_code != 0, f"Expected non-zero exit (one item failed), got {exit_code}"
 
 
-@pytest.mark.xfail(
-    strict=False,
-    reason="Plan 03-05: _run_once must return int 0 on all-success (03-REVIEWS.md HIGH #6)",
-)
 async def test_run_once_returns_int_zero_on_all_success(tmp_path, settings_factory):
     """_run_once returns 0 (int) when every item translated successfully (D-30, HIGH #6).
 
@@ -132,10 +127,6 @@ async def test_run_once_returns_int_zero_on_all_success(tmp_path, settings_facto
     assert exit_code == 0, f"Expected exit_code == 0 on all-success, got {exit_code!r}"
 
 
-@pytest.mark.xfail(
-    strict=False,
-    reason="Plan 03-05: _run_once must return int 1 on any failure (03-REVIEWS.md HIGH #6)",
-)
 async def test_run_once_returns_int_nonzero_on_any_failure(tmp_path, settings_factory):
     """_run_once returns 1 (int) when any item failed or was quarantined (D-30, HIGH #6)."""
     cli_mod = pytest.importorskip("trezarr.cli")
@@ -172,10 +163,6 @@ async def test_run_once_returns_int_nonzero_on_any_failure(tmp_path, settings_fa
 # ──────────────────────────────────────────────────────────────────────────────
 
 
-@pytest.mark.xfail(
-    strict=False,
-    reason="Plan 03-05: summary must include widened fields (03-REVIEWS.md MEDIUM #14)",
-)
 async def test_batch_summary_printed_with_widened_fields(tmp_path, capsys, settings_factory):
     """End-of-run summary line includes pre-translate skip counters (MEDIUM #14).
 
@@ -231,10 +218,6 @@ async def test_batch_summary_printed_with_widened_fields(tmp_path, capsys, setti
 # ──────────────────────────────────────────────────────────────────────────────
 
 
-@pytest.mark.xfail(
-    strict=False,
-    reason="Plan 03-05: LLMClient lazy-construction not yet implemented (03-REVIEWS.md HIGH #7)",
-)
 async def test_llm_client_not_constructed_when_no_eligible(tmp_path, settings_factory):
     """LLMClient is NOT instantiated when there are no eligible items (HIGH #7).
 
@@ -272,10 +255,6 @@ async def test_llm_client_not_constructed_when_no_eligible(tmp_path, settings_fa
 # ──────────────────────────────────────────────────────────────────────────────
 
 
-@pytest.mark.xfail(
-    strict=False,
-    reason="Plan 03-05: discovery-level error isolation not yet implemented (03-REVIEWS.md MEDIUM #10)",
-)
 async def test_one_arr_failure_does_not_kill_other_arr(tmp_path, settings_factory):
     """Sonarr raising DiscoveryError still allows Radarr discovery + run to complete (MEDIUM #10).
 
@@ -321,10 +300,6 @@ async def test_one_arr_failure_does_not_kill_other_arr(tmp_path, settings_factor
 # ──────────────────────────────────────────────────────────────────────────────
 
 
-@pytest.mark.xfail(
-    strict=False,
-    reason="Plan 03-05: PermissionApplyError must quarantine the item, not silent-warn (03-REVIEWS.md MEDIUM #13)",
-)
 async def test_chmod_error_quarantines_item(tmp_path, settings_factory):
     """apply_permissions raising PermissionApplyError quarantines the item; _run_once returns 1 (MEDIUM #13).
 
