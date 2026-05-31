@@ -107,14 +107,14 @@ Which phases cover which requirements. Populated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| INTG-01 | Phase 3 | Pending |
+| INTG-01 | Phase 3 | In Progress |
 | INTG-02 | Phase 10 | Pending |
-| INTG-03 | Phase 3 | Pending |
-| INTG-04 | Phase 3 | Pending |
-| AUTO-01 | Phase 3 | Pending |
+| INTG-03 | Phase 3 | In Progress |
+| INTG-04 | Phase 3 | In Progress |
+| AUTO-01 | Phase 3 | In Progress |
 | AUTO-02 | Phase 7 | Pending |
-| AUTO-03 | Phase 3 | Pending |
-| AUTO-04 | Phase 3 | Pending |
+| AUTO-03 | Phase 3 | In Progress |
+| AUTO-04 | Phase 3 | In Progress |
 | AUTO-05 | Phase 7 | Pending |
 | FMT-01 | Phase 1 | Complete |
 | FMT-02 | Phase 9 | Pending |
