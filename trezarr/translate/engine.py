@@ -491,7 +491,6 @@ async def translate_file(
 
     # Step 8: Assemble translated SubDoc (Pitfall 8 — never mutate source SubLines)
     translated_lines: list[SubLine] = []
-    cue_idx = 0
     for batch, translated_texts in zip(batches, batch_results):
         for src_line, translated_text in zip(batch.cues, translated_texts):
             translated_lines.append(SubLine(
@@ -501,7 +500,6 @@ async def translate_file(
                 text=translated_text,
                 raw=None,  # well-formed translated cue — raw not needed
             ))
-            cue_idx += 1
 
     translated_doc = SubDoc(
         lines=translated_lines,
