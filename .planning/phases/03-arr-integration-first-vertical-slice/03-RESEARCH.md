@@ -845,21 +845,24 @@ def test_path_mapping_strips_trailing_slash():
 
 ---
 
-## Open Questions
+## Open Questions (RESOLVED)
 
 1. **Does `radarr.movie.get()` embed `movieFile` inline, or require a separate call?**
    - What we know: golift/starr Go struct has `Movie.MovieFile` as a nested struct; pyarr docs say `movie_file.get(movie_id=X)` exists as a separate submodule.
    - What's unclear: Whether the inline embed is present by default or only with a query parameter.
    - Recommendation: In `discover_radarr_items()`, call `radarr.movie_file.get(movie_id=X)` explicitly as a fallback if `movie['movieFile']` is None/absent.
+   - **RESOLVED:** Plan 03-03 encodes the choice: read `movie['movieFile']` inline first; if it is `None` or absent, fall back to `client.movie_file.get(movie_id=movie['id'])`; if still `None`, log a warning and skip the movie.
 
 2. **pyarr 6.x async context manager or regular instantiation?**
    - The quickstart doc shows `async with AsyncSonarr(...) as sonarr:` (context manager). The sync `Sonarr` may or may not require context manager. For Phase 3's one-shot CLI, using the sync client outside a context manager should be fine; for the async variant in Phase 7, always use `async with`.
    - Recommendation: Use sync `Sonarr`/`Radarr` for the Phase 3 CLI without context manager; test will confirm if cleanup is needed.
+   - **RESOLVED:** Sync `Sonarr`/`Radarr` are instantiated directly (no context manager) for the one-shot CLI. `AsyncSonarr`/`AsyncRadarr` with `async with` are deferred to Phase 7 per D-21.
 
 3. **Does source-sub glob need to handle 3-letter ISO-639-2 codes?**
    - Phase-2 `_LANG_CODE_RE = re.compile(r'\.[a-z]{2}$')` only matches 2-letter codes.
    - Source subs from Bazarr may use 3-letter codes (e.g. `eng`, `zho`).
    - Recommendation: Extend the discovery regex to `r'\.[a-z]{2,3}\.srt$'` and the `source_lang_priority` default to include both `["en", "eng"]` or normalize 3→2 at scan time.
+   - **RESOLVED:** Plan 03-04 encodes the choice: `_LANG_SIDECAR_RE = re.compile(r'^(.+?)\.([a-z]{2,3})\.srt$', re.IGNORECASE)` accepts both 2-letter and 3-letter ISO-639 codes.
 
 ---
 

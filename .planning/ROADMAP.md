@@ -82,11 +82,21 @@ Decimal phases appear between their surrounding integers in numeric order.
   4. Trezarr detects "has a source sub, lacks a good `vi` sub", queues it, tracks per-item state (incl. source-sub hash) to skip already-done items, and never re-triggers on its own output
 
 **Plans**: 5 plans
+**Wave 1**
 
 - [ ] 03-01-PLAN.md — Wave 0: dependency install (pyarr, pytest-httpx) + RED test stubs for all Phase-3 modules
 - [ ] 03-02-PLAN.md — Wave 1: TrezarrSettings Phase-3 fields + paths.py (path mapping, startup probe, traversal guard) + ledger D-27 docstring
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
 - [ ] 03-03-PLAN.md — Wave 1: arr discovery clients sonarr.py + radarr.py (pyarr 6.x, X-Api-Key, path mapping)
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
 - [ ] 03-04-PLAN.md — Wave 2: discover layer (scan.py + gap.py) + apply_permissions (write.py extension)
+
+**Wave 4** *(blocked on Wave 3 completion)*
+
 - [ ] 03-05-PLAN.md — Wave 3: CLI entry point trezarr run --once + console_scripts registration (end-to-end vertical slice)
 
 ### Phase 4: Series Bible Store & Schema
