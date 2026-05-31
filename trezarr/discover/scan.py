@@ -24,6 +24,7 @@ so cli.py's end-of-run summary can include the pre-translate skip counters
 """
 from __future__ import annotations
 
+import glob as _glob
 import logging
 import re
 from dataclasses import dataclass
@@ -139,8 +140,13 @@ def find_source_sub(media_path: Path, lang_priority: Sequence[str]) -> tuple[Pat
     # govern selection — lang_priority order does — but within a language we
     # rely on `sorted()` to make the choice deterministic (MEDIUM #12).
     found: dict[str, list[Path]] = {}
+    # CR-02: Path.glob interprets `[`, `]`, `*`, `?` as glob meta-characters,
+    # which silently mis-matches common *arr filenames like `Show [2024].S01E01.mkv`
+    # — the `[2024]` becomes a character class matching one of {2,0,4}. Escape
+    # the stem via glob.escape so the literal stem is matched on the filesystem.
+    escaped_stem = _glob.escape(media_stem)
     try:
-        candidates = sorted(media_dir.glob(f"{media_stem}.*.srt"))
+        candidates = sorted(media_dir.glob(f"{escaped_stem}.*.srt"))
     except OSError as exc:
         # Directory unreadable / permission denied — log and treat as "no source".
         logger.warning("source-sub glob failed for %s: %s", media_dir, exc)

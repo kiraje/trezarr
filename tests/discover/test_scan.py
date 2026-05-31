@@ -83,6 +83,31 @@ def test_find_source_sub_none_when_absent(tmp_path):
     assert result is None, f"Expected None when no priority-lang match exists, got {result!r}"
 
 
+def test_find_source_sub_stem_with_glob_metachars(tmp_path):
+    """Media stems containing `[`, `]`, `*`, `?` must still match their source sidecars (CR-02).
+
+    Real *arr libraries commonly have filenames like `Show [2024].S01E01.mkv`
+    or `Movie (2019) [1080p].mkv`. Path.glob interprets `[...]` as a character
+    class — without glob.escape the stem, find_source_sub silently returns
+    None and the file is reported as no_source / never translated.
+    """
+    scan_mod = pytest.importorskip("trezarr.discover.scan")
+    find_source_sub = scan_mod.find_source_sub
+
+    media = tmp_path / "Show [2024].S01E01.mkv"
+    media.write_bytes(b"\x00")
+    sub = tmp_path / "Show [2024].S01E01.en.srt"
+    sub.write_text("en", encoding="utf-8")
+
+    result = find_source_sub(media, ["en"])
+    assert result is not None, (
+        "find_source_sub must match stems containing glob meta-chars like [2024]"
+    )
+    sub_path, lang = result
+    assert sub_path == sub, f"Expected {sub}, got {sub_path}"
+    assert lang == "en", f"Expected 'en', got {lang!r}"
+
+
 def test_find_source_sub_deterministic_on_collision(tmp_path):
     """When two candidates exist for the same language, lexicographically-first wins (deterministic).
 
