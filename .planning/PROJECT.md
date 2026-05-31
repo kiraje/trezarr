@@ -23,16 +23,18 @@ this consistency must work.
 
 <!-- Shipped and confirmed valuable. -->
 
-(None yet — ship to validate)
+**Integration & automation (partial — Phase 3):**
+- [x] Connect to Sonarr / Radarr via their REST APIs (X-Api-Key, pyarr 6.x) to discover the media library — Validated in Phase 3 (INTG-01). Bazarr connection deferred to Phase 10.
+- [x] Share the same filesystem and write Vietnamese subtitles as sidecar files next to the media (auto-detected by Plex/Jellyfin/Emby) — Validated in Phase 3 (INTG-04: PUID/PGID/UMASK applied in-process; chmod failure quarantines; container↔host path mapping with traversal guard, INTG-03).
+- [x] Detect media that has a source subtitle but no good Vietnamese subtitle and queue it — Validated in Phase 3 (AUTO-01 gap detection, AUTO-03 source-sub-hash idempotency, AUTO-04 self-output exclusion via ledger provenance). Continuous monitoring (poll + watchfiles + webhook) deferred to Phase 7.
 
 ### Active
 
 <!-- Current scope. Building toward these. Hypotheses until shipped. -->
 
-**Integration (mirrors how Bazarr relates to Sonarr/Radarr — the "seamless" model):**
-- [ ] Connect to Bazarr / Sonarr / Radarr via their APIs to discover the media library and existing subtitles
-- [ ] Share the same filesystem and write Vietnamese subtitles as sidecar files next to the media (auto-detected by Plex/Jellyfin/Emby)
-- [ ] Monitor for media that has a source subtitle but no good Vietnamese subtitle, and act automatically
+**Integration (continuous monitoring + Bazarr):**
+- [ ] Continuous monitor for media that has a source subtitle but no good Vietnamese subtitle, and act automatically (Phase 7 — daemon/poll/webhook/watchfiles)
+- [ ] Connect to Bazarr's API to read existing source-language subtitle inventory (Phase 10, INTG-02)
 
 **Translation engine:**
 - [ ] Use the user's own OpenAI-SDK-compatible LLM endpoint (configurable base URL / model / key)
@@ -117,4 +119,6 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-05-31 after Phase 2 (Mechanical Translation Core + Validation Gate) — the first user-facing artifact ships: `translate_file()` batches a parsed source (scene-gap/token-aware), translates via a single LLM pass with surrounding-line context, enforces a hard 7-check pre-write validation gate (failing files quarantined, never written), and writes an atomic UTF-8 `Show.S01E01.vi.srt` sidecar with idempotent re-run via a content-hash ledger (ENG-02, ENG-03, ENG-06, ENG-07, FMT-05 — verified 4/4). End-to-end translation against a live LLM endpoint remains a recommended manual check (the `@pytest.mark.live` hook).*
+*Last updated: 2026-06-01 after Phase 3 (\*arr Integration + First Vertical Slice) — the first end-to-end slice ships: `trezarr run --once` discovers media via Sonarr/Radarr (pyarr 6.x, X-Api-Key, no disk scan), resolves API paths to local filesystem via configurable remote→local path mapping with a fail-fast startup readability probe, scans for source-language sidecars with deterministic priority + foreign-vi-never-clobber safety, hands eligible items to the Phase-2 translate engine, applies PUID/PGID/UMASK in-process (chown soft-warn, chmod escalates to quarantine), and emits a widened summary with non-zero exit on any failure. Per-service DiscoveryError isolation means one bad *arr doesn't kill the run. 113→127 tests GREEN after the post-execution code-review pass fixed 3 Critical + 8 Warning findings (path-prefix shadowing, glob-meta-char escaping, ledger AttributeError; +traceback logging, userinfo redaction, scan-stats classification, all-arr-failed exit path). INTG-01/03/04 + AUTO-01/03/04 verified 6/6.*
+
+*Phase 2 (Mechanical Translation Core + Validation Gate, 2026-05-31): `translate_file()` batches a parsed source (scene-gap/token-aware), translates via a single LLM pass with surrounding-line context, enforces a hard 7-check pre-write validation gate (failing files quarantined, never written), and writes an atomic UTF-8 `Show.S01E01.vi.srt` sidecar with idempotent re-run via a content-hash ledger (ENG-02, ENG-03, ENG-06, ENG-07, FMT-05 — verified 4/4).*
