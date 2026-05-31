@@ -4,8 +4,13 @@ All imports from trezarr.discover.* are deferred inside each test function body
 so pytest collection succeeds before the implementation exists. Tests skip
 cleanly via pytest.importorskip when the module is absent (Wave 0 / Wave 1).
 
-Stubs are marked @pytest.mark.xfail(strict=False) — they are RED scaffolding.
-Plan 03-04 removes the xfail markers when the implementation lands.
+Status after Plan 03-04 (Wave 3 — GREEN):
+  - find_source_sub / is_eligible / scan_for_eligible_items are implemented.
+  - 9 of 10 stubs are now plain GREEN — the strict-non-strict scaffolding
+    decorator has been removed.
+  - 1 stub (test_scan_returns_eligible_item_and_scan_stats) still depends on
+    ``trezarr.cli.MediaItem`` which Plan 03-05 lands; its decorator remains
+    in place with a reason pointing to Plan 03-05.
 
 Covers:
   AUTO-01  find_source_sub(): highest-priority language wins, None when absent,
@@ -46,7 +51,6 @@ def _make_minimal_ledger(tmp_path, entries=None):
 # ──────────────────────────────────────────────────────────────────────────────
 
 
-@pytest.mark.xfail(strict=False, reason="Plan 03-04: trezarr.discover.scan.find_source_sub not yet implemented")
 def test_find_source_sub_priority(tmp_path):
     """find_source_sub returns the highest-priority language match (D-25)."""
     scan_mod = pytest.importorskip("trezarr.discover.scan")
@@ -67,7 +71,6 @@ def test_find_source_sub_priority(tmp_path):
     assert sub_path == en_path, f"Expected en_path, got {sub_path}"
 
 
-@pytest.mark.xfail(strict=False, reason="Plan 03-04: trezarr.discover.scan.find_source_sub not yet implemented")
 def test_find_source_sub_none_when_absent(tmp_path):
     """find_source_sub returns None when no priority-language sidecar exists (D-25)."""
     scan_mod = pytest.importorskip("trezarr.discover.scan")
@@ -83,10 +86,6 @@ def test_find_source_sub_none_when_absent(tmp_path):
     assert result is None, f"Expected None when no priority-lang match exists, got {result!r}"
 
 
-@pytest.mark.xfail(
-    strict=False,
-    reason="Plan 03-04: same-language collision tie-break not yet deterministic (03-REVIEWS.md MEDIUM #12)",
-)
 def test_find_source_sub_deterministic_on_collision(tmp_path):
     """When two candidates exist for the same language, lexicographically-first wins (deterministic).
 
@@ -134,7 +133,6 @@ def test_find_source_sub_deterministic_on_collision(tmp_path):
 # ──────────────────────────────────────────────────────────────────────────────
 
 
-@pytest.mark.xfail(strict=False, reason="Plan 03-04: is_eligible not yet implemented")
 def test_gap_detection_no_source(tmp_path):
     """is_eligible called on a non-existent / missing source sub returns (False, reason).
 
@@ -156,7 +154,6 @@ def test_gap_detection_no_source(tmp_path):
     assert eligible is False, "Missing source sub must not be eligible"
 
 
-@pytest.mark.xfail(strict=False, reason="Plan 03-04: is_eligible not yet implemented")
 def test_gap_detection_eligible_new(tmp_path):
     """A new source sub with no vi sidecar and no ledger entry is eligible (D-26)."""
     scan_mod = pytest.importorskip("trezarr.discover.scan")
@@ -174,7 +171,6 @@ def test_gap_detection_eligible_new(tmp_path):
     assert eligible is True, "New source sub with no vi sidecar and no ledger entry must be eligible"
 
 
-@pytest.mark.xfail(strict=False, reason="Plan 03-04: is_eligible not yet implemented")
 def test_gap_detection_foreign_vi_skip(tmp_path):
     """A foreign vi sidecar (present, not in ledger) is skipped — never clobbered (D-26, AUTO-04)."""
     scan_mod = pytest.importorskip("trezarr.discover.scan")
@@ -197,7 +193,6 @@ def test_gap_detection_foreign_vi_skip(tmp_path):
     )
 
 
-@pytest.mark.xfail(strict=False, reason="Plan 03-04: is_eligible idempotency not yet implemented")
 def test_idempotency_skip_unchanged(tmp_path):
     """Ledger says done + source hash unchanged → skip (AUTO-03 / D-27)."""
     from trezarr.output.ledger import Ledger
@@ -229,7 +224,6 @@ def test_idempotency_skip_unchanged(tmp_path):
     assert eligible is False, "Unchanged source + status=done must skip (AUTO-03)"
 
 
-@pytest.mark.xfail(strict=False, reason="Plan 03-04: is_eligible idempotency not yet implemented")
 def test_idempotency_retranslate_on_change(tmp_path):
     """Ledger says done but stored hash != current hash → re-translate (AUTO-03 / D-27)."""
     scan_mod = pytest.importorskip("trezarr.discover.scan")
@@ -261,7 +255,6 @@ def test_idempotency_retranslate_on_change(tmp_path):
     assert eligible is True, f"Changed source must trigger re-translate (got reason: {reason!r})"
 
 
-@pytest.mark.xfail(strict=False, reason="Plan 03-04: AUTO-04 self-output exclusion not yet wired through is_eligible")
 def test_foreign_vi(tmp_path):
     """AUTO-04: never re-process our own output. A ledger entry must keep the vi sidecar 'ours'.
 
@@ -306,7 +299,7 @@ def test_foreign_vi(tmp_path):
 
 @pytest.mark.xfail(
     strict=False,
-    reason="Plan 03-04: EligibleItem dataclass + ScanStats not yet implemented (03-REVIEWS.md HIGH #5, MEDIUM #14)",
+    reason="Plan 03-05: depends on trezarr.cli.MediaItem (different shape than trezarr.arr.sonarr.MediaItem); marker stays until cli.py lands",
 )
 def test_scan_returns_eligible_item_and_scan_stats(tmp_path):
     """scan_for_eligible_items returns a 2-tuple (list[EligibleItem], ScanStats).
