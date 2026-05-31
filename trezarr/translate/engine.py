@@ -34,7 +34,7 @@ from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_ex
 
 from trezarr.llm.client import LLMClient
 from trezarr.output.ledger import Ledger, LedgerEntry
-from trezarr.output.write import write_vi_sidecar
+from trezarr.output.write import derive_vi_sidecar_path, write_vi_sidecar
 from trezarr.subtitles.model import SubDoc, SubLine
 from trezarr.subtitles.srt import read_srt
 from trezarr.translate.batching import Batch, batch_subdoc
@@ -413,13 +413,9 @@ async def translate_file(
     source_bytes = path.read_bytes()
     content_hash = Ledger.content_hash(source_bytes)
 
-    # Step 2: Derive destination path (same logic as write_vi_sidecar)
-    import re as _re2
-    _lang_re = _re2.compile(r'\.[a-z]{2}$', _re2.IGNORECASE)
-    stem = path.stem
-    if _lang_re.search(stem):
-        stem = stem.rsplit('.', 1)[0]
-    dest = path.parent / (stem + '.vi.srt')
+    # Step 2: Derive destination path via the shared helper so engine and writer
+    # can never diverge on naming (WR-06).
+    dest = derive_vi_sidecar_path(path)
 
     # Step 3: Ledger check (D-20 behavior table)
     entry = ledger.check(str(path))

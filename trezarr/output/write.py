@@ -28,6 +28,29 @@ from trezarr.subtitles.srt import write_srt
 _LANG_CODE_RE = re.compile(r'\.[a-z]{2}$', re.IGNORECASE)
 
 
+def derive_vi_sidecar_path(media_path: str | Path) -> Path:
+    """Derive the Vietnamese sidecar path from a media (source SRT) path.
+
+    Rules:
+      - If the stem ends with a 2-letter language code (e.g. ".en"), strip it.
+      - Append ".vi.srt" to form the sidecar name in the same directory.
+
+    This is the single source of truth for sidecar naming — both write_vi_sidecar
+    and translate_file must call this function so dest paths can never diverge.
+
+    Args:
+        media_path: Path to the source SRT file (str or Path).
+
+    Returns:
+        Path to the derived Vietnamese sidecar (e.g. Show.S01E01.vi.srt).
+    """
+    media_path = Path(media_path).resolve()
+    stem = media_path.stem
+    if _LANG_CODE_RE.search(stem):
+        stem = stem.rsplit('.', 1)[0]
+    return media_path.parent / (stem + '.vi.srt')
+
+
 def write_vi_sidecar(doc: SubDoc, media_path: str | Path) -> Path:
     """Write a translated SubDoc as a Vietnamese sidecar SRT file atomically.
 
@@ -46,14 +69,7 @@ def write_vi_sidecar(doc: SubDoc, media_path: str | Path) -> Path:
     Returns:
         Path to the written sidecar file (Show.S01E01.vi.srt).
     """
-    media_path = Path(media_path).resolve()
-    stem = media_path.stem  # e.g. "Show.S01E01.en" from "Show.S01E01.en.srt"
-
-    # Strip 2-letter language code suffix from the stem if present
-    if _LANG_CODE_RE.search(stem):
-        stem = stem.rsplit('.', 1)[0]  # "Show.S01E01.en" → "Show.S01E01"
-
-    dest = media_path.parent / (stem + '.vi.srt')
+    dest = derive_vi_sidecar_path(media_path)
 
     tmp_path: Path | None = None
     try:
