@@ -2,8 +2,8 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: verifying
-last_updated: "2026-05-31T02:45:17.413Z"
+status: ready_to_plan
+last_updated: 2026-05-31T03:23:39.763Z
 last_activity: 2026-05-31
 progress:
   total_phases: 10
@@ -11,6 +11,7 @@ progress:
   total_plans: 3
   completed_plans: 3
   percent: 10
+stopped_at: Phase 01 complete (3/3) — ready to discuss Phase 2
 ---
 
 # Project State
@@ -20,13 +21,13 @@ progress:
 See: .planning/PROJECT.md (updated 2026-05-31)
 
 **Core value:** Vietnamese subtitles that stay consistent and relationally correct (right pronoun pair, stable names/terms) across an entire series — produced automatically.
-**Current focus:** Phase 01 — codec-llm-client-foundation
+**Current focus:** Phase 2 — mechanical translation core + validation gate
 
 ## Current Position
 
-Phase: 01 (codec-llm-client-foundation) — EXECUTING
-Plan: 3 of 3
-Status: Phase complete — ready for verification
+Phase: 2
+Plan: Not started
+Status: Ready to plan
 Last activity: 2026-05-31
 
 Progress: [██████████] 100%
@@ -35,7 +36,7 @@ Progress: [██████████] 100%
 
 **Velocity:**
 
-- Total plans completed: 1
+- Total plans completed: 4
 - Average duration: 6 min
 - Total execution time: 0.1 hours
 
@@ -43,7 +44,7 @@ Progress: [██████████] 100%
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
-| 01 | 1/3 | 6 min | 6 min |
+| 01 | 3 | - | - |
 
 **Recent Trend:**
 
