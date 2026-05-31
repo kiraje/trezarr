@@ -4,10 +4,6 @@ Verifies:
 - SubLine.text is the only LLM-mutable field
 - SubLine.index, .start_tc, .end_tc are preserved verbatim (no normalization)
 """
-import pytest
-
-
-@pytest.mark.xfail(strict=False, reason="SRT model not yet implemented (Plan 02)")
 def test_subline_text_mutable():
     """SubLine.text field can be mutated in-place after construction."""
     from trezarr.subtitles.model import SubLine  # deferred import
@@ -22,7 +18,6 @@ def test_subline_text_mutable():
     assert sl.text == "Translated text"
 
 
-@pytest.mark.xfail(strict=False, reason="SRT model not yet implemented (Plan 02)")
 def test_subline_timing_fields_preserved():
     """SubLine index, start_tc, end_tc hold exactly the strings passed at construction.
 

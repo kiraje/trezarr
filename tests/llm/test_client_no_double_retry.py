@@ -3,14 +3,10 @@
 D-07 mandates that per-request retries come from the OpenAI SDK's built-in
 max_retries + exponential backoff. Stacking tenacity on top causes retry storms
 against self-hosted endpoints. These tests guard against that anti-pattern.
-
-Marked xfail(strict=False) until Plan 03 ships the LLMClient.
 """
 import inspect
-import pytest
 
 
-@pytest.mark.xfail(strict=False, reason="LLMClient not yet implemented (Plan 03)")
 def test_no_tenacity_on_client():
     """The LLMClient module must not import tenacity.
 
@@ -27,7 +23,6 @@ def test_no_tenacity_on_client():
     )
 
 
-@pytest.mark.xfail(strict=False, reason="LLMClient not yet implemented (Plan 03)")
 def test_max_retries_from_settings():
     """LLMClient passes settings.llm_max_retries to the inner AsyncOpenAI instance."""
     from trezarr.llm.client import LLMClient  # deferred import

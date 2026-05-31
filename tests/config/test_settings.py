@@ -1,14 +1,6 @@
-"""Tests for TrezarrSettings — YAML + env loading and SecretStr masking (ENG-01).
-
-All tests are marked xfail(strict=False) until the Plan 03 config implementation
-ships.
-"""
-import os
-
-import pytest
+"""Tests for TrezarrSettings — YAML + env loading and SecretStr masking (ENG-01)."""
 
 
-@pytest.mark.xfail(strict=False, reason="TrezarrSettings not yet implemented (Plan 03)")
 def test_settings_loads_defaults():
     """TrezarrSettings() with no arguments uses defined default values."""
     from trezarr.config import TrezarrSettings  # deferred import
@@ -21,7 +13,6 @@ def test_settings_loads_defaults():
     assert settings.llm_context_window == 32768
 
 
-@pytest.mark.xfail(strict=False, reason="TrezarrSettings not yet implemented (Plan 03)")
 def test_env_override(monkeypatch):
     """TREZARR_LLM_MODEL env var overrides the default model value."""
     from trezarr.config import TrezarrSettings  # deferred import
@@ -31,7 +22,6 @@ def test_env_override(monkeypatch):
     assert settings.llm_model == "my-custom-model"
 
 
-@pytest.mark.xfail(strict=False, reason="TrezarrSettings not yet implemented (Plan 03)")
 def test_yaml_load(tmp_path):
     """TrezarrSettings loads values from a YAML config file."""
     from trezarr.config import TrezarrSettings  # deferred import
@@ -43,7 +33,6 @@ def test_yaml_load(tmp_path):
     assert settings.llm_max_retries == 7
 
 
-@pytest.mark.xfail(strict=False, reason="TrezarrSettings not yet implemented (Plan 03)")
 def test_api_key_not_logged():
     """The literal API key value must NOT appear in any string representation.
 
