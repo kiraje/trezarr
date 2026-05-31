@@ -168,14 +168,20 @@ def discover_radarr_items(settings: "TrezarrSettings") -> list[MediaItem]:
         # pyarr wraps both 4xx/5xx and httpx transport errors in PyarrError —
         # catching the parent gives the broadest typed boundary so cli.py can
         # apply per-service resilience (D-30).
+        #
+        # WR-01: route the host through _normalize_arr_host before logging /
+        # raising so any `user:password@host` userinfo embedded in the raw
+        # radarr_host setting is stripped — otherwise the credential lands in
+        # log files and in the cli summary's partial-discovery-failures suffix.
+        display_host = _normalize_arr_host(settings.radarr_host)
         logger.error(
             "Radarr discovery failed at %s:%d — %s: %s",
-            settings.radarr_host,
+            display_host,
             settings.radarr_port,
             type(exc).__name__,
             exc,
         )
         raise DiscoveryError(
-            f"Radarr discovery failed at {settings.radarr_host}:{settings.radarr_port}: "
+            f"Radarr discovery failed at {display_host}:{settings.radarr_port}: "
             f"{type(exc).__name__}: {exc}"
         ) from exc

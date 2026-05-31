@@ -170,14 +170,20 @@ def discover_sonarr_items(settings: "TrezarrSettings") -> list[MediaItem]:
         # pyarr wraps both 4xx/5xx (PyarrUnauthorizedError, PyarrServerError, …) and
         # underlying httpx transport errors (PyarrConnectionError) in its own hierarchy.
         # Catching the PyarrError parent gives us the broadest typed boundary.
+        #
+        # WR-01: route the host through _normalize_arr_host before logging /
+        # raising so any `user:password@host` userinfo embedded in the raw
+        # sonarr_host setting is stripped — otherwise the credential lands in
+        # log files and in the cli summary's partial-discovery-failures suffix.
+        display_host = _normalize_arr_host(settings.sonarr_host)
         logger.error(
             "Sonarr discovery failed at %s:%d — %s: %s",
-            settings.sonarr_host,
+            display_host,
             settings.sonarr_port,
             type(exc).__name__,
             exc,
         )
         raise DiscoveryError(
-            f"Sonarr discovery failed at {settings.sonarr_host}:{settings.sonarr_port}: "
+            f"Sonarr discovery failed at {display_host}:{settings.sonarr_port}: "
             f"{type(exc).__name__}: {exc}"
         ) from exc

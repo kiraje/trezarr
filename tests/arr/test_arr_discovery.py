@@ -252,6 +252,81 @@ def test_normalize_arr_host_full_url_with_port():
     assert _normalize_arr_host("http://192.168.1.10:8989") == "192.168.1.10"
 
 
+def test_normalize_arr_host_bare_with_port():
+    """A bare host:port form (no scheme) strips the trailing port (WR-02).
+
+    docker-compose service-name conventions like `sonarr:8989` previously
+    survived intact and produced a malformed pyarr URL of the form
+    `http://sonarr:8989:8989/api/v3/...` when pyarr re-attached its `port=` kwarg.
+    """
+    sonarr_mod = pytest.importorskip("trezarr.arr.sonarr")
+    _normalize_arr_host = sonarr_mod._normalize_arr_host
+
+    assert _normalize_arr_host("sonarr.lan:8989") == "sonarr.lan"
+    assert _normalize_arr_host("sonarr:8989") == "sonarr"
+
+
+def test_normalize_arr_host_strips_userinfo(caplog):
+    """A URL with embedded user:password@host MUST have the credential stripped (WR-01).
+
+    Hosts pasted with userinfo (the user-experience footgun: copying a fully-
+    qualified URL from a password manager into the host field) previously had
+    the raw value echoed into error logs and into the cli summary's
+    partial-discovery-failures suffix on the first 401 / connect-refused. The
+    normalizer is the redaction choke-point; callers must route the host
+    through it before any logging.
+    """
+    sonarr_mod = pytest.importorskip("trezarr.arr.sonarr")
+    _normalize_arr_host = sonarr_mod._normalize_arr_host
+
+    out = _normalize_arr_host("http://admin:hunter2@sonarr.local:8989/api")
+    assert out == "sonarr.local", f"Expected 'sonarr.local' (userinfo + port stripped), got {out!r}"
+    assert "hunter2" not in out, "Credential must not survive normalization"
+    assert "admin" not in out, "Username must not survive normalization"
+
+
+def test_sonarr_discovery_error_log_redacts_userinfo_credentials(httpx_mock, caplog):
+    """When Sonarr fails, the host in the error log and DiscoveryError message must NOT carry userinfo (WR-01)."""
+    import logging
+
+    arr_pkg = pytest.importorskip("trezarr.arr")
+    DiscoveryError = arr_pkg.DiscoveryError
+    sonarr_mod = pytest.importorskip("trezarr.arr.sonarr")
+    discover_sonarr_items = sonarr_mod.discover_sonarr_items
+
+    from trezarr.config import TrezarrSettings
+
+    httpx_mock.add_response(
+        url="http://192.168.1.100:8989/api/v3/series",
+        status_code=401,
+        json={"error": "Unauthorized"},
+    )
+
+    settings = TrezarrSettings(
+        sonarr_enabled=True,
+        # Userinfo embedded in the host setting — common when users paste a URL
+        # from a password manager. _normalize_arr_host strips it for both pyarr
+        # AND the log/error path.
+        sonarr_host="http://admin:hunter2@192.168.1.100/api",
+        sonarr_port=8989,
+        sonarr_api_key="wrong-key",
+        path_mappings=[],
+    )
+
+    with caplog.at_level(logging.ERROR):
+        with pytest.raises(DiscoveryError) as excinfo:
+            discover_sonarr_items(settings)
+
+    # The error message MUST NOT include the credentials.
+    msg = str(excinfo.value)
+    assert "hunter2" not in msg, f"DiscoveryError leaked password: {msg!r}"
+    assert "admin" not in msg, f"DiscoveryError leaked username: {msg!r}"
+    # And the error log records likewise must not contain the credentials.
+    for rec in caplog.records:
+        assert "hunter2" not in rec.getMessage(), f"Error log leaked password: {rec.getMessage()!r}"
+        assert "admin" not in rec.getMessage(), f"Error log leaked username: {rec.getMessage()!r}"
+
+
 # ──────────────────────────────────────────────────────────────────────────────
 # DiscoveryError — typed exception so CLI can choose to continue past one *arr's
 # failure rather than crash the run (03-REVIEWS.md MEDIUM #10)
