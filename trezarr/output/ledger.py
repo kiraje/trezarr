@@ -44,8 +44,13 @@ class LedgerEntry:
         output_path:    Absolute path to the written .vi.srt sidecar, or None
                         if the translation was quarantined / not yet written.
         status:         Current processing status: "done" | "quarantined" | "in_progress".
-        content_hash:   SHA-256[:16] hex digest of the source file bytes at processing time.
-                        Used for skip/regenerate logic (D-20).
+        content_hash:   source-subtitle content hash (SHA-256[:16] of source file bytes
+                        at processing time). This IS the source-subtitle hash — not the
+                        vi-sidecar hash. Used for skip/regenerate logic (D-20, D-27).
+                        Per Phase 3 D-27 + 03-RESEARCH.md Pitfall 7: no parallel
+                        `source_sub_hash` field is added because that would create the
+                        divergence risk (two fields drifting between translate_file()'s
+                        skip logic and the gap-detection re-translate check).
         series_id:      Optional series identifier (reserved for Phase-4 foreign key).
         source_lang:    Optional ISO-639 language code of the source subtitle (e.g. "en").
         episode_key:    Optional episode identifier string (reserved for Phase-4 cross-linking).

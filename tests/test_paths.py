@@ -1,13 +1,12 @@
-"""RED test stubs for Phase 3 path-mapping layer (INTG-03 / D-23, D-24, D-29).
+"""Tests for Phase 3 path-mapping layer (INTG-03 / D-23, D-24, D-29).
 
 All imports from trezarr.paths and trezarr.config are deferred inside each test
-function body so pytest collection succeeds even before the implementation
-exists. Tests skip cleanly via pytest.importorskip when the module is absent
-(Wave 0 / Wave 1).
+function body to preserve the pytest.importorskip pattern used elsewhere in the
+suite (collection succeeds even if a downstream wave hasn't landed yet).
 
-Stubs are marked @pytest.mark.xfail(strict=False) — they are RED scaffolding.
-Later waves (03-02, 03-04) remove the xfail marker when the corresponding
-module lands.
+Plan 03-02 removed all @pytest.mark.xfail(strict=False) markers from this file
+after the trezarr/paths.py implementation landed (per 03-REVIEWS.md HIGH #3
+xfail-removal policy).
 
 Covers:
   INTG-03  apply_path_mapping():  prefix replace, no-match passthrough,
@@ -33,7 +32,6 @@ import pytest
 # ──────────────────────────────────────────────────────────────────────────────
 
 
-@pytest.mark.xfail(strict=False, reason="Plan 03-02: trezarr.paths.apply_path_mapping not yet implemented")
 def test_path_mapping_replaces_prefix():
     """apply_path_mapping replaces the remote prefix with the local prefix (D-23)."""
     paths_mod = pytest.importorskip("trezarr.paths")
@@ -47,7 +45,6 @@ def test_path_mapping_replaces_prefix():
     )
 
 
-@pytest.mark.xfail(strict=False, reason="Plan 03-02: trezarr.paths.apply_path_mapping not yet implemented")
 def test_path_mapping_no_match_passthrough():
     """When no mapping matches, apply_path_mapping returns the input path unchanged (D-23)."""
     paths_mod = pytest.importorskip("trezarr.paths")
@@ -61,7 +58,6 @@ def test_path_mapping_no_match_passthrough():
     )
 
 
-@pytest.mark.xfail(strict=False, reason="Plan 03-02: trezarr.paths.apply_path_mapping not yet implemented")
 def test_path_mapping_strips_trailing_slash():
     """Trailing slashes on the remote prefix are stripped before comparison (Pitfall 3)."""
     paths_mod = pytest.importorskip("trezarr.paths")
@@ -75,7 +71,6 @@ def test_path_mapping_strips_trailing_slash():
     )
 
 
-@pytest.mark.xfail(strict=False, reason="Plan 03-02: longest-prefix-wins not yet implemented")
 def test_longest_prefix_wins():
     """When multiple remote prefixes match, the longest one wins (D-23 defensive choice).
 
@@ -102,7 +97,6 @@ def test_longest_prefix_wins():
 # ──────────────────────────────────────────────────────────────────────────────
 
 
-@pytest.mark.xfail(strict=False, reason="Plan 03-02: assert_within_media_roots not yet implemented")
 def test_traversal_guard_raises_outside_roots(tmp_path):
     """Path outside all configured media roots raises ValueError (D-29, Pitfall 4)."""
     paths_mod = pytest.importorskip("trezarr.paths")
@@ -118,7 +112,6 @@ def test_traversal_guard_raises_outside_roots(tmp_path):
         assert_within_media_roots(outside, [media_root])
 
 
-@pytest.mark.xfail(strict=False, reason="Plan 03-02: assert_within_media_roots not yet implemented")
 def test_traversal_guard_allows_inside(tmp_path):
     """Path inside a configured media root does NOT raise (D-29)."""
     paths_mod = pytest.importorskip("trezarr.paths")
@@ -133,10 +126,6 @@ def test_traversal_guard_allows_inside(tmp_path):
     assert_within_media_roots(inside, [media_root])
 
 
-@pytest.mark.xfail(
-    strict=False,
-    reason="Plan 03-02: traversal guard must resolve via parent for not-yet-existing files (03-REVIEWS.md MEDIUM #9)",
-)
 def test_traversal_guard_handles_nonexistent_sidecar(tmp_path):
     """Traversal guard works for sidecar paths that don't exist yet (write target).
 
@@ -162,7 +151,6 @@ def test_traversal_guard_handles_nonexistent_sidecar(tmp_path):
 # ──────────────────────────────────────────────────────────────────────────────
 
 
-@pytest.mark.xfail(strict=False, reason="Plan 03-02: probe_media_roots not yet implemented")
 def test_probe_unreadable_root_exits(tmp_path):
     """probe_media_roots exits non-zero on unreadable / missing root (D-24)."""
     paths_mod = pytest.importorskip("trezarr.paths")
@@ -173,7 +161,6 @@ def test_probe_unreadable_root_exits(tmp_path):
         probe_media_roots([nonexistent])
 
 
-@pytest.mark.xfail(strict=False, reason="Plan 03-02: probe_media_roots not yet implemented")
 def test_probe_readable_root_passes(tmp_path):
     """probe_media_roots returns normally when every root is readable (D-24)."""
     paths_mod = pytest.importorskip("trezarr.paths")
@@ -186,10 +173,6 @@ def test_probe_readable_root_passes(tmp_path):
     probe_media_roots([media_root])
 
 
-@pytest.mark.xfail(
-    strict=False,
-    reason="Plan 03-02: probe_media_roots must warn (not exit) on non-writable root (03-REVIEWS.md MEDIUM #8)",
-)
 def test_probe_warns_on_non_writable_root(tmp_path, caplog):
     """A readable but non-writable root logs a WARNING but the probe does not exit (INTG-04).
 
@@ -226,10 +209,6 @@ def test_probe_warns_on_non_writable_root(tmp_path, caplog):
 # ──────────────────────────────────────────────────────────────────────────────
 
 
-@pytest.mark.xfail(
-    strict=False,
-    reason="Plan 03-02: assert_media_roots_configured not yet implemented (03-REVIEWS.md HIGH #2)",
-)
 def test_assert_media_roots_configured_refuses_when_empty_and_arr_enabled():
     """Empty path_mappings + sonarr/radarr_enabled → SystemExit at startup (D-29).
 
