@@ -36,8 +36,15 @@ import pytest
 
 
 def _make_media_item(tmp_path, name: str = "Show.S01E01.en.srt"):
-    """Build a MediaItem-shaped object with a real on-disk source sub."""
-    from trezarr.cli import MediaItem  # deferred import
+    """Build a MediaItem-shaped object with a real on-disk source sub.
+
+    Per WR-06: the cli-layer MediaItem dataclass has moved out of
+    ``trezarr.cli`` (where it was dead code in the production import graph)
+    into ``tests/_helpers/cli_media_item.py``. The production translate loop
+    consumes ``arr.sonarr.MediaItem`` via the discover_*_items adapters and
+    reads ``EligibleItem.source_sub_path`` — it never constructs this class.
+    """
+    from tests._helpers.cli_media_item import MediaItem
 
     src = tmp_path / name
     src.write_text("1\n00:00:01,000 --> 00:00:03,000\nHello\n", encoding="utf-8")

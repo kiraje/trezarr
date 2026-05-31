@@ -5,9 +5,10 @@ so pytest collection succeeds before the implementation exists. Tests skip
 cleanly via pytest.importorskip when the module is absent (Wave 0 / Wave 1).
 
 Status after Plan 03-05 (Wave 4 — GREEN):
-  - All 10 stubs are now plain GREEN. trezarr.cli.MediaItem now exists,
-    so test_scan_returns_eligible_item_and_scan_stats had its xfail marker
-    removed (per 03-REVIEWS.md HIGH #3 xfail-removal policy).
+  - All 10 stubs are now plain GREEN. The cli-layer MediaItem dataclass
+    used by these stubs moved from ``trezarr.cli`` to
+    ``tests/_helpers/cli_media_item.py`` per 03-REVIEW WR-06 (it was dead
+    code in the production import graph).
 
 Covers:
   AUTO-01  find_source_sub(): highest-priority language wins, None when absent,
@@ -336,7 +337,10 @@ def test_scan_returns_eligible_item_and_scan_stats(tmp_path):
 
     # Build a single MediaItem for a fake media file with no source sub —
     # producing a no_source skip and no eligible items.
-    from trezarr.cli import MediaItem  # MediaItem dataclass lives in cli.py per PATTERNS
+    # WR-06: the cli-layer MediaItem dataclass moved to tests/_helpers (was
+    # dead code in the production import graph — production constructs
+    # trezarr.arr.sonarr.MediaItem via discover_*_items).
+    from tests._helpers.cli_media_item import MediaItem
 
     media = tmp_path / "Show.S01E09.mkv"
     media.write_bytes(b"\x00\x00\x00fake-mkv")
@@ -398,7 +402,7 @@ def test_scan_counts_unreadable_source_into_error_bucket(tmp_path, monkeypatch):
     src = tmp_path / "Show.S01E01.en.srt"
     src.write_text("...", encoding="utf-8")
 
-    from trezarr.cli import MediaItem
+    from tests._helpers.cli_media_item import MediaItem
 
     item = MediaItem(local_path=media, source_sub_path=None, title="Show", source_lang=None)
 
@@ -428,7 +432,7 @@ def test_scan_counts_toctou_no_source_into_no_source_bucket(tmp_path, monkeypatc
     src = tmp_path / "Show.S01E02.en.srt"
     src.write_text("...", encoding="utf-8")
 
-    from trezarr.cli import MediaItem
+    from tests._helpers.cli_media_item import MediaItem
 
     item = MediaItem(local_path=media, source_sub_path=None, title="Show", source_lang=None)
 

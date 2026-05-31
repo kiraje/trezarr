@@ -22,13 +22,14 @@ Codex review fixes (03-REVIEWS.md):
               translate_skipped=, scan_skipped=, quarantined=, failed=).
 
 Notes:
-  - cli.MediaItem is the cli-layer adaptation of arr.sonarr.MediaItem. cli runs
-    its own dataclass with the fields the translate pipeline needs
-    (local_path, source_sub_path, title, source_lang). The test stubs build
-    cli.MediaItem directly and the discover_*_items wrappers in this module
-    adapt arr.sonarr.MediaItem on the way in (Phase 3: identity passthrough —
-    Phase 4 will widen the adaptation when watcher-emitted events join the
-    discovery sources).
+  - WR-06: the cli-layer MediaItem dataclass that previously lived here moved
+    to ``tests/_helpers/cli_media_item.py``. Production never constructed it
+    — _run_once consumes ``trezarr.arr.sonarr.MediaItem`` instances produced
+    by discover_*_items, and the translate loop reads
+    ``EligibleItem.source_sub_path`` directly off the EligibleItem dataclass,
+    never off the inner media_item attribute. The dataclass lived under
+    ``trezarr.cli`` purely for test-stub convenience and was a maintainability
+    hazard (next reviewer assumes it's part of the production contract).
   - SEQUENTIAL translate loop: LLMClient.semaphore handles concurrency
     WITHIN translate_file. Adding a second asyncio.Semaphore around the
     item loop would double-cap and fight the LLM semaphore.
@@ -40,8 +41,6 @@ from __future__ import annotations
 import argparse
 import asyncio
 import logging
-from dataclasses import dataclass
-from pathlib import Path
 
 from trezarr.arr import DiscoveryError
 from trezarr.arr.radarr import discover_radarr_items
@@ -60,39 +59,6 @@ from trezarr.paths import (
 from trezarr.translate.engine import translate_file
 
 logger = logging.getLogger(__name__)
-
-
-# ── cli-layer MediaItem ────────────────────────────────────────────────────────
-#
-# Distinct from trezarr.arr.sonarr.MediaItem: the cli adapter resolves the
-# source-subtitle path up-front (via scan) and stores it on the dataclass so
-# the translate loop has everything it needs without re-running gap detection.
-#
-# Per 03-PATTERNS.md / 03-04 SUMMARY decisions: scan.py keeps its media_item
-# field typed `Any` so it doesn't depend on this cli-layer shape; the
-# translate loop in this module reads `eligible_item.source_sub_path` directly
-# off the EligibleItem dataclass, never off the inner media_item attribute.
-
-@dataclass
-class MediaItem:
-    """A media item carried through the cli's _run_once pipeline.
-
-    Distinct from trezarr.arr.sonarr.MediaItem — the cli layer carries the
-    resolved source_sub_path alongside the media file, so the translate loop
-    doesn't need to re-run gap detection.
-
-    Attributes:
-        local_path: Resolved local filesystem path to the video file.
-        source_sub_path: Resolved source-subtitle path; None if not yet
-                         discovered (scan_for_eligible_items fills this in).
-        title: Display title for logging (series title or movie title).
-        source_lang: ISO language code of the source sub, or None pre-scan.
-    """
-
-    local_path: Path
-    source_sub_path: Path | None
-    title: str
-    source_lang: str | None
 
 
 # ── Main entry point ───────────────────────────────────────────────────────────
