@@ -1,0 +1,100 @@
+"""TrezarrSettings — layered config via pydantic-settings (D-11).
+
+Priority order (highest to lowest):
+  1. Programmatic init overrides (e.g. LLMClient(settings=TrezarrSettings(llm_model="x")))
+  2. TREZARR_* environment variables
+  3. YAML config file (default: /config/config.yaml; overridable via TREZARR_CONFIG_PATH or
+     the ``_yaml_file`` init arg — used in tests to avoid requiring /config/config.yaml)
+  4. Python-defined defaults in this class
+
+Security: llm_api_key is a SecretStr.  Its literal value NEVER appears in str(), repr(), or
+model_dump() output (T-01-03-01, D-11).  Call .get_secret_value() ONLY inside LLMClient.__init__.
+"""
+import os
+import threading
+from typing import Any, Tuple, Type
+
+from pydantic import SecretStr
+from pydantic_settings import BaseSettings, SettingsConfigDict, YamlConfigSettingsSource
+
+# Default config-file path: Docker /config volume convention (*arr ecosystem).
+# Override at startup via TREZARR_CONFIG_PATH env var.
+CONFIG_PATH: str = os.environ.get("TREZARR_CONFIG_PATH", "/config/config.yaml")
+
+# Thread-local storage used to pass a per-instantiation yaml_file override from
+# __init__ (instance context) to settings_customise_sources (classmethod context).
+# This is the only reliable way to thread-through a per-call override to a classmethod
+# without mutating shared class state.
+_tl: threading.local = threading.local()
+
+
+class TrezarrSettings(BaseSettings):
+    """Project-wide settings loaded from env vars and/or a YAML config file.
+
+    All fields use the ``TREZARR_`` prefix when read from environment variables.
+    Example: ``TREZARR_LLM_MODEL=my-model`` → ``settings.llm_model == "my-model"``.
+    """
+
+    model_config = SettingsConfigDict(
+        env_prefix="TREZARR_",
+        env_nested_delimiter="__",
+        # NOTE: yaml_file in model_config alone is silently ignored in pydantic-settings 2.x
+        # (emits a UserWarning only).  YamlConfigSettingsSource MUST be registered via
+        # settings_customise_sources instead (Pitfall 5 in 01-RESEARCH.md).
+    )
+
+    # ── LLM endpoint (D-03, D-05) ──────────────────────────────────────────────
+    llm_base_url: str = "http://localhost:1234/v1"
+    llm_api_key: SecretStr = SecretStr("not-set")  # NEVER logged; SecretStr masks in repr/str
+    llm_model: str = "gpt-4o"
+
+    # ── Retry + reliability (D-07) ─────────────────────────────────────────────
+    llm_max_retries: int = 4         # SDK default is 2; D-07 requires 4 explicitly
+    llm_request_timeout: float = 120.0
+
+    # ── Concurrency cap (D-06) ─────────────────────────────────────────────────
+    llm_max_concurrency: int = 4    # asyncio.Semaphore cap (default 4)
+
+    # ── Structured-output tier (D-04) ──────────────────────────────────────────
+    llm_structured_output_mode: str = "auto"  # auto | json_schema | json_object | text
+
+    # ── Context window (D-05 — used by Phase 2 batching) ──────────────────────
+    llm_context_window: int = 32768
+
+    def __init__(self, _yaml_file: str | None = None, **data: Any) -> None:
+        """Create settings.
+
+        Args:
+            _yaml_file: Optional path to a YAML config file.  Overrides CONFIG_PATH for
+                this instantiation only.  Used in tests to supply a temp config without
+                requiring /config/config.yaml to exist.
+            **data: Field overrides passed through to BaseSettings (and pydantic).
+        """
+        _tl.yaml_file = _yaml_file  # make available to settings_customise_sources
+        try:
+            super().__init__(**data)
+        finally:
+            _tl.yaml_file = None  # always clean up — never leak across threads
+
+    @classmethod
+    def settings_customise_sources(
+        cls,
+        settings_cls: Type[BaseSettings],
+        init_settings: Any,
+        env_settings: Any,
+        dotenv_settings: Any,
+        file_secret_settings: Any,
+    ) -> Tuple:
+        """Register config sources in priority order.
+
+        This override is REQUIRED.  Using ``yaml_file=`` in model_config alone is silently
+        ignored by pydantic-settings 2.x — YamlConfigSettingsSource must be explicitly
+        registered here (Pitfall 5, empirically confirmed 2026-05-31).
+        """
+        yaml_file = getattr(_tl, "yaml_file", None) or CONFIG_PATH
+        return (
+            init_settings,        # highest priority: programmatic overrides
+            env_settings,         # TREZARR_* environment variables
+            YamlConfigSettingsSource(settings_cls, yaml_file=yaml_file),
+            file_secret_settings,
+        )
