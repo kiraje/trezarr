@@ -378,3 +378,72 @@ def test_scan_returns_eligible_item_and_scan_stats(tmp_path):
     assert stats.no_source == 1, (
         f"Expected stats.no_source == 1 (the only MediaItem has no en sidecar), got {stats.no_source}"
     )
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# WR-03: every gap.is_eligible False reason must land in a typed ScanStats
+# bucket — pre-WR-03 the "no source subtitle at ..." (TOCTOU) and "source
+# subtitle unreadable: ..." reasons fell through to an unclassified INFO log
+# and were silently un-counted by the summary.
+# ──────────────────────────────────────────────────────────────────────────────
+
+
+def test_scan_counts_unreadable_source_into_error_bucket(tmp_path, monkeypatch):
+    """A source-unreadable reason from is_eligible increments ScanStats.error, NOT no_source (WR-03)."""
+    import trezarr.discover.scan as scan_mod
+
+    media = tmp_path / "Show.S01E01.mkv"
+    media.write_bytes(b"\x00")
+    # Create the source sub so find_source_sub succeeds — only is_eligible reports unreadable.
+    src = tmp_path / "Show.S01E01.en.srt"
+    src.write_text("...", encoding="utf-8")
+
+    from trezarr.cli import MediaItem
+
+    item = MediaItem(local_path=media, source_sub_path=None, title="Show", source_lang=None)
+
+    # Patch the lazily-imported gap.is_eligible inside scan's namespace via the
+    # actual gap module — scan does `from trezarr.discover.gap import is_eligible`
+    # at call time, so we patch the source.
+    import trezarr.discover.gap as gap_mod
+
+    def _fake_is_eligible(source_sub_path, ledger):
+        return (False, f"source subtitle unreadable: simulated EIO at {source_sub_path}")
+
+    monkeypatch.setattr(gap_mod, "is_eligible", _fake_is_eligible)
+
+    ledger = _make_minimal_ledger(tmp_path)
+    _, stats = scan_mod.scan_for_eligible_items([item], ledger=ledger, lang_priority=["en"])
+
+    assert stats.error == 1, f"Expected stats.error == 1 for unreadable source, got {stats.error}"
+    assert stats.no_source == 0, "Unreadable source must NOT be counted as no_source (WR-03)"
+
+
+def test_scan_counts_toctou_no_source_into_no_source_bucket(tmp_path, monkeypatch):
+    """A 'no source subtitle at ...' is_eligible reason increments ScanStats.no_source (WR-03)."""
+    import trezarr.discover.scan as scan_mod
+
+    media = tmp_path / "Show.S01E02.mkv"
+    media.write_bytes(b"\x00")
+    src = tmp_path / "Show.S01E02.en.srt"
+    src.write_text("...", encoding="utf-8")
+
+    from trezarr.cli import MediaItem
+
+    item = MediaItem(local_path=media, source_sub_path=None, title="Show", source_lang=None)
+
+    import trezarr.discover.gap as gap_mod
+
+    def _fake_is_eligible(source_sub_path, ledger):
+        # Simulate TOCTOU: the source file vanished between find_source_sub and is_eligible.
+        return (False, f"no source subtitle at {source_sub_path}")
+
+    monkeypatch.setattr(gap_mod, "is_eligible", _fake_is_eligible)
+
+    ledger = _make_minimal_ledger(tmp_path)
+    _, stats = scan_mod.scan_for_eligible_items([item], ledger=ledger, lang_priority=["en"])
+
+    assert stats.no_source == 1, (
+        f"Expected stats.no_source == 1 (TOCTOU between find_source_sub and is_eligible), got {stats.no_source}"
+    )
+    assert stats.error == 0, "TOCTOU no-source must NOT be counted as error (WR-03)"

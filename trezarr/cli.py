@@ -306,14 +306,25 @@ async def _run_once(config_path: str | None) -> int:
             n_fail += 1
 
     # Step 8 — Widened summary (MEDIUM #14) + exit code (D-30).
-    n_scan_skipped = scan_stats.no_source + scan_stats.foreign_vi + scan_stats.already_done
+    # WR-03: `scan_stats.error` is a transient I/O error count and must be
+    # surfaced separately from no_source (a missing-source skip). It is
+    # included in scan_skipped for the headline total but broken out in the
+    # parenthesised breakdown alongside the existing pre-translate counters.
+    scan_error = getattr(scan_stats, "error", 0)
+    n_scan_skipped = (
+        scan_stats.no_source
+        + scan_stats.foreign_vi
+        + scan_stats.already_done
+        + scan_error
+    )
     summary = (
         f"Run complete: discovered={n_discovered}, eligible={n_eligible}, "
         f"translated={n_done}, translate_skipped={n_translate_skipped}, "
         f"scan_skipped={n_scan_skipped} "
         f"(no_source={scan_stats.no_source}, "
         f"foreign_vi={scan_stats.foreign_vi}, "
-        f"already_done={scan_stats.already_done}), "
+        f"already_done={scan_stats.already_done}, "
+        f"error={scan_error}), "
         f"quarantined={n_quar}, failed={n_fail}"
     )
     if discovery_failures:

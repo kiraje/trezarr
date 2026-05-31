@@ -83,23 +83,38 @@ class ScanStats:
     as the post-translate counts (translated, quarantined, failed). Without
     this typed counter struct, the pre-translate skips would be silently lost.
 
+    WR-03: a sixth `error` counter was added because ``gap.is_eligible`` Case
+    0's second branch (``"source subtitle unreadable: ..."``) is a true
+    transient I/O error, not a missing-source skip — counting it as no_source
+    would conflate the two failure modes in the end-of-run summary. The
+    classifier in ``scan_for_eligible_items`` matches reason strings
+    explicitly so silent string-drift won't drop counts into the unclassified
+    bucket as it did pre-WR-03.
+
     Mutable dataclass (NOT frozen) so the scan loop can `stats.scanned += 1`
     in-place.
 
     Attributes:
         scanned:      Total MediaItems passed to scan_for_eligible_items().
-        no_source:    Count where find_source_sub() returned None — no
-                      configured-language sidecar exists next to the media.
+        no_source:    Count where find_source_sub() returned None OR
+                      gap.is_eligible reported ``"no source subtitle at ..."``
+                      (TOCTOU between find_source_sub and is_eligible).
         foreign_vi:   Count blocked by D-26 — a foreign .vi.srt is present
                       and not in the ledger; we never clobber it.
         already_done: Count of items where the ledger says status=done AND
                       the source content_hash matches — D-27 idempotency.
+        error:        Count where the source-subtitle file existed at
+                      find_source_sub time but failed an I/O read inside
+                      gap.is_eligible (``"source subtitle unreadable: ..."``).
+                      Distinct from no_source so the summary can flag
+                      transient I/O issues vs missing files.
     """
 
     scanned: int = 0
     no_source: int = 0
     foreign_vi: int = 0
     already_done: int = 0
+    error: int = 0
 
 
 def find_source_sub(media_path: Path, lang_priority: Sequence[str]) -> tuple[Path, str] | None:
@@ -255,13 +270,37 @@ def scan_for_eligible_items(
         ok, reason = is_eligible(source_sub_path, ledger)
 
         if not ok:
+            # WR-03: explicitly classify each is_eligible False reason so a
+            # silent reason-string drift cannot drop counts into the
+            # unclassified bucket. Pre-WR-03, "no source subtitle at ..." and
+            # "source subtitle unreadable: ..." both fell through to the
+            # default INFO log and were NOT counted in any ScanStats field;
+            # the summary line silently under-counted skipped items.
             reason_lower = reason.lower()
             if "foreign" in reason_lower:
                 stats.foreign_vi += 1
             elif "already translated" in reason_lower:
                 stats.already_done += 1
+            elif "no source" in reason_lower:
+                # Case 0a — TOCTOU between find_source_sub and is_eligible
+                # (the source file vanished between glob and read). Counted
+                # as no_source for summary parity with the find_source_sub
+                # None branch above.
+                stats.no_source += 1
+            elif "unreadable" in reason_lower:
+                # Case 0b — source file present but read failed (permission /
+                # I/O). This is a transient error, not a missing-source skip.
+                stats.error += 1
+                logger.warning(
+                    "source-sub unreadable for %s: %s",
+                    source_sub_path, reason,
+                )
             else:
                 # Unrecognised non-eligible reason — log but do not crash.
+                # If we reach this branch, gap.is_eligible has grown a new
+                # reason string that scan_for_eligible_items doesn't classify
+                # yet; the count is intentionally dropped (loud at INFO) so
+                # the next review surfaces the drift.
                 logger.info(
                     "scan skip for %s — unclassified reason: %s",
                     source_sub_path, reason,
