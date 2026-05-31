@@ -255,6 +255,58 @@ async def test_llm_client_not_constructed_when_no_eligible(tmp_path, settings_fa
 # ──────────────────────────────────────────────────────────────────────────────
 
 
+async def test_all_arr_failure_distinct_notice_and_label(tmp_path, capsys, caplog, settings_factory):
+    """When both *arrs are enabled and BOTH fail discovery, the run exits 1 with a distinct notice (WR-04).
+
+    Pre-WR-04: the "All enabled *arr services failed" log fired but the run
+    silently continued through the same "Run complete: ... partial-discovery-
+    failures=[...]" summary used by the 1-of-2-failed case, so operators
+    couldn't distinguish the fatal state from a partial one. WR-04 emits a
+    one-line "ALL DISCOVERY FAILED" notice on stdout AND switches the summary
+    suffix from "partial-discovery-failures" to "all-discovery-failures".
+    """
+    import logging
+
+    arr_pkg = pytest.importorskip("trezarr.arr")
+    DiscoveryError = arr_pkg.DiscoveryError
+
+    cli_mod = pytest.importorskip("trezarr.cli")
+    _run_once = cli_mod._run_once
+
+    settings = settings_factory(sonarr_enabled=True, radarr_enabled=True)
+
+    with (
+        patch("trezarr.cli.TrezarrSettings", return_value=settings),
+        patch("trezarr.cli.discover_sonarr_items", side_effect=DiscoveryError("sonarr down")),
+        patch("trezarr.cli.discover_radarr_items", side_effect=DiscoveryError("radarr down")),
+        patch(
+            "trezarr.cli.scan_for_eligible_items",
+            return_value=([], MagicMock(scanned=0, no_source=0, foreign_vi=0, already_done=0, error=0)),
+        ),
+        patch("trezarr.cli.translate_file", new=AsyncMock()),
+        patch("trezarr.cli.apply_permissions"),
+        patch("trezarr.cli.probe_media_roots"),
+        patch("trezarr.cli.assert_media_roots_configured"),
+        patch("trezarr.cli.LLMClient"),
+        caplog.at_level(logging.ERROR),
+    ):
+        exit_code = await _run_once(None)
+
+    captured = capsys.readouterr().out
+    assert exit_code == 1, f"All-arr-failed must exit non-zero, got {exit_code}"
+    assert "ALL DISCOVERY FAILED" in captured, (
+        f"Distinct WR-04 notice missing from stdout; got:\n{captured}"
+    )
+    assert "all-discovery-failures=[" in captured, (
+        f"Summary must distinguish all-vs-partial failure mode; got:\n{captured}"
+    )
+    # Cross-check: a logger.error for the all-arr-failed condition must have fired.
+    assert any(
+        "All enabled *arr services failed" in rec.getMessage()
+        for rec in caplog.records
+    ), "Expected an error log naming the all-arr-failed condition"
+
+
 async def test_one_arr_failure_does_not_kill_other_arr(tmp_path, settings_factory):
     """Sonarr raising DiscoveryError still allows Radarr discovery + run to complete (MEDIUM #10).
 

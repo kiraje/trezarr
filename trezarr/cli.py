@@ -199,11 +199,22 @@ async def _run_once(config_path: str | None) -> int:
         discovery_failures.append(f"radarr: {exc}")
 
     enabled_arr = (1 if settings.sonarr_enabled else 0) + (1 if settings.radarr_enabled else 0)
-    if enabled_arr > 0 and len(discovery_failures) == enabled_arr:
-        # All enabled *arr services failed → fatal for the run.
+    all_arr_failed = enabled_arr > 0 and len(discovery_failures) == enabled_arr
+    if all_arr_failed:
+        # WR-04: all enabled *arr services failed — log this at the same
+        # severity used by D-30 batch resilience (logger.error, not warning)
+        # and emit a distinct one-line operator notice BEFORE the summary so
+        # the "discovery_failures=N" suffix isn't easy to overlook. The run
+        # still completes the summary line (for symmetry with the partial-
+        # failure case) and exits non-zero.
         logger.error(
-            "All enabled *arr services failed discovery: %s",
-            "; ".join(discovery_failures),
+            "All enabled *arr services failed discovery (%d of %d): %s",
+            len(discovery_failures), enabled_arr, "; ".join(discovery_failures),
+        )
+        print(
+            "ALL DISCOVERY FAILED — see logs above; the run will exit non-zero "
+            "after the summary line.",
+            flush=True,
         )
 
     n_discovered = len(all_items)
@@ -328,13 +339,17 @@ async def _run_once(config_path: str | None) -> int:
         f"quarantined={n_quar}, failed={n_fail}"
     )
     if discovery_failures:
-        summary += f"; partial-discovery-failures=[{'; '.join(discovery_failures)}]"
+        # WR-04: distinguish "1 of 2 *arrs failed" (partial) from "2 of 2
+        # *arrs failed" (fatal) inline in the summary so log scrapers don't
+        # need to count the discovery_failures list themselves.
+        failure_label = "all-discovery-failures" if all_arr_failed else "partial-discovery-failures"
+        summary += f"; {failure_label}=[{'; '.join(discovery_failures)}]"
     print(summary)
 
     # All-enabled-arr-failed condition contributes to exit 1 even when no items
-    # were processed (per HIGH #2 + MEDIUM #10 conjunction):
-    all_arr_failed = enabled_arr > 0 and len(discovery_failures) == enabled_arr
-
+    # were processed (per HIGH #2 + MEDIUM #10 conjunction). `all_arr_failed`
+    # was computed above (WR-04) so the log + summary stay in sync with the
+    # exit-code decision.
     if n_fail > 0 or n_quar > 0 or all_arr_failed:
         return 1
     return 0
