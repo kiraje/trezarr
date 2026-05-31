@@ -434,11 +434,27 @@ async def translate_file(
         content_hash=content_hash,
     ))
 
-    # Step 5: Read source SRT
-    source_doc = read_srt(path)
-
-    # Step 6: Batch the source document
-    batches = batch_subdoc(source_doc, settings)
+    # Steps 5-6: Read and batch the source.  Both can raise on poisoned source files
+    # (PermissionError, decode errors, malformed SRT).  A raise here would leave the
+    # ledger at in_progress forever — catch and quarantine per the function contract.
+    try:
+        source_doc = read_srt(path)
+        batches = batch_subdoc(source_doc, settings)
+    except Exception as exc:
+        reason = f"read/batch failure: {exc}"
+        quarantine_path = _write_quarantine(path, reason, [], settings)
+        ledger.record(LedgerEntry(
+            source_path=str(path),
+            output_path=None,
+            status="quarantined",
+            content_hash=content_hash,
+            quarantine_path=str(quarantine_path),
+        ))
+        return TranslationResult(
+            status="quarantined",
+            quarantine_path=quarantine_path,
+            reason=reason,
+        )
 
     # Step 7: Dispatch all batches concurrently via asyncio.gather
     # ONLY catch BatchValidationError (retry-exhausted batch gate failure → quarantine).

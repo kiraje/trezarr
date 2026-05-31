@@ -151,6 +151,41 @@ async def test_quarantine_on_retry_exhaustion(settings_factory):
     assert exc_info.value is not None
 
 
+async def test_translate_file_read_failure_quarantines(settings_factory, tmp_path):
+    """read_srt failure quarantines the file and clears in_progress from ledger (WR-04).
+
+    The function contract promises "on any failure → return TranslationResult(status='quarantined')".
+    A PermissionError from read_srt must route to quarantine, not leave the ledger at in_progress.
+    """
+    engine_mod = pytest.importorskip("trezarr.translate.engine")
+    from unittest.mock import patch
+    from trezarr.translate.engine import translate_file, TranslationResult
+    from trezarr.output.ledger import Ledger
+
+    quarantine_dir = tmp_path / "quarantine"
+    settings = settings_factory(translate_quarantine_dir=str(quarantine_dir))
+
+    src = tmp_path / "Show.S01E01.en.srt"
+    src.write_text("1\n00:00:01,000 --> 00:00:03,000\nHello\n", encoding="utf-8")
+
+    ledger_path = tmp_path / "ledger.json"
+    ledger = Ledger(ledger_path)
+
+    from trezarr.llm.client import LLMClient
+    client = LLMClient(settings)
+
+    with patch("trezarr.translate.engine.read_srt", side_effect=PermissionError("no access")):
+        result = await translate_file(src, settings, client, ledger)
+
+    assert result.status == "quarantined", (
+        f"Expected status='quarantined' when read_srt raises, got {result.status!r}"
+    )
+    entry = ledger.check(str(src))
+    assert entry is not None and entry.status == "quarantined", (
+        "Ledger must not be left at in_progress when read_srt fails (WR-04)"
+    )
+
+
 async def test_translate_file_non_batch_error_propagates(settings_factory, tmp_path):
     """Non-BatchValidationError (e.g. RuntimeError) propagates out of translate_file — not quarantined (CR-01).
 
