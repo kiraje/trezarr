@@ -1,11 +1,9 @@
-"""RED test stubs for Phase 3 *arr discovery (INTG-01 / D-22).
+"""Tests for Phase 3 *arr discovery (INTG-01 / D-22).
 
-All imports from trezarr.arr.* are deferred inside each test function body so
-pytest collection succeeds before the implementation exists. Tests skip cleanly
-via pytest.importorskip when the module is absent (Wave 0 / Wave 1).
-
-Stubs are marked @pytest.mark.xfail(strict=False) — they are RED scaffolding.
-Plan 03-03 removes the xfail markers when the implementation lands.
+Imports from trezarr.arr.* are deferred inside each test function body via
+pytest.importorskip so collection survives even if the production modules are
+absent. Plan 03-03 landed the implementation; all stubs are now GREEN and the
+previous Wave-0 RED-scaffolding markers (strict=False) have been removed.
 
 Convention: pyarr 6.x is synchronous (`from pyarr import Sonarr, Radarr` — NOT
 `SonarrAPI` / `RadarrAPI`), so these are sync `def` tests using the `httpx_mock`
@@ -127,7 +125,6 @@ def test_sonarr_filters_unmonitored(httpx_mock):
 # ──────────────────────────────────────────────────────────────────────────────
 
 
-@pytest.mark.xfail(strict=False, reason="Plan 03-03: trezarr.arr.radarr.discover_radarr_items not yet implemented")
 def test_radarr_discovers_movies(httpx_mock):
     """discover_radarr_items returns MediaItems with movieFile.path (Pitfall 2)."""
     radarr_mod = pytest.importorskip("trezarr.arr.radarr")
@@ -171,10 +168,6 @@ def test_radarr_discovers_movies(httpx_mock):
     )
 
 
-@pytest.mark.xfail(
-    strict=False,
-    reason="Plan 03-03: discover_radarr_items must skip movies with no movieFile (Pitfall 2)",
-)
 def test_radarr_skips_missing_file(httpx_mock):
     """A movie with movieFileId=0 / movieFile=None is skipped, not yielded as eligible (Pitfall 2)."""
     radarr_mod = pytest.importorskip("trezarr.arr.radarr")
