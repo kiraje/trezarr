@@ -96,7 +96,7 @@ this consistency must work.
 | Track relationship evolution across episodes | Pronoun pairs change as relationships change (enemies→lovers); static maps would drift wrong | — Pending |
 | Source-agnostic input, prioritized by relational fidelity to Vietnamese | English flattens relationships; the original East-Asian source preserves the info Vietnamese needs | — Pending |
 | Two-pass + LLM self-review pipeline | Full-file analysis enables consistency; a self-critique pass earns blind-trust automation | — Pending |
-| User-provided OpenAI-compatible endpoint | User already has their own LLM endpoint; avoids hosting models and cost-management scope | — Pending |
+| User-provided OpenAI-compatible endpoint | User already has their own LLM endpoint; avoids hosting models and cost-management scope | ✓ Implemented (Phase 1) — AsyncOpenAI client wraps base_url/model/key with retries, an asyncio.Semaphore concurrency cap, and json_schema→json_object→text fallback, as an isolated tested leaf |
 | Dockerized service + web UI | Matches *arr-stack conventions self-hosters expect | — Pending |
 
 ## Evolution
@@ -117,4 +117,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-05-31 after initialization*
+*Last updated: 2026-05-31 after Phase 1 (Codec & LLM Client Foundation) — SRT codec (byte-identical round-trip, FMT-01) and the OpenAI-compatible LLM client (ENG-01) shipped as tested, isolated leaves. Not yet moved to Validated: no user-facing sidecar is produced until Phase 2.*
