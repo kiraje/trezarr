@@ -13,7 +13,7 @@ Trezarr is built leaves-first, novel-logic-last. We start by proving the mechani
 
 Decimal phases appear between their surrounding integers in numeric order.
 
-- [ ] **Phase 1: Codec & LLM Client Foundation** - Parse/serialize SRT and call the user's OpenAI-compatible endpoint as isolated, testable leaves
+- [x] **Phase 1: Codec & LLM Client Foundation** - Parse/serialize SRT and call the user's OpenAI-compatible endpoint as isolated, testable leaves (completed 2026-05-31)
 - [ ] **Phase 2: Mechanical Translation Core + Validation Gate** - Single-pass translate a parsed file and write a valid sidecar, gated by a hard pre-write quality check
 - [ ] **Phase 3: \*arr Integration + First Vertical Slice** - Discover a real episode via Sonarr/Radarr and translate it to a sidecar end-to-end (de-risk path-mapping & permissions)
 - [ ] **Phase 4: Series Bible Store & Schema** - Persistent, versioned, lockable per-series consistency store carried forward across episodes
@@ -39,11 +39,11 @@ Decimal phases appear between their surrounding integers in numeric order.
   3. A configured base URL / model / API key produces a successful test call against the user's endpoint, with retries and a concurrency cap
   4. The LLM client degrades gracefully (JSON mode fallback) when an endpoint lacks strict structured-output support
 
-**Plans:** 2/3 plans executed
+**Plans:** 3/3 plans complete
 
 - [x] 01-01-PLAN.md — Wave 0: project scaffold, pytest harness, 6 SRT fixtures, all test stubs (RED suite)
 - [x] 01-02-PLAN.md — Wave 1A: SRT codec — SubLine/SubDoc model, encoding detection, byte-identical read_srt/write_srt (FMT-01)
-- [ ] 01-03-PLAN.md — Wave 1B: Config (TrezarrSettings + YAML source + SecretStr) and LLM client (AsyncOpenAI + semaphore + tier fallback) (ENG-01)
+- [x] 01-03-PLAN.md — Wave 1B: Config (TrezarrSettings + YAML source + SecretStr) and LLM client (AsyncOpenAI + semaphore + tier fallback) (ENG-01)
 
 ### Phase 2: Mechanical Translation Core + Validation Gate
 
@@ -188,7 +188,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Codec & LLM Client Foundation | 2/3 | In Progress|  |
+| 1. Codec & LLM Client Foundation | 3/3 | Complete   | 2026-05-31 |
 | 2. Mechanical Translation Core + Validation Gate | 0/TBD | Not started | - |
 | 3. \*arr Integration + First Vertical Slice | 0/TBD | Not started | - |
 | 4. Series Bible Store & Schema | 0/TBD | Not started | - |

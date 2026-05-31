@@ -32,7 +32,7 @@ Requirements for initial release. Each maps to roadmap phases.
 
 ### Translation Engine
 
-- [ ] **ENG-01**: User can configure a user-provided OpenAI-SDK-compatible endpoint (base URL, model, API key) that powers all translation
+- [x] **ENG-01**: User can configure a user-provided OpenAI-SDK-compatible endpoint (base URL, model, API key) that powers all translation
 - [ ] **ENG-02**: Trezarr batches/chunks long subtitle files within token limits without splitting a sentence or scene across batch boundaries
 - [ ] **ENG-03**: Each batch is translated with a surrounding-line context window (read-only lines before/after) for conversational coherence
 - [ ] **ENG-04**: Trezarr runs a two-pass pipeline — Pass 1 analyzes the full file + media metadata to build/update the Series Bible before Pass 2 translates any line
@@ -121,7 +121,7 @@ Which phases cover which requirements. Populated during roadmap creation.
 | FMT-03 | Phase 9 | Pending |
 | FMT-04 | Phase 9 | Pending |
 | FMT-05 | Phase 2 | Pending |
-| ENG-01 | Phase 1 | Pending |
+| ENG-01 | Phase 1 | Complete |
 | ENG-02 | Phase 2 | Pending |
 | ENG-03 | Phase 2 | Pending |
 | ENG-04 | Phase 5 | Pending |
