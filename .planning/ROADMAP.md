@@ -58,7 +58,15 @@ Decimal phases appear between their surrounding integers in numeric order.
   3. A passing translation is written as `Show.S01E01.vi.srt` (matching the video basename, ISO-639 `vi`) atomically (temp+rename) and as valid UTF-8
   4. A failed or rejected translation can be re-run idempotently without duplicating or corrupting output
 
-**Plans**: TBD
+**Plans:** 3 plans
+**Wave 1**
+
+- [ ] 02-01-PLAN.md — Wave 0: test scaffold — tests/translate/ and tests/output/ RED stubs for all Phase 2 modules (ENG-02, ENG-03, ENG-06, ENG-07, FMT-05)
+- [ ] 02-02-PLAN.md — Wave 1: pure-Python transform layer — sentinel.py, batching.py, validate.py (7-check gate), write.py (atomic sidecar), TrezarrSettings Phase-2 fields
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [ ] 02-03-PLAN.md — Wave 2: engine.py + ledger.py + tenacity install — translate_file() entry point, numbered-line protocol, batch retry/quarantine, idempotency ledger
 
 ### Phase 3: \*arr Integration + First Vertical Slice
 
@@ -189,7 +197,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Codec & LLM Client Foundation | 3/3 | Complete    | 2026-05-31 |
-| 2. Mechanical Translation Core + Validation Gate | 0/TBD | Not started | - |
+| 2. Mechanical Translation Core + Validation Gate | 0/3 | Not started | - |
 | 3. \*arr Integration + First Vertical Slice | 0/TBD | Not started | - |
 | 4. Series Bible Store & Schema | 0/TBD | Not started | - |
 | 5. Three-Pass Pronoun Engine | 0/TBD | Not started | - |
