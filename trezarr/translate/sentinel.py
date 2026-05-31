@@ -20,6 +20,15 @@ TAG_RE = re.compile(r'(<[^>]+>|\{\\[^}]+\})')
 def extract_sentinels(text: str) -> tuple[str, dict[str, str]]:
     """Replace inline tags with opaque <<TN>> tokens.
 
+    The sentinel counter resets to 0 on every call, so keys are <<T0>>, <<T1>>, …
+    relative to the single cue passed in.
+
+    CALLER INVARIANT: Each call to extract_sentinels must produce a sentinel_map
+    that is kept and used exclusively with the translated text for that same cue.
+    Never merge sentinel_maps from different cues — key <<T0>> is per-cue-local
+    and would collide if maps were combined across cues.  The engine (engine.py)
+    maintains one sentinel_map per cue in a parallel list and reinserts per cue.
+
     Args:
         text: Subtitle cue text, possibly containing inline formatting tags.
 
