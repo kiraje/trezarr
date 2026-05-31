@@ -4,13 +4,13 @@ milestone: v1.0
 milestone_name: milestone
 status: executing
 stopped_at: Phase 3 context gathered
-last_updated: "2026-05-31T21:02:59.411Z"
+last_updated: "2026-05-31T21:27:41.389Z"
 last_activity: 2026-05-31
 progress:
   total_phases: 10
   completed_phases: 2
   total_plans: 11
-  completed_plans: 7
+  completed_plans: 9
   percent: 20
 ---
 
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-05-31)
 ## Current Position
 
 Phase: 03 (*arr Integration + First Vertical Slice) — EXECUTING
-Plan: 2 of 5
+Plan: 3 of 5
 Status: Ready to execute
 Last activity: 2026-05-31
 
-Progress: [██████░░░░] 64%
+Progress: [████████░░] 82%
 
 ## Performance Metrics
 
@@ -59,6 +59,7 @@ Progress: [██████░░░░] 64%
 | Phase 02 P02 | 10 | 2 tasks | 7 files |
 | Phase 02 P03 | 12 | 2 tasks | 4 files |
 | Phase 03 P01 | 25 min | 2 tasks | 11 files |
+| Phase 03 P03 | 20min | 2 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -76,6 +77,9 @@ Recent decisions affecting current work:
 - [Phase ?]: avoids mutating class-level state in multi-threaded scenarios
 - [Phase ?]: aligns with test expectations and allows endpoint-level tier probing
 - [Phase ?]: _make_translate_batch_fn factory: tenacity stop_after_attempt bound at runtime from settings.translate_batch_retry_attempts
+- [Phase 03-03]: Catch pyarr.exceptions.PyarrError (parent) in *arr discovery — pyarr abstracts httpx errors — pyarr wraps httpx.RequestError into PyarrConnectionError and 4xx/5xx into typed Pyarr*Error; raw httpx exceptions never escape pyarr's request layer (Rule 3 deviation from plan)
+- [Phase 03-03]: Pass api_ver=v3 to pyarr Sonarr/Radarr constructors — Skips pyarr's GET /api auto-detect probe. Sonarr/Radarr v3 is stable per CLAUDE.md + D-22; test fixtures only mock typed endpoints, not the version probe (Rule 3 deviation)
+- [Phase 03-03]: MediaItem dataclass owned by trezarr.arr.sonarr; re-imported by radarr.py — Field 'title' (not series_title) carries both episode and movie titles per 03-REVIEWS.md LOW #17 — defined once to avoid drift
 
 ### Pending Todos
 
@@ -96,6 +100,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-05-31T21:02:51.336Z
+Last session: 2026-05-31T21:24:32.799Z
 Stopped at: Phase 3 context gathered
 Resume file: None

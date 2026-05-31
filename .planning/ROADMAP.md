@@ -85,11 +85,11 @@ Decimal phases appear between their surrounding integers in numeric order.
 **Wave 1**
 
 - [x] 03-01-PLAN.md — Wave 0: dependency install (pyarr, pytest-httpx) + RED test stubs for all Phase-3 modules
-- [ ] 03-02-PLAN.md — Wave 1: TrezarrSettings Phase-3 fields + paths.py (path mapping, startup probe, traversal guard) + ledger D-27 docstring
+- [x] 03-02-PLAN.md — Wave 1: TrezarrSettings Phase-3 fields + paths.py (path mapping, startup probe, traversal guard) + ledger D-27 docstring
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-- [ ] 03-03-PLAN.md — Wave 1: arr discovery clients sonarr.py + radarr.py (pyarr 6.x, X-Api-Key, path mapping)
+- [x] 03-03-PLAN.md — Wave 1: arr discovery clients sonarr.py + radarr.py (pyarr 6.x, X-Api-Key, path mapping)
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
@@ -214,7 +214,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 |-------|----------------|--------|-----------|
 | 1. Codec & LLM Client Foundation | 3/3 | Complete    | 2026-05-31 |
 | 2. Mechanical Translation Core + Validation Gate | 3/3 | Complete    | 2026-05-31 |
-| 3. \*arr Integration + First Vertical Slice | 1/5 | In Progress|  |
+| 3. \*arr Integration + First Vertical Slice | 3/5 | In Progress|  |
 | 4. Series Bible Store & Schema | 0/TBD | Not started | - |
 | 5. Three-Pass Pronoun Engine | 0/TBD | Not started | - |
 | 6. Relationship Evolution + Self-Review | 0/TBD | Not started | - |
