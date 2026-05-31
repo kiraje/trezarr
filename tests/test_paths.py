@@ -260,10 +260,6 @@ def test_assert_media_roots_configured_refuses_when_empty_and_arr_enabled():
 # ──────────────────────────────────────────────────────────────────────────────
 
 
-@pytest.mark.xfail(
-    strict=False,
-    reason="Plan 03-02: path_mappings must use Field(default_factory=list) (03-REVIEWS.md HIGH #1)",
-)
 def test_path_mappings_no_shared_default_identity():
     """Two TrezarrSettings() instances must NOT share the same list object (D-23).
 
@@ -281,10 +277,6 @@ def test_path_mappings_no_shared_default_identity():
     )
 
 
-@pytest.mark.xfail(
-    strict=False,
-    reason="Plan 03-02: source_lang_priority must use Field(default_factory=...) (03-REVIEWS.md HIGH #1)",
-)
 def test_source_lang_priority_no_shared_default_identity():
     """source_lang_priority defaults must be per-instance, not a shared list (D-25)."""
     from trezarr.config import TrezarrSettings

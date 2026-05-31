@@ -63,7 +63,6 @@ def test_api_key_not_logged():
 import pytest
 
 
-@pytest.mark.xfail(strict=False, reason="Plan 03-02: TrezarrSettings.sonarr_host not yet added")
 def test_sonarr_host_env_override(monkeypatch):
     """TREZARR_SONARR_HOST env var populates settings.sonarr_host (D-22)."""
     from trezarr.config import TrezarrSettings  # deferred import
@@ -73,7 +72,6 @@ def test_sonarr_host_env_override(monkeypatch):
     assert settings.sonarr_host == "192.168.1.10"
 
 
-@pytest.mark.xfail(strict=False, reason="Plan 03-02: SecretStr arr api keys not yet added")
 def test_sonarr_api_key_not_in_repr():
     """sonarr_api_key is SecretStr — secret value never appears in repr/str/model_dump (D-11, D-22)."""
     from trezarr.config import TrezarrSettings  # deferred import
@@ -86,7 +84,6 @@ def test_sonarr_api_key_not_in_repr():
     assert secret_arr_key not in str(settings.model_dump()), "sonarr_api_key leaked in model_dump()"
 
 
-@pytest.mark.xfail(strict=False, reason="Plan 03-02: path_mappings field + PathMapping model not yet added")
 def test_path_mappings_yaml_load(tmp_path):
     """path_mappings deserializes from a YAML list-of-objects (D-23).
 

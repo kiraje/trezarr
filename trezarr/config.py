@@ -14,8 +14,10 @@ import os
 import threading
 from typing import Any, Tuple, Type
 
-from pydantic import SecretStr
+from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict, YamlConfigSettingsSource
+
+from trezarr.paths import PathMapping
 
 # Default config-file path: Docker /config volume convention (*arr ecosystem).
 # Override at startup via TREZARR_CONFIG_PATH env var.
@@ -80,6 +82,37 @@ class TrezarrSettings(BaseSettings):
     # ── Phase 2: Output paths (D-18, D-20) ───────────────────────────────────────────────
     translate_quarantine_dir: str = "/config/quarantine"
     translate_ledger_path: str = "/config/processed_files.json"
+
+    # ── Phase 3: *arr connection (D-22) ────────────────────────────────────────
+    sonarr_host: str = ""
+    sonarr_port: int = 8989
+    sonarr_api_key: SecretStr = SecretStr("")  # NEVER logged; SecretStr masks in repr/str
+    sonarr_enabled: bool = False
+    radarr_host: str = ""
+    radarr_port: int = 7878
+    radarr_api_key: SecretStr = SecretStr("")  # NEVER logged; SecretStr masks in repr/str
+    radarr_enabled: bool = False
+
+    # ── Phase 3: Path mapping (D-23) ───────────────────────────────────────────
+    # Env: TREZARR_PATH_MAPPINGS='[{"remote":"/tv","local":"/data/tv"}]' (JSON array string)
+    # YAML: path_mappings: [{remote: /tv, local: /data/tv}]
+    # NOTE: Field(default_factory=list) — NOT literal []. Pydantic v2 generally copies
+    # model defaults, but the safer & clearer pattern is default_factory for mutable
+    # defaults so each instance gets its own list object (03-REVIEWS.md HIGH #1).
+    path_mappings: list[PathMapping] = Field(default_factory=list)
+
+    # ── Phase 3: Source-language priority (D-25) ───────────────────────────────
+    # NOTE: Field(default_factory=lambda: ["en"]) — NOT literal ["en"]. Same
+    # mutable-default-safety rationale as path_mappings (03-REVIEWS.md HIGH #1).
+    source_lang_priority: list[str] = Field(default_factory=lambda: ["en"])
+
+    # ── Phase 3: Permissions (D-29) ────────────────────────────────────────────
+    # PUID/PGID = -1 means "leave unchanged" (POSIX os.chown convention).
+    # umask is the int value only; apply_permissions() computes 0o666 & ~umask per-call.
+    # NEVER call os.umask() — that is process-global and unsafe in async code.
+    puid: int = -1
+    pgid: int = -1
+    umask: int = 0o022
 
     def __init__(self, _yaml_file: str | None = None, **data: Any) -> None:
         """Create settings.
