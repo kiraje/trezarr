@@ -107,13 +107,53 @@ Which phases cover which requirements. Populated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| (to be mapped by roadmapper) | — | Pending |
+| INTG-01 | Phase 3 | Pending |
+| INTG-02 | Phase 10 | Pending |
+| INTG-03 | Phase 3 | Pending |
+| INTG-04 | Phase 3 | Pending |
+| AUTO-01 | Phase 3 | Pending |
+| AUTO-02 | Phase 7 | Pending |
+| AUTO-03 | Phase 3 | Pending |
+| AUTO-04 | Phase 3 | Pending |
+| AUTO-05 | Phase 7 | Pending |
+| FMT-01 | Phase 1 | Pending |
+| FMT-02 | Phase 9 | Pending |
+| FMT-03 | Phase 9 | Pending |
+| FMT-04 | Phase 9 | Pending |
+| FMT-05 | Phase 2 | Pending |
+| ENG-01 | Phase 1 | Pending |
+| ENG-02 | Phase 2 | Pending |
+| ENG-03 | Phase 2 | Pending |
+| ENG-04 | Phase 5 | Pending |
+| ENG-05 | Phase 6 | Pending |
+| ENG-06 | Phase 2 | Pending |
+| ENG-07 | Phase 2 | Pending |
+| BIBLE-01 | Phase 4 | Pending |
+| BIBLE-02 | Phase 4 | Pending |
+| BIBLE-03 | Phase 5 | Pending |
+| BIBLE-04 | Phase 4 | Pending |
+| BIBLE-05 | Phase 4 | Pending |
+| BIBLE-06 | Phase 4 | Pending |
+| BIBLE-07 | Phase 6 | Pending |
+| BIBLE-08 | Phase 8 | Pending |
+| BIBLE-09 | Phase 8 | Pending |
+| PRON-01 | Phase 5 | Pending |
+| PRON-02 | Phase 5 | Pending |
+| PRON-03 | Phase 5 | Pending |
+| SRC-01 | Phase 10 | Pending |
+| SRC-02 | Phase 10 | Pending |
+| SVC-01 | Phase 7 | Pending |
+| SVC-02 | Phase 7 | Pending |
+| SVC-03 | Phase 7 | Pending |
+| SVC-04 | Phase 7 | Pending |
+| SVC-05 | Phase 10 | Pending |
 
 **Coverage:**
-- v1 requirements: 38 total
-- Mapped to phases: 0 (pending roadmap)
-- Unmapped: 38 ⚠️
+- v1 requirements: 40 total (INTG 4, AUTO 5, FMT 5, ENG 7, BIBLE 9, PRON 3, SRC 2, SVC 5 — the initial header count of "38" was a miscount; all 40 listed requirements are mapped)
+- Mapped to phases: 40 ✓
+- Unmapped: 0 ✓
+- Duplicates (a requirement in >1 phase): 0 ✓
 
 ---
 *Requirements defined: 2026-05-31*
-*Last updated: 2026-05-31 after initial definition*
+*Last updated: 2026-05-31 after roadmap creation (traceability mapped, count corrected 38→40)*
