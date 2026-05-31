@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 03-04-PLAN.md
-last_updated: "2026-05-31T21:40:01.020Z"
-last_activity: 2026-05-31
+stopped_at: Completed 03-05-PLAN.md
+last_updated: "2026-06-01T00:00:00.000Z"
+last_activity: 2026-06-01
 progress:
   total_phases: 10
   completed_phases: 2
   total_plans: 11
-  completed_plans: 10
-  percent: 20
+  completed_plans: 11
+  percent: 22
 ---
 
 # Project State
@@ -25,12 +25,12 @@ See: .planning/PROJECT.md (updated 2026-05-31)
 
 ## Current Position
 
-Phase: 03 (*arr Integration + First Vertical Slice) — EXECUTING
-Plan: 4 of 5
-Status: Ready to execute
-Last activity: 2026-05-31
+Phase: 03 (*arr Integration + First Vertical Slice) — AWAITING VERIFICATION
+Plan: 5 of 5
+Status: All Phase-3 plans complete; awaiting phase verification
+Last activity: 2026-06-01
 
-Progress: [█████████░] 91%
+Progress: [██████████] 100% (Phase 3 plans complete)
 
 ## Performance Metrics
 
@@ -61,6 +61,7 @@ Progress: [█████████░] 91%
 | Phase 03 P01 | 25 min | 2 tasks | 11 files |
 | Phase 03 P03 | 20min | 2 tasks | 4 files |
 | Phase 3 P04 | 35min | 2 tasks | 4 files |
+| Phase 3 P05 | 50min | 2 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -84,6 +85,10 @@ Recent decisions affecting current work:
 - [Phase ?]: Plan 03-04: scan_for_eligible_items signature is (items, ledger, lang_priority) matching Wave-0 test contract — narrower than the plan body's (items, settings, ledger) so scan decouples from TrezarrSettings
 - [Phase ?]: Plan 03-04: apply_permissions asymmetric error handling — chown PermissionError warn-and-continue; chmod OSError raises PermissionApplyError (MEDIUM #13) so cli.py can quarantine
 - [Phase ?]: Plan 03-04: 1 xfail marker retained on test_scan_returns_eligible_item_and_scan_stats — it imports trezarr.cli.MediaItem (Plan 03-05 territory); reason updated to point to next wave
+- [Phase 03-05]: Rule 1 deviation — `if media_roots:` guard around assert_within_media_roots in cli's translate loop. Architectural invariant preserved via assert_media_roots_configured at startup; the guard inside the loop honors passthrough mode (no *arr + no path_mappings) without changing arr-enabled behaviour.
+- [Phase 03-05]: Rule 2 deviation — `all_arr_failed` (enabled_arr > 0 AND len(discovery_failures) == enabled_arr) added to the exit-1 disjunction. Without this, the "both *arrs raised DiscoveryError → 0 items → exit 0" path violated the plan's stated success criterion.
+- [Phase 03-05]: Rule 3 deviation — Added `[tool.uv] package = true` + `[build-system] hatchling` + `[tool.hatch.build.targets.wheel] packages = ["trezarr"]` so `uv sync` actually installs `[project.scripts] trezarr = "trezarr.cli:main"`. Without `package = true`, uv silently skips the entry point and `uv run trezarr` does not resolve.
+- [Phase 03-05]: Soft observation — `trezarr.cli.MediaItem` and `trezarr.arr.sonarr.MediaItem` are two separate dataclasses. cli.MediaItem carries source_sub_path (post-scan); arr.sonarr.MediaItem carries raw discovery payload. Intentional per Plan-03-01 test contract; future-cleanup candidate (consolidate to EligibleItem) but not a Phase-3 blocker.
 
 ### Pending Todos
 
@@ -104,6 +109,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-05-31T21:40:01.014Z
-Stopped at: Completed 03-04-PLAN.md
+Last session: 2026-06-01T00:00:00.000Z
+Stopped at: Completed 03-05-PLAN.md (Phase 3 plans 5/5; awaiting verification)
 Resume file: None

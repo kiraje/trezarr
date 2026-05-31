@@ -11,7 +11,7 @@ Requirements for initial release. Each maps to roadmap phases.
 
 - [x] **INTG-01**: Trezarr connects to Sonarr and Radarr via their REST APIs (API-key auth) to discover the media library, episode/movie identity, file paths, and metadata
 - [ ] **INTG-02**: Trezarr connects to Bazarr via its API to read which source-language subtitles already exist for each item (so it never re-downloads subs)
-- [ ] **INTG-03**: User can configure container↔host path mapping so Trezarr resolves the same media files the *arr stack sees
+- [x] **INTG-03**: User can configure container↔host path mapping so Trezarr resolves the same media files the *arr stack sees
 - [x] **INTG-04**: Trezarr reads source subtitle files and writes Vietnamese sidecar files on the shared filesystem with correct permissions (PUID/PGID)
 
 ### Discovery & Automation
@@ -107,14 +107,14 @@ Which phases cover which requirements. Populated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| INTG-01 | Phase 3 | In Progress |
+| INTG-01 | Phase 3 | Complete |
 | INTG-02 | Phase 10 | Pending |
-| INTG-03 | Phase 3 | In Progress |
-| INTG-04 | Phase 3 | In Progress |
-| AUTO-01 | Phase 3 | In Progress |
+| INTG-03 | Phase 3 | Complete |
+| INTG-04 | Phase 3 | Complete |
+| AUTO-01 | Phase 3 | Complete |
 | AUTO-02 | Phase 7 | Pending |
-| AUTO-03 | Phase 3 | In Progress |
-| AUTO-04 | Phase 3 | In Progress |
+| AUTO-03 | Phase 3 | Complete |
+| AUTO-04 | Phase 3 | Complete |
 | AUTO-05 | Phase 7 | Pending |
 | FMT-01 | Phase 1 | Complete |
 | FMT-02 | Phase 9 | Pending |
@@ -156,4 +156,4 @@ Which phases cover which requirements. Populated during roadmap creation.
 
 ---
 *Requirements defined: 2026-05-31*
-*Last updated: 2026-05-31 after roadmap creation (traceability mapped, count corrected 38→40)*
+*Last updated: 2026-06-01 — Phase 3 complete: INTG-01, INTG-03, INTG-04, AUTO-01, AUTO-03, AUTO-04 marked Complete in traceability table*
