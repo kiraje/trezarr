@@ -41,7 +41,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 
 **Plans:** 3 plansPlans:
 
-- [ ] 01-01-PLAN.md — Wave 0: project scaffold, pytest harness, 6 SRT fixtures, all test stubs (RED suite)
+- [x] 01-01-PLAN.md — Wave 0: project scaffold, pytest harness, 6 SRT fixtures, all test stubs (RED suite)
 - [ ] 01-02-PLAN.md — Wave 1A: SRT codec — SubLine/SubDoc model, encoding detection, byte-identical read_srt/write_srt (FMT-01)
 - [ ] 01-03-PLAN.md — Wave 1B: Config (TrezarrSettings + YAML source + SecretStr) and LLM client (AsyncOpenAI + semaphore + tier fallback) (ENG-01)
 
@@ -188,7 +188,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Codec & LLM Client Foundation | 0/3 | Not started | - |
+| 1. Codec & LLM Client Foundation | 1/3 | In progress | Plan 01 done 2026-05-31 |
 | 2. Mechanical Translation Core + Validation Gate | 0/TBD | Not started | - |
 | 3. \*arr Integration + First Vertical Slice | 0/TBD | Not started | - |
 | 4. Series Bible Store & Schema | 0/TBD | Not started | - |

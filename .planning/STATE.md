@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-last_updated: "2026-05-31T02:16:45.428Z"
-last_activity: 2026-05-31 -- Phase 01 execution started
+last_updated: "2026-05-31T02:26:00Z"
+last_activity: 2026-05-31 -- Phase 01 Plan 01 completed
 progress:
   total_phases: 10
   completed_phases: 0
   total_plans: 3
-  completed_plans: 0
-  percent: 0
+  completed_plans: 1
+  percent: 3
 ---
 
 # Project State
@@ -25,30 +25,30 @@ See: .planning/PROJECT.md (updated 2026-05-31)
 ## Current Position
 
 Phase: 01 (codec-llm-client-foundation) — EXECUTING
-Plan: 1 of 3
-Status: Executing Phase 01
-Last activity: 2026-05-31 -- Phase 01 execution started
+Plan: 2 of 3
+Status: Executing Phase 01 (Plan 01 complete)
+Last activity: 2026-05-31 -- Phase 01 Plan 01 completed (scaffold + test harness)
 
-Progress: [░░░░░░░░░░] 0%
+Progress: [█░░░░░░░░░] 3%
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 0
-- Average duration: — min
-- Total execution time: 0 hours
+- Total plans completed: 1
+- Average duration: 6 min
+- Total execution time: 0.1 hours
 
 **By Phase:**
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
-| - | - | - | - |
+| 01 | 1/3 | 6 min | 6 min |
 
 **Recent Trend:**
 
-- Last 5 plans: —
-- Trend: —
+- Last 5 plans: 6 min
+- Trend: establishing baseline
 
 *Updated after each plan completion*
 
@@ -62,6 +62,9 @@ Recent decisions affecting current work:
 - Roadmap: Leaves-first ordering — codec + LLM client (Phase 1) before any novel logic; validation gate is foundational (Phase 2), not polish.
 - Roadmap: First vertical slice (Phase 3) de-risks \*arr path-mapping/permissions before investing in the Series Bible moat.
 - Roadmap: Address Map (BIBLE-03) and attribution (PRON) ship together in Phase 5 — they are co-dependent and neither delivers value alone.
+- Plan 01: pysubs2 excluded from Phase 1 — thin custom SRT parser built in Plan 02 for byte-identity (D-08)
+- Plan 01: asyncio_mode=auto eliminates per-test @pytest.mark.asyncio boilerplate
+- Plan 01: xfail(strict=False) stub pattern chosen for Nyquist-compliant pre-implementation test surface
 
 ### Pending Todos
 
@@ -82,6 +85,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-05-31T01:43:52.708Z
-Stopped at: Phase 1 context gathered
-Resume file: .planning/phases/01-codec-llm-client-foundation/01-CONTEXT.md
+Last session: 2026-05-31T02:26:00Z
+Stopped at: Phase 01 Plan 01 complete — ready for Plan 02 (SRT codec implementation)
+Resume file: .planning/phases/01-codec-llm-client-foundation/01-01-SUMMARY.md
