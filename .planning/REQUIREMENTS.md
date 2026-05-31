@@ -24,7 +24,7 @@ Requirements for initial release. Each maps to roadmap phases.
 
 ### Subtitle Formats
 
-- [ ] **FMT-01**: Trezarr parses and writes SRT, preserving indices, timecodes, and line segmentation exactly (translates text only, never timestamps)
+- [x] **FMT-01**: Trezarr parses and writes SRT, preserving indices, timecodes, and line segmentation exactly (translates text only, never timestamps)
 - [ ] **FMT-02**: Trezarr parses and writes ASS/SSA, translating only dialogue text and leaving override tags (`{\an8}`, `\pos`, fonts), drawing commands, `\N` breaks, and `[Script Info]`/`[V4+ Styles]` headers byte-identical
 - [ ] **FMT-03**: Trezarr preserves karaoke (`\k`) lines without corruption (verbatim if remapping is unsafe)
 - [ ] **FMT-04**: Trezarr parses and writes VTT, round-tripping cue settings/positioning
@@ -116,7 +116,7 @@ Which phases cover which requirements. Populated during roadmap creation.
 | AUTO-03 | Phase 3 | Pending |
 | AUTO-04 | Phase 3 | Pending |
 | AUTO-05 | Phase 7 | Pending |
-| FMT-01 | Phase 1 | Pending |
+| FMT-01 | Phase 1 | Complete |
 | FMT-02 | Phase 9 | Pending |
 | FMT-03 | Phase 9 | Pending |
 | FMT-04 | Phase 9 | Pending |
