@@ -26,7 +26,7 @@ import logging
 import os
 import tempfile
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -338,7 +338,7 @@ def _write_quarantine(
     artifact = {
         "reason": reason,
         "failing_cue_indices": failing_indices,
-        "timestamp": datetime.utcnow().isoformat() + "Z",
+        "timestamp": datetime.now(timezone.utc).isoformat(),
         "source_path": str(source_path),
         # NOTE: cue text is explicitly excluded — T-02-03-03 (proprietary content)
     }
@@ -545,7 +545,7 @@ async def translate_file(
         output_path=str(output_path),
         status="done",
         content_hash=content_hash,
-        translated_at=datetime.utcnow().isoformat() + "Z",
+        translated_at=datetime.now(timezone.utc).isoformat(),
     ))
 
     # Step 12: Return success result
