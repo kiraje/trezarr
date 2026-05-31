@@ -308,12 +308,13 @@ async def _run_once(config_path: str | None) -> int:
                 )
                 n_fail += 1
 
-        except Exception as exc:
+        except Exception:
             # D-30 batch resilience — one bad item never aborts the slice.
-            logger.error(
-                "unhandled error translating %s: %s",
-                source_sub_path, exc,
-            )
+            # WR-05: logger.exception captures the traceback automatically.
+            # Pre-WR-05 the operator only saw "unhandled error translating
+            # <path>: <exc>" with no stack — root-causing an unexpected
+            # failure mode required guessing or adding ad-hoc prints.
+            logger.exception("unhandled error translating %s", source_sub_path)
             n_fail += 1
 
     # Step 8 — Widened summary (MEDIUM #14) + exit code (D-30).
