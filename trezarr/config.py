@@ -61,6 +61,26 @@ class TrezarrSettings(BaseSettings):
     # ── Context window (D-05 — used by Phase 2 batching) ──────────────────────
     llm_context_window: int = 32768
 
+    # ── Phase 2: Batching (D-14) ───────────────────────────────────────────────────
+    translate_chars_per_token: float = 3.5
+    translate_overhead_fraction: float = 0.30
+    translate_output_expansion: float = 1.40
+    translate_max_cues_per_batch: int = 50
+    translate_scene_gap_ms: int = 2000
+
+    # ── Phase 2: Context window (D-15) ──────────────────────────────────────────────────
+    translate_context_lines_k: int = 3
+
+    # ── Phase 2: Retry + quarantine (D-18) ───────────────────────────────────────────────
+    translate_batch_retry_attempts: int = 2
+
+    # ── Phase 2: Validation gate (D-17) ──────────────────────────────────────────────────
+    translate_vi_diacritic_ratio: float = 0.70
+
+    # ── Phase 2: Output paths (D-18, D-20) ───────────────────────────────────────────────
+    translate_quarantine_dir: str = "/config/quarantine"
+    translate_ledger_path: str = "/config/processed_files.json"
+
     def __init__(self, _yaml_file: str | None = None, **data: Any) -> None:
         """Create settings.
 
