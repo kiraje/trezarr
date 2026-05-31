@@ -355,6 +355,163 @@ async def test_one_arr_failure_does_not_kill_other_arr(tmp_path, settings_factor
 
 
 # ──────────────────────────────────────────────────────────────────────────────
+# Path-traversal guard branches — Rule-1 `if media_roots:` (03-REVIEW WR-07)
+#
+# Pre-WR-07 every cli test mocked `assert_within_media_roots` so neither side of
+# the `if media_roots:` branch was actually exercised. These two tests use a
+# REAL assert_within_media_roots and configure path_mappings via TrezarrSettings
+# so the guard sees a non-empty media_roots — once with an inside-roots output
+# (must succeed) and once with an outside-roots output (must reject + n_fail).
+# ──────────────────────────────────────────────────────────────────────────────
+
+
+async def test_run_once_path_guard_passes_inside_media_roots(tmp_path, capsys, settings_factory):
+    """With real path_mappings + output_path INSIDE the configured root, the run completes 0 (WR-07).
+
+    Exercises the `if media_roots:` Rule-1 branch with a real
+    ``assert_within_media_roots`` (NOT mocked). The translated output_path is
+    inside the configured local root, so the guard passes silently and the
+    apply_permissions branch runs.
+    """
+    from trezarr.paths import PathMapping
+
+    cli_mod = pytest.importorskip("trezarr.cli")
+    _run_once = cli_mod._run_once
+
+    media_root = tmp_path / "media"
+    media_root.mkdir()
+    # Drop a fake media file + source sub inside the real media root so the
+    # output_path returned by translate_file resolves inside the root.
+    src = media_root / "Show.S01E20.en.srt"
+    src.write_text("1\n00:00:01,000 --> 00:00:03,000\nHello\n", encoding="utf-8")
+    inside_output = media_root / "Show.S01E20.vi.srt"
+
+    from tests._helpers.cli_media_item import MediaItem
+    item = MediaItem(
+        local_path=src.with_suffix(".mkv"),
+        source_sub_path=src,
+        title="Show",
+        source_lang="en",
+    )
+
+    # Real path_mappings populate media_roots; *arr stays disabled so
+    # assert_media_roots_configured passes silently.
+    settings = settings_factory(
+        sonarr_enabled=False,
+        radarr_enabled=False,
+        path_mappings=[PathMapping(remote="/tv", local=str(media_root))],
+    )
+
+    async def _ok_translate(path, *_args, **_kwargs):
+        from trezarr.translate.engine import TranslationResult
+        return TranslationResult(status="done", output_path=inside_output)
+
+    with (
+        patch("trezarr.cli.TrezarrSettings", return_value=settings),
+        patch("trezarr.cli.discover_sonarr_items", return_value=[]),
+        patch("trezarr.cli.discover_radarr_items", return_value=[]),
+        patch(
+            "trezarr.cli.scan_for_eligible_items",
+            return_value=([item], MagicMock(scanned=1, no_source=0, foreign_vi=0, already_done=0, error=0)),
+        ),
+        patch("trezarr.cli.translate_file", new=AsyncMock(side_effect=_ok_translate)),
+        patch("trezarr.cli.apply_permissions"),       # still mocked — we don't care about chmod here
+        # NOTE: assert_within_media_roots is NOT mocked — it's the system-under-test (WR-07).
+        patch("trezarr.cli.probe_media_roots"),       # bypass the FS probe
+        # build_media_roots is NOT mocked — it must return [media_root] from path_mappings.
+        # assert_media_roots_configured passes silently when *arr is disabled, so we can mock it.
+        patch("trezarr.cli.assert_media_roots_configured"),
+        patch("trezarr.cli.LLMClient"),
+    ):
+        exit_code = await _run_once(None)
+
+    summary = capsys.readouterr().out
+    assert exit_code == 0, (
+        f"Inside-root output must pass the WR-07 path guard and the run must exit 0; "
+        f"got {exit_code}. Summary: {summary}"
+    )
+    assert "translated=1" in summary, f"Expected translated=1, got: {summary}"
+    assert "failed=0" in summary, f"Expected failed=0, got: {summary}"
+
+
+async def test_run_once_path_guard_rejects_outside_media_roots(tmp_path, capsys, caplog, settings_factory):
+    """An output_path OUTSIDE the configured media roots is rejected and n_fail bumped (WR-07).
+
+    Exercises the negative side of the `if media_roots:` Rule-1 branch with a
+    real ``assert_within_media_roots`` — pre-WR-07 the guard was always mocked,
+    so its rejection path (cli.py:253-262) was uncovered.
+    """
+    import logging
+
+    from trezarr.paths import PathMapping
+
+    cli_mod = pytest.importorskip("trezarr.cli")
+    _run_once = cli_mod._run_once
+
+    media_root = tmp_path / "media"
+    media_root.mkdir()
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    # The translate output lands OUTSIDE the configured media root — the guard
+    # MUST reject it. Source sub itself can be inside media_root or anywhere —
+    # only the OUTPUT path matters for assert_within_media_roots.
+    src = media_root / "Show.S01E21.en.srt"
+    src.write_text("1\n00:00:01,000 --> 00:00:03,000\nHello\n", encoding="utf-8")
+    bad_output = elsewhere / "Show.S01E21.vi.srt"  # outside media_root
+
+    from tests._helpers.cli_media_item import MediaItem
+    item = MediaItem(
+        local_path=src.with_suffix(".mkv"),
+        source_sub_path=src,
+        title="Show",
+        source_lang="en",
+    )
+
+    settings = settings_factory(
+        sonarr_enabled=False,
+        radarr_enabled=False,
+        path_mappings=[PathMapping(remote="/tv", local=str(media_root))],
+    )
+
+    async def _bad_output_translate(path, *_args, **_kwargs):
+        from trezarr.translate.engine import TranslationResult
+        return TranslationResult(status="done", output_path=bad_output)
+
+    with (
+        patch("trezarr.cli.TrezarrSettings", return_value=settings),
+        patch("trezarr.cli.discover_sonarr_items", return_value=[]),
+        patch("trezarr.cli.discover_radarr_items", return_value=[]),
+        patch(
+            "trezarr.cli.scan_for_eligible_items",
+            return_value=([item], MagicMock(scanned=1, no_source=0, foreign_vi=0, already_done=0, error=0)),
+        ),
+        patch("trezarr.cli.translate_file", new=AsyncMock(side_effect=_bad_output_translate)),
+        patch("trezarr.cli.apply_permissions") as mock_chmod,  # MUST NOT be called when guard rejects
+        # assert_within_media_roots is NOT mocked — the rejection is the SUT.
+        patch("trezarr.cli.probe_media_roots"),
+        patch("trezarr.cli.assert_media_roots_configured"),
+        patch("trezarr.cli.LLMClient"),
+        caplog.at_level(logging.ERROR),
+    ):
+        exit_code = await _run_once(None)
+
+    summary = capsys.readouterr().out
+    assert exit_code == 1, (
+        f"Outside-root output must be rejected and n_fail bumped, got exit_code={exit_code}. "
+        f"Summary: {summary}"
+    )
+    assert "failed=1" in summary, f"Expected failed=1 from path-guard rejection, got: {summary}"
+    # The chmod-application call site must never run when the guard rejects.
+    assert mock_chmod.call_count == 0, (
+        "apply_permissions must NOT be called when assert_within_media_roots rejects"
+    )
+    # An error log must name the rejection.
+    assert any(
+        "path-traversal guard" in rec.getMessage() for rec in caplog.records
+    ), "Expected an error log for the path-traversal guard rejection"
+
+
+# ──────────────────────────────────────────────────────────────────────────────
 # chmod failure → quarantine the item (03-REVIEWS.md MEDIUM #13)
 # ──────────────────────────────────────────────────────────────────────────────
 
