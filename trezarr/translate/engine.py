@@ -165,7 +165,19 @@ def parse_numbered_response(response: str, expected_count: int) -> list[str]:
         if m:
             line_num = int(m.group(1))
             text = m.group(2).strip()
+            if line_num in parsed:
+                raise BatchValidationError(
+                    f"Duplicate line number [{line_num}] in LLM response"
+                )
             parsed[line_num] = text
+
+    # Reject any line numbers outside the expected range (hallucinated extra lines).
+    # An over-count response is a strong batch-misalignment signal that should retry.
+    extra = [n for n in parsed if n < 1 or n > expected_count]
+    if extra:
+        raise BatchValidationError(
+            f"LLM response contains unexpected line numbers {extra} (expected 1..{expected_count})"
+        )
 
     # Validate all expected line numbers are present
     for n in range(1, expected_count + 1):

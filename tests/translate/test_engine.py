@@ -55,6 +55,36 @@ def test_context_window_prompt():
         assert ctx_line in prompt, f"Expected context_after line {ctx_line!r} in prompt"
 
 
+def test_numbered_line_parse_over_count_rejected():
+    """Parser rejects LLM response with more numbered lines than expected_count (WR-02).
+
+    [1] [2] [3] for a 2-cue batch is a hallucinated-extra-line signal that must
+    raise BatchValidationError rather than silently dropping line [3].
+    """
+    engine_mod = pytest.importorskip("trezarr.translate.engine")
+    parse_numbered_response = engine_mod.parse_numbered_response
+    BatchValidationError = engine_mod.BatchValidationError
+
+    response = "[1] Xin chào\n[2] Tôi đến đây\n[3] Dòng thêm"
+    with pytest.raises(BatchValidationError, match="unexpected line numbers"):
+        parse_numbered_response(response, expected_count=2)
+
+
+def test_numbered_line_parse_duplicate_rejected():
+    """Parser rejects LLM response with duplicate line numbers (WR-03).
+
+    [1] appearing twice means the later value would silently overwrite the
+    earlier one — must raise BatchValidationError instead.
+    """
+    engine_mod = pytest.importorskip("trezarr.translate.engine")
+    parse_numbered_response = engine_mod.parse_numbered_response
+    BatchValidationError = engine_mod.BatchValidationError
+
+    response = "[1] Xin chào\n[1] Tôi đến đây"
+    with pytest.raises(BatchValidationError, match="Duplicate line number"):
+        parse_numbered_response(response, expected_count=1)
+
+
 def test_numbered_line_parse():
     """Response parser converts '[1] Xin chào\\n[2] Tôi đến đây' to a list of strings (D-13)."""
     engine_mod = pytest.importorskip("trezarr.translate.engine")
