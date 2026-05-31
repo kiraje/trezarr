@@ -19,6 +19,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 from trezarr.subtitles.model import SubDoc
+from trezarr.translate._timecode import tc_to_ms as _tc_to_ms
 
 if TYPE_CHECKING:
     from trezarr.config import TrezarrSettings
@@ -37,11 +38,6 @@ ALLOWLIST_RE = re.compile(r'^[\W\d\s♪♫…\.]+$')
 
 # Backstop check for orphan sentinel tokens that were not reinserted (D-12/D-16 check 6)
 SENTINEL_RE = re.compile(r'<<T\d+>>')
-
-# Timecode parse pattern for check 5 (monotonic timestamps).  Same format as
-# batching.py — replicated locally to avoid importing private symbols.
-_TC_PARSE_RE = re.compile(r"(\d{2}):(\d{2}):(\d{2})[,.](\d+)")
-
 
 @dataclass
 class GateFailure:
@@ -67,16 +63,6 @@ class GateError(Exception):
     def __init__(self, failure: GateFailure) -> None:
         self.failure = failure
         super().__init__(failure.reason)
-
-
-def _tc_to_ms(tc: str) -> int:
-    """Convert HH:MM:SS,mmm or HH:MM:SS.mmm to milliseconds."""
-    m = _TC_PARSE_RE.match(tc)
-    if m is None:
-        return 0
-    h, mi, s, ms_str = m.group(1), m.group(2), m.group(3), m.group(4)
-    ms = int(ms_str.ljust(3, '0')[:3])
-    return int(h) * 3600000 + int(mi) * 60000 + int(s) * 1000 + ms
 
 
 def _check_untranslated(

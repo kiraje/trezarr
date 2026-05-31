@@ -12,32 +12,15 @@ Design decisions honoured:
 """
 from __future__ import annotations
 
-import re
 import warnings
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 from trezarr.subtitles.model import SubDoc, SubLine
+from trezarr.translate._timecode import tc_to_ms as _tc_to_ms
 
 if TYPE_CHECKING:
     from trezarr.config import TrezarrSettings
-
-# Timecode pattern: HH:MM:SS,mmm or HH:MM:SS.mmm (comma or period separator;
-# any number of millisecond digits).  Replicated locally from srt.py's _TC_RE
-# pattern — _TC_RE is private; we do NOT import it directly.
-_TC_PARSE_RE = re.compile(
-    r"(\d{2}):(\d{2}):(\d{2})[,.](\d+)"
-)
-
-
-def _tc_to_ms(tc: str) -> int:
-    """Convert a verbatim timecode string (HH:MM:SS,mmm or HH:MM:SS.mmm) to milliseconds."""
-    m = _TC_PARSE_RE.match(tc)
-    if m is None:
-        return 0  # malformed timecode — treat as 0ms (defensive; gate will catch bad docs)
-    h, mi, s, ms_str = m.group(1), m.group(2), m.group(3), m.group(4)
-    ms = int(ms_str.ljust(3, '0')[:3])
-    return int(h) * 3600000 + int(mi) * 60000 + int(s) * 1000 + ms
 
 
 def _gap_ms(prev: SubLine, cur: SubLine) -> int:
