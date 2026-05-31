@@ -12,14 +12,14 @@ Requirements for initial release. Each maps to roadmap phases.
 - [x] **INTG-01**: Trezarr connects to Sonarr and Radarr via their REST APIs (API-key auth) to discover the media library, episode/movie identity, file paths, and metadata
 - [ ] **INTG-02**: Trezarr connects to Bazarr via its API to read which source-language subtitles already exist for each item (so it never re-downloads subs)
 - [ ] **INTG-03**: User can configure container↔host path mapping so Trezarr resolves the same media files the *arr stack sees
-- [ ] **INTG-04**: Trezarr reads source subtitle files and writes Vietnamese sidecar files on the shared filesystem with correct permissions (PUID/PGID)
+- [x] **INTG-04**: Trezarr reads source subtitle files and writes Vietnamese sidecar files on the shared filesystem with correct permissions (PUID/PGID)
 
 ### Discovery & Automation
 
-- [ ] **AUTO-01**: Trezarr automatically detects media that has a source subtitle but no good Vietnamese subtitle and queues it for translation
+- [x] **AUTO-01**: Trezarr automatically detects media that has a source subtitle but no good Vietnamese subtitle and queues it for translation
 - [ ] **AUTO-02**: Trezarr monitors for newly added media / new source subtitles on an ongoing basis (polling, with webhook trigger support)
-- [ ] **AUTO-03**: Trezarr is idempotent — it tracks per-item translation state (incl. source-sub hash) and skips items already up to date, never causing re-translation storms
-- [ ] **AUTO-04**: Trezarr excludes its own output from re-triggering the watcher (no self-reprocessing loop)
+- [x] **AUTO-03**: Trezarr is idempotent — it tracks per-item translation state (incl. source-sub hash) and skips items already up to date, never causing re-translation storms
+- [x] **AUTO-04**: Trezarr excludes its own output from re-triggering the watcher (no self-reprocessing loop)
 - [ ] **AUTO-05**: Processing resumes safely after a crash or restart without losing or duplicating work
 
 ### Subtitle Formats
