@@ -1,0 +1,167 @@
+"""JSON idempotency ledger for processed subtitle files (D-20).
+
+Design decisions honoured:
+  D-20  Idempotency via /config processed-files ledger.  Schema fields match
+        the Phase-4 processed_file SQLAlchemy table column names so Phase 4
+        can migrate this JSON backend without changing any call sites in engine.py.
+        Behavior: unchanged source + valid output → skip; changed source →
+        regenerate; foreign .vi.srt (not in ledger as ours) → skip + log;
+        previously quarantined → retry.
+
+Phase-4 migration path:
+  The Ledger class exposes a minimal interface (check/record) that Phase 4 will
+  swap for a SQLAlchemy async_sessionmaker backend without changing call sites.
+  The JSON field names map 1-to-1 to processed_file table columns.
+
+Atomic write:
+  _write() uses NamedTemporaryFile(dir=self._path.parent) + os.replace() — the
+  same POSIX-atomic pattern as write.py (D-19).  JSONDecodeError on load falls
+  back to an empty ledger with a loud warning — never raises (Pitfall 4).
+"""
+from __future__ import annotations
+
+import hashlib
+import json
+import logging
+import os
+import tempfile
+from dataclasses import asdict, dataclass
+from pathlib import Path
+from typing import Literal
+
+logger = logging.getLogger(__name__)
+
+
+@dataclass
+class LedgerEntry:
+    """A single processed-file record.
+
+    Field names match the Phase-4 processed_file SQLAlchemy column names (D-20).
+
+    Attributes:
+        source_path:    Absolute path to the source subtitle file.
+        output_path:    Absolute path to the written .vi.srt sidecar, or None
+                        if the translation was quarantined / not yet written.
+        status:         Current processing status: "done" | "quarantined" | "in_progress".
+        content_hash:   SHA-256[:16] hex digest of the source file bytes at processing time.
+                        Used for skip/regenerate logic (D-20).
+        series_id:      Optional series identifier (reserved for Phase-4 foreign key).
+        source_lang:    Optional ISO-639 language code of the source subtitle (e.g. "en").
+        episode_key:    Optional episode identifier string (reserved for Phase-4 cross-linking).
+        translated_at:  ISO-8601 UTC timestamp of the last successful translation, or None.
+        quarantine_path: Absolute path to the quarantine JSON artifact, or None.
+    """
+    source_path: str
+    output_path: str | None
+    status: Literal["done", "quarantined", "in_progress"]
+    content_hash: str
+    series_id: str | None = None
+    source_lang: str | None = None
+    episode_key: str | None = None
+    translated_at: str | None = None
+    quarantine_path: str | None = None
+
+
+class Ledger:
+    """JSON-backed idempotency ledger for processed subtitle files.
+
+    Stores a dict[source_path → LedgerEntry] serialised as a JSON file on disk.
+    Reads the full ledger into memory on construction; writes atomically (via
+    NamedTemporaryFile + os.replace) on every record() call.
+
+    Interface contract (swap-compatible with Phase-4 SQLAlchemy backend):
+        ledger.check(source_path) -> LedgerEntry | None
+        ledger.record(entry: LedgerEntry) -> None
+        Ledger.content_hash(source_bytes: bytes) -> str
+    """
+
+    def __init__(self, ledger_path: str | Path) -> None:
+        """Initialise the ledger from the given JSON file path.
+
+        If the file does not exist, starts with an empty ledger.
+        If the file exists but contains invalid JSON, logs a warning and starts
+        with an empty ledger (never raises — Pitfall 4).
+
+        Args:
+            ledger_path: Path to the JSON ledger file (e.g. /config/processed_files.json).
+        """
+        self._path = Path(ledger_path)
+        self._data: dict[str, LedgerEntry] = self._load()
+
+    def _load(self) -> dict[str, LedgerEntry]:
+        """Load the ledger from disk.
+
+        Returns an empty dict if the file does not exist or contains corrupt data.
+        """
+        if not self._path.exists():
+            return {}
+        try:
+            raw = json.loads(self._path.read_text(encoding='utf-8'))
+            return {k: LedgerEntry(**v) for k, v in raw.items()}
+        except (json.JSONDecodeError, TypeError, KeyError):
+            logger.warning("Ledger at %s is corrupt — starting fresh", self._path)
+            return {}
+
+    def check(self, source_path: str | Path) -> LedgerEntry | None:
+        """Return the ledger entry for source_path, or None if not recorded.
+
+        Args:
+            source_path: Absolute path to the source subtitle file (str or Path).
+
+        Returns:
+            The LedgerEntry if source_path is in the ledger, else None.
+        """
+        return self._data.get(str(source_path))
+
+    def record(self, entry: LedgerEntry) -> None:
+        """Record (insert or update) an entry in the ledger and persist to disk.
+
+        Uses the same NamedTemporaryFile + os.replace atomic write pattern as write.py
+        so a crash during write never leaves a partial/corrupt ledger file.
+
+        Args:
+            entry: The LedgerEntry to record.  entry.source_path is the dict key.
+        """
+        self._data[entry.source_path] = entry
+        self._write()
+
+    def _write(self) -> None:
+        """Atomically write the in-memory ledger to self._path as formatted JSON.
+
+        Creates the parent directory if it does not exist, writes to a sibling temp
+        file in self._path.parent (same filesystem → os.replace is atomic), then
+        renames to the final path.
+        """
+        self._path.parent.mkdir(parents=True, exist_ok=True)
+        tmp_path: Path | None = None
+        try:
+            with tempfile.NamedTemporaryFile(
+                mode='w',
+                encoding='utf-8',
+                suffix='.tmp',
+                dir=self._path.parent,
+                delete=False,
+            ) as f:
+                tmp_path = Path(f.name)
+                json.dump({k: asdict(v) for k, v in self._data.items()}, f, indent=2)
+            os.replace(tmp_path, self._path)
+            tmp_path = None  # prevent cleanup in finally — rename succeeded
+        finally:
+            if tmp_path is not None and tmp_path.exists():
+                tmp_path.unlink()  # cleanup if write failed before os.replace
+
+    @staticmethod
+    def content_hash(source_bytes: bytes) -> str:
+        """Compute a 16-character SHA-256 hex digest of source_bytes.
+
+        The hash is used as the idempotency key: if the source file bytes have not
+        changed since last processing, the ledger entry's content_hash will match
+        and the file will be skipped.
+
+        Args:
+            source_bytes: Raw bytes read from the source subtitle file.
+
+        Returns:
+            A 16-character lowercase hex string (first 64 bits of SHA-256).
+        """
+        return hashlib.sha256(source_bytes).hexdigest()[:16]
