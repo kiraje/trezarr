@@ -197,7 +197,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Codec & LLM Client Foundation | 3/3 | Complete    | 2026-05-31 |
-| 2. Mechanical Translation Core + Validation Gate | 3/3 | Complete   | 2026-05-31 |
+| 2. Mechanical Translation Core + Validation Gate | 3/3 | Complete    | 2026-05-31 |
 | 3. \*arr Integration + First Vertical Slice | 0/TBD | Not started | - |
 | 4. Series Bible Store & Schema | 0/TBD | Not started | - |
 | 5. Three-Pass Pronoun Engine | 0/TBD | Not started | - |
