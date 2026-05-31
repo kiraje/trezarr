@@ -117,4 +117,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-05-31 after Phase 1 (Codec & LLM Client Foundation) — SRT codec (byte-identical round-trip, FMT-01) and the OpenAI-compatible LLM client (ENG-01) shipped as tested, isolated leaves. Not yet moved to Validated: no user-facing sidecar is produced until Phase 2.*
+*Last updated: 2026-05-31 after Phase 2 (Mechanical Translation Core + Validation Gate) — the first user-facing artifact ships: `translate_file()` batches a parsed source (scene-gap/token-aware), translates via a single LLM pass with surrounding-line context, enforces a hard 7-check pre-write validation gate (failing files quarantined, never written), and writes an atomic UTF-8 `Show.S01E01.vi.srt` sidecar with idempotent re-run via a content-hash ledger (ENG-02, ENG-03, ENG-06, ENG-07, FMT-05 — verified 4/4). End-to-end translation against a live LLM endpoint remains a recommended manual check (the `@pytest.mark.live` hook).*
