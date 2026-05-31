@@ -12,6 +12,9 @@ dependencies = [
     "pyarr>=6.6,<6.7",
 ]
 
+[project.scripts]
+trezarr = "trezarr.cli:main"
+
 [dependency-groups]
 dev = [
     "pytest>=8.4.2",
@@ -27,3 +30,17 @@ testpaths = ["tests"]
 [tool.ruff]
 line-length = 100
 target-version = "py312"
+
+# Required for `uv sync` to install console_scripts ([project.scripts]) defined
+# above. Without this flag, uv treats the workspace as un-packaged and the
+# entry-point is skipped (which would mean `uv run trezarr` would not be
+# wired). The Phase-3 vertical slice ships a single `trezarr` CLI command.
+[tool.uv]
+package = true
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["trezarr"]
