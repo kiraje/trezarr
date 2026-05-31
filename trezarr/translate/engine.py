@@ -24,6 +24,7 @@ import asyncio
 import json
 import logging
 import os
+import re
 import tempfile
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -138,8 +139,7 @@ def build_translate_prompt(
 # ── Numbered-line response parser ──────────────────────────────────────────────
 
 # Forgiving regex per A7 in RESEARCH.md: handles "[1] text", "[1]. text", "[1]) text"
-import re as _re
-_NUMBERED_LINE_RE = _re.compile(r'\[(\d+)\][.\)]?\s*(.*)')
+_NUMBERED_LINE_RE = re.compile(r'\[(\d+)\][.\)]?\s*(.*)')
 
 
 def parse_numbered_response(response: str, expected_count: int) -> list[str]:
