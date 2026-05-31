@@ -13,11 +13,12 @@ Design decisions honoured:
         ledger provenance IS the exclusion mechanism.
 
 Per 03-REVIEWS.md HIGH #4: ``is_eligible`` takes ``(source_sub_path, ledger)`` —
-the ``media_path`` parameter the plan originally listed is dropped because the
+the originally-listed video-path parameter is dropped because the
 adjacency-to-the-media-file invariant is structurally enforced by the caller
-(``scan.scan_for_eligible_items`` discovers ``source_sub_path`` via
-``media_path.parent.glob(...)`` so the source sub IS adjacent to the media file
-by construction). No additional adjacency check is needed inside is_eligible.
+(``scan.scan_for_eligible_items`` discovers ``source_sub_path`` via a glob
+inside the video file's parent directory, so the source sub IS adjacent to
+the video file by construction). No additional adjacency check is needed
+inside is_eligible.
 
 Per 03-RESEARCH.md Pitfall 5: the vi sidecar path is ALWAYS derived from the
 ``source_sub_path``, never from the video path. ``derive_vi_sidecar_path`` in
@@ -39,11 +40,11 @@ def is_eligible(source_sub_path: Path, ledger: Ledger) -> tuple[bool, str]:
     """Decide whether a source-subtitle file is eligible for (re-)translation.
 
     Per 03-REVIEWS.md HIGH #4: signature is ``(source_sub_path, ledger)`` —
-    NO ``media_path`` parameter. The original spec passed media_path so the
-    function could re-derive the vi sidecar from the video file, but
-    ``derive_vi_sidecar_path`` actually takes the source-sub path (it strips
-    the ".en" / ".ja" / etc. lang suffix and appends ".vi.srt"). Passing the
-    video path would be wrong (Pitfall 5).
+    the video-path parameter is intentionally absent. The original spec passed
+    a video path so the function could re-derive the vi sidecar from the video
+    file, but ``derive_vi_sidecar_path`` actually takes the source-sub path
+    (it strips the ".en" / ".ja" / etc. lang suffix and appends ".vi.srt").
+    Passing the video path would be wrong (Pitfall 5).
 
     Decision matrix (in evaluation order):
 

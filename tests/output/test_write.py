@@ -129,7 +129,6 @@ def test_utf8_output(tmp_path):
 from unittest.mock import patch  # noqa: E402  (deliberately after the legacy tests)
 
 
-@pytest.mark.xfail(strict=False, reason="Plan 03-04: apply_permissions not yet implemented")
 def test_apply_permissions_calls_chown_chmod(tmp_path):
     """apply_permissions(path, puid, pgid, umask) calls os.chown and os.chmod (D-29, INTG-04).
 
@@ -159,7 +158,6 @@ def test_apply_permissions_calls_chown_chmod(tmp_path):
     )
 
 
-@pytest.mark.xfail(strict=False, reason="Plan 03-04: apply_permissions not yet implemented")
 def test_apply_permissions_chown_permission_error_continues(tmp_path):
     """os.chown raising PermissionError (no CAP_CHOWN) is logged and swallowed (D-29).
 
@@ -181,10 +179,6 @@ def test_apply_permissions_chown_permission_error_continues(tmp_path):
     assert mock_chmod.called, "Expected os.chmod to be called even when chown fails"
 
 
-@pytest.mark.xfail(
-    strict=False,
-    reason="Plan 03-04: PermissionApplyError + chmod-failure-escalates not yet implemented (03-REVIEWS.md MEDIUM #13)",
-)
 def test_apply_permissions_raises_PermissionApplyError_on_chmod_failure(tmp_path):
     """An os.chmod failure escalates to PermissionApplyError (item-level failure, INTG-04).
 
