@@ -98,6 +98,16 @@ class Ledger:
         """Load the ledger from disk.
 
         Returns an empty dict if the file does not exist or contains corrupt data.
+
+        CR-03: the per-entry try/except previously caught only (TypeError, KeyError),
+        which let an AttributeError escape when an entry's value was a non-dict
+        (e.g. a stray scalar or list at a key — common after a partial Phase-4
+        schema migration or hand-edit). The top-level `raw` was also assumed to
+        be a dict, so a JSON array at top-level crashed before the loop began.
+        Both gaps violated the "never raises (Pitfall 4)" contract documented in
+        the module docstring. We now guard the top-level shape AND each entry
+        shape before iteration, and widen the per-entry catch to also include
+        AttributeError + ValueError.
         """
         if not self._path.exists():
             return {}
@@ -107,14 +117,33 @@ class Ledger:
             logger.warning("Ledger at %s is corrupt JSON — starting fresh", self._path)
             return {}
 
+        # CR-03: a JSON array / scalar / null at top-level previously raised
+        # AttributeError on `raw.items()`. Guard explicitly so the never-raises
+        # contract holds for any legal-but-wrong-shape JSON.
+        if not isinstance(raw, dict):
+            logger.warning(
+                "Ledger at %s is not a JSON object (got %s) — starting fresh",
+                self._path, type(raw).__name__,
+            )
+            return {}
+
         # Parse entries individually so a single malformed/extended record only skips
         # that entry rather than dropping the entire ledger (WR-07: forward-compat schema drift).
         valid_keys = {f.name for f in dataclasses.fields(LedgerEntry)}
         out: dict[str, LedgerEntry] = {}
         for k, v in raw.items():
+            # CR-03: a non-dict value at an entry key (a scalar, list, or None)
+            # previously raised AttributeError from `v.items()` outside the
+            # try/except and aborted the whole load. Pre-filter explicitly.
+            if not isinstance(v, dict):
+                logger.warning(
+                    "Ledger entry %r is not an object (got %s) — skipping that entry",
+                    k, type(v).__name__,
+                )
+                continue
             try:
                 out[k] = LedgerEntry(**{kk: vv for kk, vv in v.items() if kk in valid_keys})
-            except (TypeError, KeyError):
+            except (TypeError, KeyError, AttributeError, ValueError):
                 logger.warning("Ledger entry %r is malformed — skipping that entry", k)
         return out
 

@@ -251,3 +251,44 @@ def test_ledger_corrupt_fallback(tmp_path):
     assert ledger._data == {}, (
         f"Expected _data == {{}} after corrupt JSON fallback, got {ledger._data!r}"
     )
+
+
+def test_ledger_load_with_non_object_top_level(tmp_path):
+    """Legal JSON whose top level is not a dict (array / scalar / null) must not crash _load (CR-03).
+
+    The module's docstring promises 'never raises (Pitfall 4)'. Before CR-03 the
+    top-level shape was assumed to be a dict and an unexpected list/scalar at
+    that level raised AttributeError outside the per-entry try/except, aborting
+    the whole Ledger.__init__.
+    """
+    ledger_mod = pytest.importorskip("trezarr.output.ledger")
+    Ledger = ledger_mod.Ledger
+
+    ledger_path = tmp_path / "processed_files.json"
+    ledger_path.write_text("[1, 2, 3]", encoding="utf-8")  # legal JSON, wrong shape
+
+    ledger = Ledger(ledger_path)  # must not raise
+    assert ledger._data == {}, f"Expected empty ledger on non-object top-level, got {ledger._data!r}"
+    assert ledger.check("anything") is None
+
+
+def test_ledger_load_with_non_object_entry(tmp_path):
+    """A non-dict value at an entry key (scalar / list / null) must skip that entry, not crash (CR-03).
+
+    Before CR-03, `v.items()` on a non-dict raised AttributeError that was NOT
+    caught by the per-entry try/except (which only listed TypeError, KeyError),
+    so the whole ledger load aborted and the CLI crashed.
+    """
+    ledger_mod = pytest.importorskip("trezarr.output.ledger")
+    Ledger = ledger_mod.Ledger
+
+    ledger_path = tmp_path / "processed_files.json"
+    ledger_path.write_text(
+        '{"a/b/c.srt": "broken-scalar", "x/y/z.srt": null, "p/q/r.srt": [1, 2]}',
+        encoding="utf-8",
+    )
+
+    ledger = Ledger(ledger_path)  # must not raise
+    assert ledger.check("a/b/c.srt") is None
+    assert ledger.check("x/y/z.srt") is None
+    assert ledger.check("p/q/r.srt") is None
