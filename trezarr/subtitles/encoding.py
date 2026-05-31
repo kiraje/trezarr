@@ -65,8 +65,16 @@ def detect_encoding(data: bytes) -> str:
     # ---- Tier 1: BOM check -----------------------------------------------
     if data[:3] == b"\xef\xbb\xbf":
         return "utf-8-sig"
-    if data[:2] in (b"\xff\xfe", b"\xfe\xff"):
-        return "utf-16"
+    # WR-01: map the UTF-16 BOM to the *explicit* endianness so the byte order
+    # round-trips.  Plain "utf-16" re-encodes with the platform's native
+    # endianness on write (which may differ from the source) and also strips the
+    # BOM on decode — both break byte-identity.  The "utf-16-le"/"utf-16-be"
+    # codecs preserve the BOM through decode→encode for a big- or little-endian
+    # source alike.
+    if data[:2] == b"\xff\xfe":
+        return "utf-16-le"
+    if data[:2] == b"\xfe\xff":
+        return "utf-16-be"
 
     # ---- Tier 2: Strict UTF-8 decode -------------------------------------
     try:
