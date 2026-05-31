@@ -92,6 +92,38 @@ def test_longest_prefix_wins():
     )
 
 
+def test_path_mapping_prefix_is_path_boundary():
+    """A configured remote prefix MUST match on a path boundary — '/tv' does not match '/tvshow' (CR-01).
+
+    Real *arr deployments (TRaSH-Guides setups) commonly have neighbouring roots
+    like /tv and /tvshow-anime, or /data/movies and /data/movies-4k. A naked
+    str.startswith would silently route a /tvshow path through the /tv mapping,
+    landing the write target in the wrong directory. The path-boundary check
+    (normalized == remote OR normalized starts with remote + "/") makes shadowed
+    prefixes a passthrough instead.
+    """
+    paths_mod = pytest.importorskip("trezarr.paths")
+    apply_path_mapping = paths_mod.apply_path_mapping
+    PathMapping = paths_mod.PathMapping
+
+    mappings = [PathMapping(remote="/tv", local="/data/tv")]
+    # /tvshow must NOT match /tv — must passthrough unchanged
+    result = apply_path_mapping("/tvshow/Foo.mkv", mappings)
+    assert str(result) == "/tvshow/Foo.mkv", (
+        f"Expected passthrough /tvshow/Foo.mkv (no path-boundary match), got {result}"
+    )
+    # Also assert that the exact-equality case still maps (boundary OR equality).
+    result_exact = apply_path_mapping("/tv", mappings)
+    assert str(result_exact) == "/data/tv", (
+        f"Exact match must still map, got {result_exact}"
+    )
+    # And /tv/... still maps as before.
+    result_child = apply_path_mapping("/tv/Show/ep.mkv", mappings)
+    assert str(result_child) == "/data/tv/Show/ep.mkv", (
+        f"Child path must still map under boundary semantics, got {result_child}"
+    )
+
+
 # ──────────────────────────────────────────────────────────────────────────────
 # assert_within_media_roots — path-traversal guard (D-29)
 # ──────────────────────────────────────────────────────────────────────────────

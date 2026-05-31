@@ -87,7 +87,11 @@ def apply_path_mapping(api_path: str, mappings: Sequence[PathMapping]) -> Path:
     sorted_mappings = sorted(mappings, key=lambda m: len(m.remote.rstrip("/")), reverse=True)
     for mapping in sorted_mappings:
         remote = mapping.remote.rstrip("/")
-        if normalized.startswith(remote):
+        # CR-01 path-boundary check: a naked str.startswith allows "/tv" to
+        # shadow "/tvshow" — a real *arr scenario (TRaSH-Guides setups have
+        # neighbouring roots like /tv + /tvshow-anime). Only match if normalized
+        # is exactly remote, OR has remote as a true prefix terminated by "/".
+        if normalized == remote or normalized.startswith(remote + "/"):
             suffix = normalized[len(remote):]
             local_root = mapping.local.rstrip("/")
             return Path(local_root + suffix)
