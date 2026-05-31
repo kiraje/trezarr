@@ -1,0 +1,8 @@
+3
+00:00:01.000 --> 00:00:02.500
+First cue period timecode
+
+7
+00:00:05.50 --> 00:00:07.00
+Second cue two-digit ms
+
