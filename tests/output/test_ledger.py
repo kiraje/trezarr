@@ -183,6 +183,55 @@ def test_ledger_persists_atomically(tmp_path):
     assert data[src_path]["content_hash"] == "abcd1234abcd1234"
 
 
+def test_ledger_schema_drift_skips_bad_entry_keeps_good(tmp_path):
+    """A single malformed/extended ledger entry is skipped; valid entries are preserved (WR-07).
+
+    A forward-compat schema drift (unknown key in one entry) must not wipe the entire ledger.
+    Only the bad entry is skipped; the rest load normally.
+    """
+    import json
+
+    ledger_mod = pytest.importorskip("trezarr.output.ledger")
+    Ledger = ledger_mod.Ledger
+    LedgerEntry = ledger_mod.LedgerEntry
+
+    ledger_path = tmp_path / "processed_files.json"
+
+    good_path = "/media/Show.S01E01.en.srt"
+    bad_path = "/media/Show.S01E02.en.srt"
+
+    # Write a ledger where one entry has a required field missing (malformed)
+    raw = {
+        good_path: {
+            "source_path": good_path,
+            "output_path": "/media/Show.S01E01.vi.srt",
+            "status": "done",
+            "content_hash": "abcd1234abcd1234",
+            "series_id": None,
+            "source_lang": None,
+            "episode_key": None,
+            "translated_at": None,
+            "quarantine_path": None,
+        },
+        bad_path: {
+            # Missing required fields: source_path, output_path, status, content_hash
+            "unknown_future_field": "some_value",
+        },
+    }
+    ledger_path.write_text(json.dumps(raw), encoding="utf-8")
+
+    ledger = Ledger(ledger_path)
+
+    # Good entry must survive
+    good = ledger.check(good_path)
+    assert good is not None, "Good entry must be loaded even when another entry is malformed"
+    assert good.status == "done"
+
+    # Bad entry is simply absent (not an exception)
+    bad = ledger.check(bad_path)
+    assert bad is None, "Malformed entry must be skipped (not cause total ledger loss)"
+
+
 def test_ledger_corrupt_fallback(tmp_path):
     """Malformed JSON in ledger path → Ledger._data is empty dict, no exception raised (ENG-07)."""
     ledger_mod = pytest.importorskip("trezarr.output.ledger")

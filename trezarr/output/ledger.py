@@ -20,6 +20,7 @@ Atomic write:
 """
 from __future__ import annotations
 
+import dataclasses
 import hashlib
 import json
 import logging
@@ -97,10 +98,20 @@ class Ledger:
             return {}
         try:
             raw = json.loads(self._path.read_text(encoding='utf-8'))
-            return {k: LedgerEntry(**v) for k, v in raw.items()}
-        except (json.JSONDecodeError, TypeError, KeyError):
-            logger.warning("Ledger at %s is corrupt — starting fresh", self._path)
+        except json.JSONDecodeError:
+            logger.warning("Ledger at %s is corrupt JSON — starting fresh", self._path)
             return {}
+
+        # Parse entries individually so a single malformed/extended record only skips
+        # that entry rather than dropping the entire ledger (WR-07: forward-compat schema drift).
+        valid_keys = {f.name for f in dataclasses.fields(LedgerEntry)}
+        out: dict[str, LedgerEntry] = {}
+        for k, v in raw.items():
+            try:
+                out[k] = LedgerEntry(**{kk: vv for kk, vv in v.items() if kk in valid_keys})
+            except (TypeError, KeyError):
+                logger.warning("Ledger entry %r is malformed — skipping that entry", k)
+        return out
 
     def check(self, source_path: str | Path) -> LedgerEntry | None:
         """Return the ledger entry for source_path, or None if not recorded.
