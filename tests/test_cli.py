@@ -59,6 +59,7 @@ def _db_patches():
     return [
         patch("trezarr.cli.build_engine", return_value=MagicMock()),
         patch("trezarr.cli.run_migrations_to_head", new=AsyncMock()),
+        patch("trezarr.cli.build_session_factory", return_value=MagicMock()),
         patch("trezarr.cli.migrate_json_ledger_if_needed", new=AsyncMock()),
         patch("trezarr.cli.LedgerSQLA", return_value=MagicMock()),
     ]
@@ -597,3 +598,300 @@ async def test_chmod_error_quarantines_item(tmp_path, settings_factory):
     assert exit_code == 1, (
         f"PermissionApplyError must yield a non-zero exit (item quarantined), got {exit_code}"
     )
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Task 2: Step 3.5 DB-startup wiring tests (04-04 — cli.py startup)
+# ──────────────────────────────────────────────────────────────────────────────
+
+
+async def test_run_once_builds_engine_and_runs_migrations_before_discovery(tmp_path, capsys, settings_factory):
+    """Step 3.5 runs in the correct order: build_engine → run_migrations_to_head →
+    build_session_factory → migrate_json_ledger_if_needed → (discovery) (04-04 Task 2 Test 1).
+    """
+    cli_mod = pytest.importorskip("trezarr.cli")
+    _run_once = cli_mod._run_once
+
+    call_order: list[str] = []
+
+    settings = settings_factory(sonarr_enabled=False, radarr_enabled=False)
+
+    def _record_build_engine(*_a, **_kw):
+        call_order.append("build_engine")
+        return MagicMock()
+
+    async def _record_run_migrations(*_a, **_kw):
+        call_order.append("run_migrations_to_head")
+
+    def _record_build_session_factory(*_a, **_kw):
+        call_order.append("build_session_factory")
+        return MagicMock()
+
+    async def _record_migrate(*_a, **_kw):
+        call_order.append("migrate_json_ledger_if_needed")
+
+    def _record_discover_sonarr(*_a, **_kw):
+        call_order.append("discover_sonarr_items")
+        return []
+
+    def _record_discover_radarr(*_a, **_kw):
+        call_order.append("discover_radarr_items")
+        return []
+
+    with contextlib.ExitStack() as stack:
+        stack.enter_context(patch("trezarr.cli.TrezarrSettings", return_value=settings))
+        stack.enter_context(patch("trezarr.cli.build_engine", side_effect=_record_build_engine))
+        stack.enter_context(patch("trezarr.cli.run_migrations_to_head", new=AsyncMock(side_effect=_record_run_migrations)))
+        stack.enter_context(patch("trezarr.cli.build_session_factory", side_effect=_record_build_session_factory))
+        stack.enter_context(patch("trezarr.cli.migrate_json_ledger_if_needed", new=AsyncMock(side_effect=_record_migrate)))
+        stack.enter_context(patch("trezarr.cli.LedgerSQLA", return_value=MagicMock()))
+        stack.enter_context(patch("trezarr.cli.discover_sonarr_items", side_effect=_record_discover_sonarr))
+        stack.enter_context(patch("trezarr.cli.discover_radarr_items", side_effect=_record_discover_radarr))
+        stack.enter_context(patch(
+            "trezarr.cli.scan_for_eligible_items",
+            new=AsyncMock(return_value=([], MagicMock(scanned=0, no_source=0, foreign_vi=0, already_done=0))),
+        ))
+        stack.enter_context(patch("trezarr.cli.apply_permissions"))
+        stack.enter_context(patch("trezarr.cli.probe_media_roots"))
+        stack.enter_context(patch("trezarr.cli.assert_media_roots_configured"))
+        stack.enter_context(patch("trezarr.cli.LLMClient"))
+        await _run_once(None)
+
+    # Verify ordering: build_engine and migrations must precede discovery
+    assert "build_engine" in call_order, "build_engine must be called in Step 3.5"
+    assert "run_migrations_to_head" in call_order, "run_migrations_to_head must be called in Step 3.5"
+    assert "build_session_factory" in call_order, "build_session_factory must be called in Step 3.5"
+    assert "migrate_json_ledger_if_needed" in call_order, "migrate_json_ledger_if_needed must be called in Step 3.5"
+    engine_idx = call_order.index("build_engine")
+    migrate_idx = call_order.index("run_migrations_to_head")
+    session_idx = call_order.index("build_session_factory")
+    json_migrate_idx = call_order.index("migrate_json_ledger_if_needed")
+    discover_s_idx = call_order.index("discover_sonarr_items")
+    discover_r_idx = call_order.index("discover_radarr_items")
+
+    assert engine_idx < migrate_idx < session_idx < json_migrate_idx, (
+        f"Step 3.5 must run: build_engine < run_migrations < build_session_factory < migrate_json; "
+        f"got order: {call_order}"
+    )
+    assert json_migrate_idx < discover_s_idx, (
+        f"migrate_json_ledger_if_needed must run before Sonarr discovery; got: {call_order}"
+    )
+    assert json_migrate_idx < discover_r_idx, (
+        f"migrate_json_ledger_if_needed must run before Radarr discovery; got: {call_order}"
+    )
+
+
+async def test_run_once_constructs_ledger_sqla_not_json_ledger(tmp_path, capsys, settings_factory):
+    """_run_once uses LedgerSQLA (not JSON Ledger) for the translate loop (04-04 Task 2 Test 2)."""
+    cli_mod = pytest.importorskip("trezarr.cli")
+    _run_once = cli_mod._run_once
+    from trezarr.output.ledger_sqla import LedgerSQLA as _LedgerSQLA
+
+    settings = settings_factory(sonarr_enabled=False, radarr_enabled=False)
+
+    # Capture the ledger passed to scan_for_eligible_items to assert its type
+    captured_ledger = []
+
+    async def _capture_scan(items, ledger, *_a, **_kw):
+        captured_ledger.append(ledger)
+        return ([], MagicMock(scanned=0, no_source=0, foreign_vi=0, already_done=0))
+
+    # Use a real LedgerSQLA instance from a temp DB to confirm the type
+    from tests.db.conftest import session_factory as _sf_fixture  # use fixture indirectly via MagicMock
+    # Mock LedgerSQLA to return a known sentinel so we can test isinstance
+    sentinel_ledger = MagicMock(spec=_LedgerSQLA)
+
+    with contextlib.ExitStack() as stack:
+        stack.enter_context(patch("trezarr.cli.build_engine", return_value=MagicMock()))
+        stack.enter_context(patch("trezarr.cli.run_migrations_to_head", new=AsyncMock()))
+        stack.enter_context(patch("trezarr.cli.build_session_factory", return_value=MagicMock()))
+        stack.enter_context(patch("trezarr.cli.migrate_json_ledger_if_needed", new=AsyncMock()))
+        stack.enter_context(patch("trezarr.cli.LedgerSQLA", return_value=sentinel_ledger))
+        stack.enter_context(patch("trezarr.cli.TrezarrSettings", return_value=settings))
+        stack.enter_context(patch("trezarr.cli.discover_sonarr_items", return_value=[]))
+        stack.enter_context(patch("trezarr.cli.discover_radarr_items", return_value=[]))
+        stack.enter_context(patch("trezarr.cli.scan_for_eligible_items", new=AsyncMock(side_effect=_capture_scan)))
+        stack.enter_context(patch("trezarr.cli.apply_permissions"))
+        stack.enter_context(patch("trezarr.cli.probe_media_roots"))
+        stack.enter_context(patch("trezarr.cli.assert_media_roots_configured"))
+        stack.enter_context(patch("trezarr.cli.LLMClient"))
+        await _run_once(None)
+
+    assert len(captured_ledger) == 1, "scan_for_eligible_items must be called with a ledger"
+    assert captured_ledger[0] is sentinel_ledger, (
+        "The ledger passed to scan_for_eligible_items must be the LedgerSQLA instance (not JSON Ledger)"
+    )
+
+
+async def test_run_once_exits_nonzero_on_migration_failure(tmp_path, caplog, settings_factory):
+    """Alembic migration failure causes _run_once to return 1 with an actionable error (04-04 Task 2 Test 3).
+
+    Per RESEARCH §Open Question 3: Alembic schema failure is hard-fatal —
+    the DB schema MUST be ready before any translate work can happen.
+    """
+    import logging
+
+    cli_mod = pytest.importorskip("trezarr.cli")
+    _run_once = cli_mod._run_once
+
+    settings = settings_factory(sonarr_enabled=False, radarr_enabled=False)
+
+    with contextlib.ExitStack() as stack:
+        stack.enter_context(patch("trezarr.cli.TrezarrSettings", return_value=settings))
+        stack.enter_context(patch("trezarr.cli.build_engine", return_value=MagicMock()))
+        stack.enter_context(patch(
+            "trezarr.cli.run_migrations_to_head",
+            new=AsyncMock(side_effect=RuntimeError("Alembic migration failed: DB locked")),
+        ))
+        stack.enter_context(patch("trezarr.cli.build_session_factory", return_value=MagicMock()))
+        stack.enter_context(patch("trezarr.cli.migrate_json_ledger_if_needed", new=AsyncMock()))
+        stack.enter_context(patch("trezarr.cli.LedgerSQLA", return_value=MagicMock()))
+        stack.enter_context(patch("trezarr.cli.probe_media_roots"))
+        stack.enter_context(patch("trezarr.cli.assert_media_roots_configured"))
+        stack.enter_context(caplog.at_level(logging.ERROR))
+        exit_code = await _run_once(None)
+
+    assert exit_code == 1, (
+        f"Alembic migration failure must cause _run_once to return 1 (non-zero), got {exit_code}"
+    )
+    assert any(
+        "DB startup failed" in rec.getMessage() for rec in caplog.records
+    ), "Expected an error log with an actionable message when migration fails"
+
+
+async def test_run_once_logs_but_continues_on_ledger_migration_failure(tmp_path, caplog, settings_factory):
+    """JSON-ledger migration failure logs an error but the run continues (04-04 Task 2 Test 4).
+
+    Per D-37 forgiveness contract: the JSON-ledger one-shot import is best-effort.
+    A failure starts SQLite with an empty ledger but does NOT abort the run.
+    This is asymmetric vs. the Alembic hard-fatal path (Test 3).
+    """
+    import logging
+
+    cli_mod = pytest.importorskip("trezarr.cli")
+    _run_once = cli_mod._run_once
+
+    settings = settings_factory(sonarr_enabled=False, radarr_enabled=False)
+
+    with contextlib.ExitStack() as stack:
+        stack.enter_context(patch("trezarr.cli.TrezarrSettings", return_value=settings))
+        stack.enter_context(patch("trezarr.cli.build_engine", return_value=MagicMock()))
+        stack.enter_context(patch("trezarr.cli.run_migrations_to_head", new=AsyncMock()))
+        stack.enter_context(patch("trezarr.cli.build_session_factory", return_value=MagicMock()))
+        stack.enter_context(patch(
+            "trezarr.cli.migrate_json_ledger_if_needed",
+            new=AsyncMock(side_effect=OSError("Disk full during rename")),
+        ))
+        stack.enter_context(patch("trezarr.cli.LedgerSQLA", return_value=MagicMock()))
+        stack.enter_context(patch("trezarr.cli.discover_sonarr_items", return_value=[]))
+        stack.enter_context(patch("trezarr.cli.discover_radarr_items", return_value=[]))
+        stack.enter_context(patch(
+            "trezarr.cli.scan_for_eligible_items",
+            new=AsyncMock(return_value=([], MagicMock(scanned=0, no_source=0, foreign_vi=0, already_done=0))),
+        ))
+        stack.enter_context(patch("trezarr.cli.apply_permissions"))
+        stack.enter_context(patch("trezarr.cli.probe_media_roots"))
+        stack.enter_context(patch("trezarr.cli.assert_media_roots_configured"))
+        stack.enter_context(patch("trezarr.cli.LLMClient"))
+        stack.enter_context(caplog.at_level(logging.ERROR))
+        exit_code = await _run_once(None)
+
+    # The run MUST NOT abort — it continues to discovery/scan/translate
+    # Exit code 0 means "no translate failures" (zero eligible items is fine)
+    assert exit_code == 0, (
+        f"JSON-ledger migration failure must NOT abort the run (D-37 forgiveness); got exit_code={exit_code}"
+    )
+    assert any(
+        "DB startup failed" in rec.getMessage() for rec in caplog.records
+    ), "Expected an error log when JSON-ledger migration fails"
+
+
+async def test_run_once_end_to_end_smoke_with_temp_sqlite(tmp_path, settings_factory):
+    """Integration smoke: _run_once with a real temp SQLite produces a vi.srt sidecar and a
+    'done' row in the processed_file table (04-04 Task 2 Test 5).
+
+    Patches the LLM translate_file to avoid a real endpoint but exercises the full
+    SQLite startup + LedgerSQLA check/record path with a real AsyncEngine.
+    """
+    from pathlib import Path as _Path
+    from sqlalchemy import text
+    from sqlalchemy.ext.asyncio import async_sessionmaker as _async_sessionmaker
+
+    cli_mod = pytest.importorskip("trezarr.cli")
+    _run_once = cli_mod._run_once
+
+    # Set up a real media file + source SRT
+    media_root = tmp_path / "media"
+    media_root.mkdir()
+    src = media_root / "Show.S01E01.en.srt"
+    src.write_text("1\n00:00:01,000 --> 00:00:03,000\nHello\n", encoding="utf-8")
+    vi_out = media_root / "Show.S01E01.vi.srt"
+
+    # Real temp SQLite DB
+    db_path = tmp_path / "trezarr.db"
+    from trezarr.paths import PathMapping
+    settings = settings_factory(
+        sonarr_enabled=False,
+        radarr_enabled=False,
+        bible_db_url=f"sqlite+aiosqlite:///{db_path}",
+        path_mappings=[PathMapping(remote="/tv", local=str(media_root))],
+        translate_ledger_path=str(tmp_path / "processed_files.json"),  # non-existent → migration no-op
+        translate_quarantine_dir=str(tmp_path / "quarantine"),
+    )
+
+    from tests._helpers.cli_media_item import MediaItem
+    item = MediaItem(
+        local_path=src.with_suffix(".mkv"),
+        source_sub_path=src,
+        title="Show",
+        source_lang="en",
+    )
+
+    async def _fake_translate(path, _settings, _llm, _ledger):
+        from trezarr.output.ledger import LedgerEntry
+        from trezarr.translate.engine import TranslationResult
+        # Write the vi.srt sidecar so write-side logic works
+        vi_out.write_text("1\n00:00:01,000 --> 00:00:03,000\nXin chào\n", encoding="utf-8")
+        # Record in the ledger exactly as the real translate_file would do
+        await _ledger.record(LedgerEntry(
+            source_path=str(path),
+            output_path=str(vi_out),
+            status="done",
+            content_hash=_ledger.content_hash(_Path(path).read_bytes()),
+        ))
+        return TranslationResult(status="done", output_path=vi_out)
+
+    with contextlib.ExitStack() as stack:
+        stack.enter_context(patch("trezarr.cli.TrezarrSettings", return_value=settings))
+        stack.enter_context(patch("trezarr.cli.discover_sonarr_items", return_value=[]))
+        stack.enter_context(patch("trezarr.cli.discover_radarr_items", return_value=[]))
+        stack.enter_context(patch(
+            "trezarr.cli.scan_for_eligible_items",
+            new=AsyncMock(return_value=([item], MagicMock(scanned=1, no_source=0, foreign_vi=0, already_done=0, error=0))),
+        ))
+        stack.enter_context(patch("trezarr.cli.translate_file", new=AsyncMock(side_effect=_fake_translate)))
+        stack.enter_context(patch("trezarr.cli.apply_permissions"))
+        stack.enter_context(patch("trezarr.cli.probe_media_roots"))
+        stack.enter_context(patch("trezarr.cli.assert_media_roots_configured"))
+        stack.enter_context(patch("trezarr.cli.LLMClient"))
+        exit_code = await _run_once(None)
+
+    assert exit_code == 0, f"End-to-end smoke must exit 0 on success, got {exit_code}"
+    assert vi_out.exists(), "translate_file must have written the vi.srt sidecar"
+
+    # Verify the SQLite processed_file table has a 'done' row for the source path
+    from trezarr.db.engine import build_engine as _build_engine
+    from trezarr.db.migration_runner import run_migrations_to_head as _run_migrations
+    verify_engine = _build_engine(settings)
+    await _run_migrations(verify_engine)
+    verify_factory = _async_sessionmaker(verify_engine, expire_on_commit=False)
+    async with verify_factory() as session:
+        result = await session.execute(
+            text("SELECT status, source_path FROM processed_file WHERE source_path = :p"),
+            {"p": str(src)},
+        )
+        row = result.fetchone()
+    await verify_engine.dispose()
+
+    assert row is not None, f"processed_file must have a row for {src} after a successful run"
+    assert row[0] == "done", f"processed_file row for {src} must have status='done', got {row[0]!r}"

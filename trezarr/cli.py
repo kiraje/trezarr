@@ -48,6 +48,7 @@ from trezarr.arr.sonarr import discover_sonarr_items
 from trezarr.config import TrezarrSettings
 from trezarr.db.engine import build_engine
 from trezarr.db.migration_runner import migrate_json_ledger_if_needed, run_migrations_to_head
+from trezarr.db.session import build_session_factory
 from trezarr.discover.scan import scan_for_eligible_items
 from trezarr.llm.client import LLMClient
 from trezarr.output.ledger_sqla import LedgerSQLA
@@ -145,17 +146,14 @@ async def _run_once(config_path: str | None) -> int:
     media_roots = build_media_roots(settings)
     probe_media_roots(media_roots)
 
-    # Step 3.5 — DB startup: engine + Alembic migrations + JSON ledger migration
-    # + LedgerSQLA construction (D-37, D-38, 04-04).
-    # Failure here exits non-zero with an actionable message (fail-fast, same
-    # severity as probe_media_roots) — per RESEARCH §Open Question 3.
+    # Step 3.5a — DB engine + Alembic migrations (hard-fatal on failure).
+    # Schema must be ready before any translate work; mirrors probe_media_roots
+    # fail-fast severity — per RESEARCH §Open Question 3.
     try:
-        from sqlalchemy.ext.asyncio import async_sessionmaker as _async_sessionmaker
         engine = build_engine(settings)
         await run_migrations_to_head(engine)
-        _session_factory = _async_sessionmaker(engine, expire_on_commit=False)
-        await migrate_json_ledger_if_needed(_session_factory, settings)
-        ledger: LedgerSQLA = LedgerSQLA(_session_factory)
+        session_factory = build_session_factory(engine)
+        ledger: LedgerSQLA = LedgerSQLA(session_factory)
     except Exception as exc:
         logger.error(
             "DB startup failed — cannot continue. "
@@ -164,6 +162,20 @@ async def _run_once(config_path: str | None) -> int:
             exc_info=True,
         )
         return 1
+
+    # Step 3.5b — JSON ledger one-shot migration (best-effort per D-37 forgiveness).
+    # A failure here starts SQLite with an empty ledger but does NOT abort the run.
+    # Asymmetric vs. Step 3.5a: the translate loop can still run without the old JSON data.
+    try:
+        await migrate_json_ledger_if_needed(session_factory, settings)
+    except Exception as exc:
+        logger.error(
+            "DB startup failed — JSON ledger migration failed (%s). "
+            "Continuing with an empty SQLite ledger (D-37 forgiveness). "
+            "Prior processed_files.json entries will NOT be migrated on this run.",
+            exc,
+            exc_info=True,
+        )
 
     # Step 4 — Discovery with per-service resilience (MEDIUM #10).
     # One *arr down does NOT abort the run if the other is healthy.
