@@ -64,6 +64,7 @@ def _make_batch(
     all_lines: list[SubLine],
     next_idx: int,
     settings: "TrezarrSettings",
+    context_lines_k: int | None = None,
 ) -> Batch:
     """Construct a Batch with context_before and context_after attached.
 
@@ -73,8 +74,12 @@ def _make_batch(
         next_idx: Index in all_lines of the first cue AFTER this batch
                   (i.e. the position where the next batch will start).
         settings: Settings supplying translate_context_lines_k.
+        context_lines_k: Override the context window size K.  When None (default),
+                  falls back to settings.translate_context_lines_k so that existing
+                  callers (Pass 3 translation) are unaffected.  Pass 2 attribution
+                  uses settings.attribute_context_lines_k to widen context (D-50/WR-01).
     """
-    k = settings.translate_context_lines_k
+    k = context_lines_k if context_lines_k is not None else settings.translate_context_lines_k
 
     # Find the position of the first cue in this batch within all_lines
     first_idx = next_idx - len(cues)
@@ -90,7 +95,11 @@ def _make_batch(
     return Batch(cues=cues, context_before=context_before, context_after=context_after)
 
 
-def batch_subdoc(doc: SubDoc, settings: "TrezarrSettings") -> list[Batch]:
+def batch_subdoc(
+    doc: SubDoc,
+    settings: "TrezarrSettings",
+    context_lines_k: int | None = None,
+) -> list[Batch]:
     """Pack a SubDoc into LLM-sized batches respecting scene gaps and token budget.
 
     Greedy-walk algorithm (Q2 from RESEARCH.md):
@@ -106,6 +115,11 @@ def batch_subdoc(doc: SubDoc, settings: "TrezarrSettings") -> list[Batch]:
     Args:
         doc:      The source subtitle document to batch.
         settings: Settings controlling batch size, gap threshold, and context K.
+        context_lines_k: Override the context window size K for the Batch objects.
+                  When None (default), uses settings.translate_context_lines_k (existing
+                  behaviour preserved for all callers).  Pass this as
+                  settings.attribute_context_lines_k when building attribution batches
+                  to honour the D-50 "wider context than translate" design (WR-01).
 
     Returns:
         List of Batch objects in document order.
@@ -125,7 +139,7 @@ def batch_subdoc(doc: SubDoc, settings: "TrezarrSettings") -> list[Batch]:
         )
 
         if current and (at_scene_gap or would_overflow):
-            batches.append(_make_batch(current, doc.lines, i, settings))
+            batches.append(_make_batch(current, doc.lines, i, settings, context_lines_k))
             current = []
             current_chars = 0
 
@@ -142,6 +156,6 @@ def batch_subdoc(doc: SubDoc, settings: "TrezarrSettings") -> list[Batch]:
         current_chars += len(cue.text)
 
     if current:
-        batches.append(_make_batch(current, doc.lines, len(doc.lines), settings))
+        batches.append(_make_batch(current, doc.lines, len(doc.lines), settings, context_lines_k))
 
     return batches

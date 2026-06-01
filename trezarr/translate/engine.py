@@ -598,10 +598,16 @@ async def translate_file(
         # Reload Bible so Pass 2/3 see the fresh Address Map (D-48)
         bible = await load_series_bible(session_factory, series_dto.id)
 
-        # PASS 2 (D-43): concurrent attribution gather (same batches as Pass 3 — Pitfall E)
+        # PASS 2 (D-43): concurrent attribution gather.
+        # Build attribution batches with the WIDER context window (D-50/WR-01):
+        # attribute_context_lines_k is typically 8 vs translate_context_lines_k=3.
+        # batch_subdoc with context_lines_k= attaches more context lines per batch;
+        # cue grouping is identical (K does not affect scene-gap/budget boundaries),
+        # so flat_attributions aligns 1:1 with the Pass-3 batches below.
         if settings.enable_attribution:
+            attr_batches = batch_subdoc(source_doc, settings, context_lines_k=settings.attribute_context_lines_k)
             attr_per_batch = await asyncio.gather(
-                *[attribute_batch(b, bible, llm_client, settings) for b in batches]
+                *[attribute_batch(b, bible, llm_client, settings) for b in attr_batches]
             )
             flat_attributions = [a for batch_attrs in attr_per_batch for a in batch_attrs]
         else:
