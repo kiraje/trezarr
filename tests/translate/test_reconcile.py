@@ -147,13 +147,14 @@ def _make_address_map_entry(
     )
 
 
-def _make_settings(threshold: str = "medium", safe_default=None):
+def _make_settings(threshold: str = "medium", safe_default=None, enable_relationship_events: bool = True):
     """Build a minimal TrezarrSettings-like object."""
     from types import SimpleNamespace
 
     return SimpleNamespace(
         pronoun_confidence_threshold=threshold,
         pronoun_safe_default=safe_default,
+        enable_relationship_events=enable_relationship_events,
     )
 
 
@@ -801,4 +802,77 @@ async def test_reconcile_strips_casing_from_speaker_and_addressee(session_factor
     )
     assert pair_result == ("anh", "em"), (
         f"Expected ('anh', 'em') from address map entry, got {pair_result!r}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# WR-01 — enable_relationship_events toggle off-path test
+# ---------------------------------------------------------------------------
+
+
+async def test_enable_relationship_events_false_suppresses_transition(session_factory):
+    """WR-01: enable_relationship_events=False suppresses transition lookup (D-60 toggle).
+
+    Arrange: bible with a relationship_event for the pair at the current episode
+             and an existing address_map entry with old terms.
+    Act: reconcile_attributions with enable_relationship_events=False.
+    Assert: the transition is NOT applied — pair uses the existing address_map entry
+            terms (carried-forward), NOT the transition's suggested terms.
+    """
+    from trezarr.translate.reconcile import reconcile_attributions
+
+    # Toggle OFF — transition branch must be skipped entirely
+    settings = _make_settings(threshold="medium", enable_relationship_events=False)
+
+    series_id = await _create_series(session_factory, arr_series_id=403)
+    spk_id, addr_id = await _create_characters(
+        session_factory,
+        series_id,
+        spk_name="ToggleA",
+        spk_gender="male",
+        addr_name="ToggleB",
+        addr_gender="female",
+    )
+
+    # A relationship_event that would change terms if the toggle were on
+    event = _make_relationship_event(
+        id=10,
+        series_id=series_id,
+        char_a_id=spk_id,
+        char_b_id=addr_id,
+        episode_marker="S01E08",
+        suggested_self_term="anh",
+        suggested_address_term="em",
+    )
+
+    # Existing address_map entry with old terms
+    bible = _make_bible(
+        series_id=series_id,
+        characters=[
+            _make_character(spk_id, "ToggleA", "male"),
+            _make_character(addr_id, "ToggleB", "female"),
+        ],
+        address_map=[
+            _make_address_map_entry(10, series_id, spk_id, addr_id, "tôi", "bạn"),
+        ],
+        relationship_events=[event],
+    )
+
+    attributions = [_make_attribution("ToggleA", "ToggleB", "high")]
+
+    resolved = await reconcile_attributions(
+        flat_attributions=attributions,
+        bible=bible,
+        session_factory=session_factory,
+        series_id=series_id,
+        episode_key="S01E08",
+        settings=settings,
+    )
+
+    pair_result = resolved.get((spk_id, addr_id))
+    assert pair_result is not None, "Expected resolved entry for pair"
+    # With toggle OFF, transition is suppressed — carried-forward ("tôi", "bạn") applies
+    assert pair_result == ("tôi", "bạn"), (
+        f"enable_relationship_events=False must suppress transition; "
+        f"expected carried-forward ('tôi', 'bạn'), got {pair_result!r}"
     )
