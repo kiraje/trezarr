@@ -32,6 +32,13 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
+# Strong references to in-flight background asyncio.Tasks (CR-02).
+# asyncio holds only a weak reference to tasks — without a strong reference here,
+# the GC can collect the poll_and_enqueue task mid-execution under memory pressure
+# (asyncio docs warning). Each task is added at creation and removed via
+# add_done_callback when it completes.
+_background_tasks: set[asyncio.Task] = set()
+
 
 @router.post("/webhook")
 async def receive_webhook(request: Request) -> JSONResponse:
@@ -115,7 +122,9 @@ async def receive_webhook(request: Request) -> JSONResponse:
     # The handler returns 200 immediately; the task runs after we yield (D-66 / Pitfall D).
     # T-07-03-01: each webhook creates at most one Task; dedup inside enqueue_job
     # ensures a flood of requests creates at most one queued job per source_path.
-    asyncio.create_task(
+    # CR-02: hold a strong reference to the task via _background_tasks so the GC
+    # cannot collect it mid-execution. The done_callback removes it when complete.
+    t = asyncio.create_task(
         poll_and_enqueue(
             session_factory,
             settings,
@@ -125,5 +134,7 @@ async def receive_webhook(request: Request) -> JSONResponse:
             series_id_hint=series_id,
         )
     )
+    _background_tasks.add(t)
+    t.add_done_callback(_background_tasks.discard)
 
     return JSONResponse({"status": "accepted", "eventType": event_type})
