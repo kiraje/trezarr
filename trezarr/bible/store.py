@@ -242,6 +242,32 @@ MERGEABLE_FIELDS: dict[str, frozenset[str]] = {
 }
 
 
+def _validate_mergeable_fields(entity_type: str, inferred: dict[str, Any]) -> None:
+    """Raise ValueError if any key in ``inferred`` is outside MERGEABLE_FIELDS[entity_type].
+
+    WR-02: single source of truth for the per-entity-type whitelist check.
+    Previously the same byte-for-byte block lived in both ``merge_inferred``
+    (pre-session fail-fast) and ``_merge_inferred_in_session`` (defence in
+    depth — _upsert_*_in_session bypasses the public ``merge_inferred``
+    fail-fast); the two could silently drift on rule changes. Both call sites
+    now delegate here.
+
+    Args:
+        entity_type: Key into MERGEABLE_FIELDS — "character" | "term_dictionary" | "series".
+        inferred:    Dict of {field: new_value} to validate against the whitelist.
+
+    Raises:
+        ValueError: If any key in ``inferred`` is not in MERGEABLE_FIELDS[entity_type].
+    """
+    allowed = MERGEABLE_FIELDS[entity_type]
+    unknown = set(inferred) - allowed
+    if unknown:
+        raise ValueError(
+            f"Field(s) {unknown} are not mergeable for entity type '{entity_type}'. "
+            f"Mergeable fields: {allowed}"
+        )
+
+
 # ---------------------------------------------------------------------------
 # Private session-scoped helpers (NEVER open a transaction — run inside one)
 # ---------------------------------------------------------------------------
@@ -300,14 +326,10 @@ async def _merge_inferred_in_session(
     Raises:
         ValueError: If any key in `inferred` is not in MERGEABLE_FIELDS[entity_type].
     """
-    # Validate inferred fields against the whitelist (MEDIUM finding)
-    allowed = MERGEABLE_FIELDS[entity_type]
-    unknown = set(inferred) - allowed
-    if unknown:
-        raise ValueError(
-            f"Field(s) {unknown} are not mergeable for entity type '{entity_type}'. "
-            f"Mergeable fields: {allowed}"
-        )
+    # Validate inferred fields against the whitelist (MEDIUM finding).
+    # WR-02: delegated to the module-level _validate_mergeable_fields helper —
+    # single source of truth shared with merge_inferred's pre-session check.
+    _validate_mergeable_fields(entity_type, inferred)
 
     # WR-01: this is the canonical SQLA row handle for this transaction. Inside
     # the same AsyncSession, session.get(...) returns the SAME Python object
@@ -765,14 +787,10 @@ async def merge_inferred(
             f"Expected CharacterDTO, TermDTO, or SeriesDTO."
         )
 
-    # Validate inferred fields against the whitelist BEFORE opening any session (T-04-10)
-    allowed = MERGEABLE_FIELDS[entity_type]
-    unknown = set(inferred) - allowed
-    if unknown:
-        raise ValueError(
-            f"Field(s) {unknown} are not mergeable for entity type '{entity_type}'. "
-            f"Mergeable fields: {allowed}"
-        )
+    # Validate inferred fields against the whitelist BEFORE opening any session (T-04-10).
+    # WR-02: same helper backs _merge_inferred_in_session's defence-in-depth
+    # check inside the transaction, so the two cannot silently drift.
+    _validate_mergeable_fields(entity_type, inferred)
 
     async with session_factory() as session:
         async with session.begin():
