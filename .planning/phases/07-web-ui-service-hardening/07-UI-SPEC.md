@@ -60,14 +60,14 @@ Exceptions:
 | Role | Size | Weight | Line Height | Tailwind classes | Usage |
 |------|------|--------|-------------|-----------------|-------|
 | Body | 14px | 400 (regular) | 1.5 | `text-sm font-normal leading-normal` | Table cells, form labels, log lines, descriptions |
-| Label / meta | 12px | 500 (medium) | 1.4 | `text-xs font-medium leading-snug` | Column headers, badge text, helper text, env-locked indicators |
+| Label / meta | 12px | 400 (regular) | 1.4 | `text-xs font-normal leading-snug` | Column headers, badge text, helper text, env-locked indicators |
 | Heading | 18px | 600 (semibold) | 1.2 | `text-lg font-semibold leading-tight` | Page title (Settings / Queue / History / Logs), section headings |
 | Mono (log lines) | 13px | 400 (regular) | 1.6 | `text-[13px] font-mono leading-relaxed` | Per-job log trail; monospace for scan-readability |
 
 Font stack: `font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;`
 Mono font stack: `font-family: ui-monospace, "Cascadia Code", "Fira Code", Menlo, monospace;`
 
-Two declared weights only: 400 (regular) and 600 (semibold). 500 (medium) is used exclusively for badge/label text where 400 is too light and 600 is too heavy — this is acceptable as a half-step only for that pattern.
+Two declared weights: 400 (regular) and 600 (semibold). No other weights are used. Badge and label text uses 400 — at 12px on a dark background the colored status dot already differentiates badges; a third weight is not needed.
 
 ---
 
@@ -91,7 +91,7 @@ Dark-first color system. All surfaces are dark; no light mode is defined for v1.
 2. Primary action buttons ("Test Connection", "Save Settings", "Retry")
 3. External links (if any appear in log output)
 
-Accent is NOT used for: status badges (they have their own semantic palette below), table hover, input focus rings (use `ring-[#3b82f6]` at 50% opacity for focus only), general decorative purposes.
+Accent is NOT used for: status badges (they have their own semantic palette below), table hover, input focus rings (use `outline: 2px solid #3b82f6; outline-offset: 2px` for focus — full opacity, no transparency), general decorative purposes.
 
 **Semantic status palette** (used for badges — text + colored dot, never color alone):
 
@@ -149,7 +149,7 @@ The following components must be built as reusable primitives. Each is hand-roll
 
 Props: `status: "queued" | "running" | "done" | "failed" | "quarantined"`
 
-Renders: `<span>` with 4px colored dot + status text label. Height 20px, 6px horizontal padding, 4px gap between dot and text, 12px medium text. Background and text from semantic status palette above.
+Renders: `<span>` with 4px colored dot + status text label. Height 20px, 6px horizontal padding, 4px gap between dot and text, 12px regular text. Background and text from semantic status palette above.
 
 Never render a badge that is color-only. Screen readers read the text label.
 
@@ -167,7 +167,7 @@ A text input used for API keys and other SecretStr fields.
 
 - Button labeled "Test Connection" (14px, accent background, white text, 8px vertical padding, 16px horizontal).
 - On click: button shows spinner, becomes disabled.
-- On result: a ResultChip appears inline to the right of the button (28px height, 8px horizontal padding, 12px medium text). Uses connection test palette above (ok = green chip with check icon; error = red chip with X icon + truncated error message on hover/tooltip).
+- On result: a ResultChip appears inline to the right of the button (28px height, 8px horizontal padding, 12px regular text). Uses connection test palette above (ok = green chip with check icon; error = red chip with X icon + truncated error message on hover/tooltip).
 - Result chip clears when the connection form fields are edited again.
 
 ### JobTable (Queue and History views share one component, parameterized)
@@ -175,7 +175,7 @@ A text input used for API keys and other SecretStr fields.
 Columns vary by view — see Copywriting Contract for exact column labels. All tables:
 
 - Full-width, no horizontal scroll on desktop (columns constrained to fit).
-- Column headers: 12px medium, muted color, uppercase, 40px row height.
+- Column headers: 12px regular, muted color, uppercase, 40px row height.
 - Body rows: 40px height, 14px regular, alternating stripe (`bg-stripe` on odd rows).
 - Row hover: `bg-[#22263a]` (subtle highlight, no heavy color shift).
 - No row selection (not needed for v1).
@@ -201,7 +201,7 @@ Used in the per-job Logs view.
 Used on failed/quarantined items in History.
 
 - Primary: lucide `RefreshCw` icon + "Retry" label, 14px, accent color text on transparent background (ghost button style).
-- On click: inline confirmation replaces the button: `"Re-queue this item?" [Confirm] [Cancel]` — no modal dialog. Confirm button is accent; Cancel is ghost. This prevents accidental retries without the cost of a modal.
+- On click: inline confirmation replaces the button: `"Re-queue this item?" [Re-queue] [Cancel]` — no modal dialog. Re-queue button is accent; Cancel is ghost. This prevents accidental retries without the cost of a modal.
 - On confirm: button shows spinner. Row status badge updates to "queued" when the API responds. If the API returns an error, show an error toast (see below).
 
 ### Toast / Notification
@@ -220,6 +220,8 @@ Auto-dismisses after 4 seconds. No animation (functional-first). Single toast at
 
 Layout: vertical stack of connection sections. Each section is a card (`bg-surface`, `border-border`, 8px border-radius, 24px padding).
 
+Primary visual anchor: the first connection section (LLM Endpoint) — first in reading order, most-used configuration surface.
+
 Sections (in order):
 1. LLM Endpoint (base URL, model, API key)
 2. Sonarr (host, port, API key) + Test Connection button
@@ -230,7 +232,7 @@ Sections (in order):
 
 Each section has a 16px semibold heading at the top.
 
-Field layout: two-column grid on wide viewports (`grid-cols-2 gap-4`), single column below 768px. Labels above inputs (not inline). Each label is 12px medium muted. Each input is 36px height, full-width, secondary background, border-border border, 8px horizontal padding, 14px regular text. Focus ring: 1px solid accent at 60% opacity.
+Field layout: two-column grid on wide viewports (`grid-cols-2 gap-4`), single column below 768px. Labels above inputs (not inline). Each label is 12px regular muted. Each input is 36px height, full-width, secondary background, border-border border, 8px horizontal padding, 14px regular text. Focus ring: `outline: 2px solid #3b82f6; outline-offset: 2px`.
 
 Save button: "Save Settings" — full-width within each section card, accent background, white text, 36px height. Positioned at the bottom of each section. Disabled when no unsaved changes in that section.
 
@@ -240,7 +242,9 @@ Restart-required fields: after saving, if any changed field requires a restart, 
 
 ### Queue View
 
-Heading: "Queue" (18px semibold) + count badge ("3 items" — 12px medium, muted, right-aligned).
+Primary visual anchor: the job table — full-width, highest visual weight on the page.
+
+Heading: "Queue" (18px semibold) + count badge ("3 items" — 12px regular, muted, right-aligned).
 
 Table columns:
 | Column | Width | Content |
@@ -252,9 +256,11 @@ Table columns:
 | Queued | 10% | Relative time ("2 min ago") |
 | Logs | 8% | Lucide `FileText` icon button → navigates to Logs view |
 
-Polling: the SPA polls `GET /api/queue` every 10 seconds. No loading spinner on re-polls — silently refreshes. Show a "last updated HH:MM:SS" in 12px muted text below the table heading.
+Polling: the SPA polls `GET /api/queue` every 10 seconds. No loading spinner on re-polls — silently refreshes. Show a "last updated HH:MM:SS" in 12px regular muted text below the table heading.
 
 ### History View
+
+Primary visual anchor: the job table — full-width, highest visual weight on the page.
 
 Heading: "History" (18px semibold) + count badge.
 
@@ -277,7 +283,7 @@ Retry action: RetryButton + ConfirmationInline (see Component Inventory).
 
 Navigation: breadcrumb-style back link at top: `← History` or `← Queue` (12px, accent color, chevron-left icon).
 
-Job summary strip (below breadcrumb, above log area): single row with Series + Episode + Status badge + Finished time. 40px height, secondary background, 16px horizontal padding, 12px medium text.
+Job summary strip (below breadcrumb, above log area): single row with Series + Episode + Status badge + Finished time. 40px height, secondary background, 16px horizontal padding, 12px regular text.
 
 Log area: LogViewer component, full remaining viewport height.
 
@@ -293,7 +299,7 @@ Tone: terse, operator-facing. Present tense. No marketing language. No exclamati
 | Primary CTA — connection test | "Test Connection" |
 | Primary CTA — retry failed job | "Retry" |
 | Retry inline confirm prompt | "Re-queue this item?" |
-| Retry confirm button | "Confirm" |
+| Retry confirm button | "Re-queue" |
 | Retry cancel button | "Cancel" |
 | Queue empty state heading | "No jobs in queue" |
 | Queue empty state body | "Trezarr will enqueue episodes automatically when a source subtitle is found with no Vietnamese output." |
@@ -323,7 +329,7 @@ Tone: terse, operator-facing. Present tense. No marketing language. No exclamati
 | TopBar service status: stopped | (gray dot) |
 | TopBar service status: error | (red dot) |
 
-**Destructive actions in this phase:** "Retry" is the only action that modifies persisted state (re-enqueuing). It is not strictly destructive (it clears a failure reason and re-queues; it does not delete data). No hard-delete actions exist in Phase 7. Confirmation pattern: inline `"Re-queue this item?" [Confirm] [Cancel]` — no modal, no irreversible state destruction.
+**Destructive actions in this phase:** "Retry" is the only action that modifies persisted state (re-enqueuing). It is not strictly destructive (it clears a failure reason and re-queues; it does not delete data). No hard-delete actions exist in Phase 7. Confirmation pattern: inline `"Re-queue this item?" [Re-queue] [Cancel]` — no modal, no irreversible state destruction.
 
 ---
 
