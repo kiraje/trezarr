@@ -727,22 +727,25 @@ async def test_locked_field_survives_contradicting_inference(session_factory):
 | A6 | [ASSUMED] `from_attributes=True` on Pydantic DTO `model_validate()` is the right bridge (formerly `orm_mode=True` in Pydantic v1). Verified against Pydantic v2 docs. | Pattern 2 + Code Examples | Should be correct given Pydantic 2.13.x is locked. |
 | A7 | [ASSUMED] The store API is async-only — there is no sync convenience wrapper. CONTEXT.md doesn't specify; the rest of the project is async, so this matches. | Standard Stack §Bible Store | If Phase 8's UI handlers expect sync access, a `to_thread` wrapper is trivial to add later. |
 
-## Open Questions
+## Open Questions (RESOLVED)
 
 1. **MediaItem extension scope (resolves A1)** — Should Phase 4's plan include the work to extend `trezarr.arr.sonarr.MediaItem` with `genres`, `overview`, `year`, `network`, `runtime`, OR should it just snapshot whatever `MediaItem` carries today and let Phase 5 worry about the missing fields?
    - What we know: D-35 says "Phase 3's MediaItem payload (genres, overview, year, network, runtime)" — but reading `sonarr.py:49-72`, those fields are NOT on MediaItem today.
    - What's unclear: who owns the extension — Phase 4 or Phase 5?
    - Recommendation: Phase 4 extends MediaItem with the missing fields and populates them from the existing pyarr calls (`series_list[i]` already has these fields in pyarr's JSON). This is a small additive change; it would be confusing for Phase 5 to have to amend Phase 3 code.
+   - **RESOLVED:** Phase 4 owns the MediaItem extension — implemented in 04-02 Task 1 (extends sonarr.MediaItem with `arr_kind`, `tvdb_id`, `tmdb_id`, `genres`, `overview`, `year`, `network`, `runtime`; all default None; populated from pyarr series/movie payload at the existing discovery call site).
 
 2. **PK choice on `processed_file` (resolves A2)** — Surrogate `id` + UNIQUE(source_path), or `source_path` as PK?
    - What we know: D-20 says field names match the JSON; D-31 says the table exists in the baseline.
    - What's unclear: PK shape.
    - Recommendation: Surrogate `id INTEGER PRIMARY KEY AUTOINCREMENT` + UNIQUE on `source_path`. Matches the `series` table convention and keeps FK targets short.
+   - **RESOLVED:** Surrogate `id` PK + UNIQUE on `source_path` — implemented in 04-01 Task 1 (`ProcessedFile.id: Mapped[int] = mapped_column(primary_key=True)` + UNIQUE constraint on `source_path` in the baseline migration).
 
 3. **Migration runner: every-startup vs explicit (resolves A4)** — Where does `run_migrations_to_head()` get called in the Phase-3 `cli.py`? Before `assert_media_roots_configured` (so the DB is up before the *arr probe) or after?
    - What we know: Phase 4 is wired into the existing `cli.py` startup sequence.
    - What's unclear: relative order in the startup steps.
    - Recommendation: Migrations run AFTER `assert_media_roots_configured` and `probe_media_roots` (cheap config checks first), but BEFORE LLM client construction. Failure to migrate is a hard exit code 1 with a clear error.
+   - **RESOLVED:** Migrations run AFTER `probe_media_roots` and BEFORE `LLMClient` construction as Step 3.5 in `cli._run_once` — implemented in 04-04 Task 2 (Alembic migration failure returns exit 1 with actionable error; JSON-ledger migration failure is best-effort per D-37 forgiveness).
 
 ## Environment Availability
 
