@@ -740,27 +740,31 @@ This section is omitted — Phase 5 is not a rename/refactor/migration phase. It
 
 ---
 
-## Open Questions
+## Open Questions (RESOLVED)
 
 1. **Episode number on MediaItem**
    - What we know: `MediaItem.season_number` is populated; `episode_number` is not a field.
    - What's unclear: Is the episode number available via the existing Sonarr discovery payload?
    - Recommendation: Plan-1 should explicitly decide: add `episode_number` to `MediaItem` (and populate in sonarr.py/radarr.py) vs. parse from filename. The filename-parse approach is a safe MVP.
+   - **RESOLVED (plan 05-06):** Episode number is parsed from the subtitle filename stem via `derive_episode_key` using `re.search(r'S(\d{2})E(\d{2})', stem)`. Do NOT add `episode_number` to `MediaItem` — the filename-parse approach avoids touching the Phase-3 discovery layer (Pitfall F).
 
 2. **Pass-1 chunking merge strategy for `address_map` entries**
    - What we know: Characters and terms can be unioned. Register can be majority-voted.
    - What's unclear: How to merge `AddressMapInference` entries when two chunks observe the same pair with different terms (possibly due to different scenes using different registers).
    - Recommendation: Union all observed entries, aggregating confidence (take max confidence across chunks for the same pair). The reconciliation step then picks the winner by first-high-confidence-wins rule.
+   - **RESOLVED (plans 05-03 / 05-06):** Union all observed `AddressMapInference` entries across chunks; max-confidence wins per ordered pair when the same pair appears in multiple chunks. Final winner selection is performed during `reconcile_attributions` (first-high-confidence-wins, then frequency tie-break on MEDIUM).
 
 3. **Tier-3 degradation for Pass 1 — quarantine vs. mechanical fallback**
    - What we know: D-47 says "degrade gracefully: treat all attribution as low-confidence → safe default" for Tier-3-only endpoints.
    - What's unclear: D-48 also says "whole-Bible failure quarantines." Are these contradictory?
    - Recommendation: Distinguish by failure type. Tier-3 endpoint → known limitation → graceful degrade (don't quarantine). Logic failure (malformed JSON, response_model validation error after Tier-2 attempt) after retries → quarantine. The `enable_pass1_analysis` toggle allows operators to disable Pass 1 entirely for Tier-3 endpoints.
+   - **RESOLVED (plans 05-04 / 05-05):** A Tier-3-only endpoint (plain text) triggers graceful degradation — `analyze_file` returns an empty `BibleAnalysis` (no LLM data, no merge) and `attribute_batch` returns all-LOW-confidence, all-None attributions. The file translates mechanically (Pass-2-era behavior) and is NOT quarantined. Only a true logic/analysis failure (`BibleAnalysisError` after exhausting Tier-2 retries) triggers quarantine.
 
 4. **`address_map` ORM relationship on `Series` model**
    - What we know: `AddressMap` has `series_id` FK but `Series` has no `address_maps` relationship.
    - What's unclear: Whether adding this back-relationship requires a test model migration.
    - Recommendation: Add `address_maps: Mapped[list["AddressMap"]] = relationship(...)` to `Series`. No Alembic migration needed (relationship is ORM-only; the table and FK already exist). The existing test `db_engine`/`session_factory` fixtures will pick this up automatically.
+   - **RESOLVED (plan 05-02):** The `Series.address_maps` relationship is ORM-metadata only — added to `models.py` with no Alembic migration and no test-DB change. The existing `db_engine`/`session_factory` fixtures pick up the relationship automatically at import time.
 
 ---
 

@@ -60,6 +60,7 @@ property* at the reconciliation layer — never against a live LLM.
 | PRON-03 | `confidence=HIGH` above threshold → Address Map pair | unit | `uv run pytest tests/translate/test_reconcile.py::test_high_confidence_uses_address_map -x` | ❌ W0 | ⬜ pending |
 | Success #3 | Reciprocal directions coherent (A→B "anh/em" ⇒ B→A "em/anh") | unit | `uv run pytest tests/translate/test_reconcile.py::test_reciprocal_coherence -x` | ❌ W0 | ⬜ pending |
 | Success #4 | Below threshold → safe pair regardless of Address Map content | unit | `uv run pytest tests/translate/test_reconcile.py::test_below_threshold_ignores_address_map -x` | ❌ W0 | ⬜ pending |
+| ENG-04/PRON-03 | Tier-3-only endpoint: translate_file completes without quarantine, all lines use safe default, valid .vi.srt written (D-47) | integration (mocked LLM Tier-3) | `uv run pytest tests/translate/test_pronoun_engine.py::test_tier3_endpoint_degrades_gracefully -x` | ❌ W0 | ⬜ pending |
 
 *Status: ⬜ pending · ✅ green · ❌ red · ⚠️ flaky*
 
@@ -73,6 +74,7 @@ property* at the reconciliation layer — never against a live LLM.
 - [ ] `tests/translate/test_pronoun_engine.py` — end-to-end 3-pass integration (mocked LLM, golden-file episode)
 - [ ] `tests/bible/test_address_map.py` — BIBLE-03 `upsert_address_pair` + `load_address_map`
 - [ ] `tests/bible/conftest.py` — extend session_factory fixtures for `AddressMap` (character/term fixtures already exist)
+- [ ] `tests/translate/test_pronoun_engine.py::test_tier3_endpoint_degrades_gracefully` — D-47 Tier-3 graceful degrade stub (Wave 0 xfail; turned GREEN in Plan 06)
 
 ---
 
