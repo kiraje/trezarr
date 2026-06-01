@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: executing
-stopped_at: Phase 4 context gathered
-last_updated: "2026-06-01T01:23:32.222Z"
+status: ready_to_plan
+stopped_at: Phase 04 complete (4/4) — ready to discuss Phase 5
+last_updated: 2026-06-01T03:24:35.638Z
 last_activity: 2026-06-01 -- Phase 04 execution started
 progress:
   total_phases: 10
   completed_phases: 3
   total_plans: 15
-  completed_plans: 11
+  completed_plans: 15
   percent: 30
 ---
 
@@ -21,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-05-31)
 
 **Core value:** Vietnamese subtitles that stay consistent and relationally correct (right pronoun pair, stable names/terms) across an entire series — produced automatically.
-**Current focus:** Phase 04 — series-bible-store-schema
+**Current focus:** Phase 5 — three pass pronoun engine
 
 ## Current Position
 
-Phase: 04 (series-bible-store-schema) — EXECUTING
-Plan: 1 of 4
-Status: Executing Phase 04
-Last activity: 2026-06-01 -- Phase 04 execution started
+Phase: 5
+Plan: Not started
+Status: Ready to plan
+Last activity: 2026-06-01
 
 Progress: [██████████] 100% (Phase 3 plans complete)
 
@@ -36,7 +36,7 @@ Progress: [██████████] 100% (Phase 3 plans complete)
 
 **Velocity:**
 
-- Total plans completed: 12
+- Total plans completed: 16
 - Average duration: 6 min
 - Total execution time: 0.1 hours
 
@@ -47,6 +47,7 @@ Progress: [██████████] 100% (Phase 3 plans complete)
 | 01 | 3 | - | - |
 | 02 | 3 | - | - |
 | 03 | 5 | - | - |
+| 04 | 4 | - | - |
 
 **Recent Trend:**
 
