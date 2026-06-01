@@ -27,9 +27,16 @@ from trezarr.bible import models  # noqa: F401 — LIVE import (Pitfall 8 in 04-
 
 config = context.config
 
-# Configure Python logging if a config file is present
-if config.config_file_name is not None:
+# Configure Python logging if a config file is present.
+# Guard: skip fileConfig when running inside pytest to avoid overwriting the
+# test harness's logging configuration (which would break caplog captures in
+# tests that run after a migration).  pytest sets sys.modules['_pytest'] so
+# we can detect the test environment without an extra dependency.
+import sys as _sys
+_running_under_pytest = "_pytest" in _sys.modules
+if config.config_file_name is not None and not _running_under_pytest:
     fileConfig(config.config_file_name)
+del _sys, _running_under_pytest
 
 target_metadata = Base.metadata
 
