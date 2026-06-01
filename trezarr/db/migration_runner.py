@@ -128,6 +128,16 @@ async def migrate_json_ledger_if_needed(
     migrated_bak = json_path.with_suffix(json_path.suffix + ".migrated.bak")
     corrupt_bak = json_path.with_suffix(json_path.suffix + ".corrupt.bak")
 
+    # WR-09: a sentinel sibling file produced when the post-COMMIT rename
+    # FAILED on a prior run. Its presence lets us short-circuit BEFORE we
+    # parse the JSON ledger and re-execute all the per-entry idempotent
+    # collision-skip SELECTs on every subsequent startup — wasted work that
+    # would otherwise compound forever until an operator manually clears
+    # the situation. The sentinel is informational: it points the operator
+    # at the failed rename so they can resolve it once and remove BOTH the
+    # sentinel and the leftover JSON file.
+    rename_blocked = json_path.with_suffix(json_path.suffix + ".rename_blocked")
+
     # Idempotency: short-circuit on either .bak suffix present (D-37 cross-AI MEDIUM).
     if migrated_bak.exists():
         logger.info(
@@ -139,6 +149,20 @@ async def migrate_json_ledger_if_needed(
         logger.info(
             "JSON ledger previously flagged corrupt (%s exists) — skipping migration",
             corrupt_bak,
+        )
+        return
+    if rename_blocked.exists():
+        # WR-09: a prior run committed rows but could not rename the JSON
+        # file. The SQLite rows are already present; re-reading the JSON file
+        # would do N collision-skip SELECTs for zero new inserts. Short-
+        # circuit at startup, log at error level (operator action required),
+        # and stop.
+        logger.error(
+            "JSON ledger migration: post-COMMIT rename was blocked on a prior run "
+            "(sentinel %s exists). SQLite rows are already present (idempotent). "
+            "OPERATOR ACTION: resolve the underlying rename failure (cross-device, "
+            "permissions, EXDEV), manually move %s to %s, then delete %s.",
+            rename_blocked, json_path, migrated_bak, rename_blocked,
         )
         return
 
@@ -258,14 +282,43 @@ async def migrate_json_ledger_if_needed(
     )
 
     # RENAME SECOND (Pitfall 5): only rename AFTER the SQLite commit.
-    # If the rename fails (e.g. cross-device, permissions), log and return —
-    # the SQLite rows are committed and the JSON file will be picked up on the
-    # next run (idempotent collision-skip makes re-import safe).
+    # If the rename fails (e.g. cross-device, permissions), log at ERROR
+    # level (this is an operator-action condition, NOT a recurring transient)
+    # and drop a sentinel sibling file so subsequent startups short-circuit
+    # before re-parsing the JSON ledger.
     try:
         os.replace(json_path, migrated_bak)
     except OSError as exc:
-        logger.warning(
+        # WR-09: promote warning → error. This is a one-time unrecoverable
+        # operator-action condition (cross-device, permissions, EXDEV); on
+        # every subsequent startup the SAME warning would fire forever
+        # because the JSON file remains in place. error level + sentinel
+        # makes the condition both visible and self-suppressing on re-runs.
+        logger.error(
             "JSON ledger migration: SQLite commit succeeded but renaming %s → %s "
-            "failed (%s). Rows are committed; re-run will idempotently skip them.",
-            json_path, migrated_bak, exc,
+            "failed (%s). Rows are committed; subsequent runs will short-circuit "
+            "via the sentinel at %s. OPERATOR ACTION: resolve the underlying "
+            "rename failure, then manually move the JSON file and delete the "
+            "sentinel.",
+            json_path, migrated_bak, exc, rename_blocked,
         )
+        # Drop a sentinel so the next startup short-circuits before re-
+        # parsing N entries and emitting N collision-skip SELECTs.
+        try:
+            rename_blocked.write_text(
+                f"JSON ledger rename failed at {json_path}\n"
+                f"target: {migrated_bak}\n"
+                f"error: {exc}\n"
+                f"Resolve manually, then delete this file.\n",
+                encoding="utf-8",
+            )
+        except OSError as sentinel_exc:
+            # If even the sentinel write fails (truly broken filesystem),
+            # log it but do NOT raise — the SQLite commit succeeded and the
+            # CLI should still complete the run.
+            logger.error(
+                "JSON ledger migration: failed to write sentinel %s (%s). "
+                "Subsequent startups will re-attempt the migration and likely "
+                "log this same error each time.",
+                rename_blocked, sentinel_exc,
+            )
