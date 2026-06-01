@@ -29,6 +29,8 @@ htmlcov/
 # Trezarr runtime state (mirrors *arr /config convention)
 /config/
 *.db
+*.db-wal
+*.db-shm
 *.sqlite
 *.sqlite3
 *.log
