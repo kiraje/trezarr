@@ -273,6 +273,16 @@ def create_app(settings: TrezarrSettings | None = None) -> FastAPI:
     from trezarr.web.routes.test_connection import router as test_connection_router  # noqa: PLC0415
     app.include_router(test_connection_router, prefix="/api")
 
+    # GET /api/queue, GET /api/jobs, GET /api/jobs/{id}/logs (SVC-03, D-75)
+    # Registered BEFORE StaticFiles (Pitfall E)
+    from trezarr.web.routes.queue import router as queue_router  # noqa: PLC0415
+    app.include_router(queue_router, prefix="/api")
+
+    # POST /api/jobs/{id}/retry (SVC-04, D-74)
+    # Registered BEFORE StaticFiles (Pitfall E)
+    from trezarr.web.routes.jobs import router as jobs_router  # noqa: PLC0415
+    app.include_router(jobs_router, prefix="/api")
+
     # POST /webhook — Sonarr/Radarr/Bazarr inbound webhooks (AUTO-02, D-66)
     # Registered BEFORE StaticFiles (Pitfall E: StaticFiles matches all remaining paths)
     from trezarr.web.routes.webhook import router as webhook_router  # noqa: PLC0415

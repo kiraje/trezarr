@@ -16,6 +16,10 @@ Design decisions honoured:
         in except Exception so one bad item never aborts the worker loop.
   D-66  enqueue_job dedup guard: if source_path is already queued/running,
         return False without inserting (prevents double-enqueue from poll+webhook).
+  D-75  Per-job structured log capture via JobLogBuffer + JobLogHandler. Each job
+        execution buffers log records in-memory and flushes them to job_log rows
+        at job completion (RESEARCH.md Pattern 8, Assumption A7 — buffer+flush
+        avoids threading complexity from Pitfall I).
 
 Pitfall C (from RESEARCH.md) — per-series serialization uses asyncio.Lock,
 NOT a bounded counting semaphore. The LLMClient._semaphore (D-06) already caps
@@ -26,6 +30,7 @@ primitive — only one coroutine at a time per series, other series unblocked.
 from __future__ import annotations
 
 import asyncio
+import contextvars
 import logging
 from datetime import datetime, timezone
 
@@ -47,6 +52,59 @@ _series_locks: dict[int, asyncio.Lock] = {}
 # When session_factory is None, we cannot hit the DB; use this set so the D-66
 # dedup contract holds in unit tests without a real DB.
 _no_db_enqueued: set[str] = set()
+
+
+# ── Per-job log capture (D-75) ───────────────────────────────────────────────────
+
+# ContextVar that holds the current job_id during _execute_job.
+# JobLogHandler.emit() checks this; if None, the handler is a no-op (global
+# logging is unaffected outside of a job execution context).
+_current_job_id: contextvars.ContextVar[int | None] = contextvars.ContextVar(
+    "current_job_id", default=None
+)
+
+
+class _JobLogBuffer:
+    """Collects (level, message) tuples during a single job execution (RESEARCH Assumption A7).
+
+    Buffer + flush-at-end avoids the threading complexity of Pitfall I:
+    some logging calls inside translate_file may originate from aiosqlite's
+    background threads. Instead of routing log records directly to the async
+    DB writer in emit(), we buffer them and flush once, after the job completes.
+    """
+
+    def __init__(self) -> None:
+        self._records: list[tuple[str, str]] = []
+
+    def append(self, level: str, message: str) -> None:
+        self._records.append((level, message))
+
+    def drain(self) -> list[tuple[str, str]]:
+        records = self._records[:]
+        self._records.clear()
+        return records
+
+
+class _JobLogHandler(logging.Handler):
+    """logging.Handler that appends log records to a _JobLogBuffer.
+
+    Checks _current_job_id.get() before every emit(); if None, the handler is
+    a no-op so global logging is not affected outside of job executions (D-75).
+    """
+
+    def __init__(self, buffer: _JobLogBuffer) -> None:
+        super().__init__()
+        self._buffer = buffer
+
+    def emit(self, record: logging.LogRecord) -> None:
+        if _current_job_id.get() is None:
+            return  # Not inside a job execution — ignore
+        try:
+            message = self.format(record)
+            self._buffer.append(record.levelname, message)
+        except Exception:  # noqa: BLE001
+            # Never let the log handler crash the job execution
+            pass
 
 
 # ── Enqueue ─────────────────────────────────────────────────────────────────────
@@ -250,7 +308,32 @@ async def _execute_job(
         media_roots:     Path-traversal guard roots (D-29).
     """
     from trezarr.cli import process_one_item  # noqa: PLC0415 — shared callable (D-62)
-    from trezarr.jobs.models import Job  # noqa: PLC0415
+    from trezarr.jobs.models import Job, JobLog  # noqa: PLC0415
+
+    # D-75: set up per-job log buffer + handler before execution starts
+    _log_buffer = _JobLogBuffer()
+    _log_handler = _JobLogHandler(_log_buffer)
+    _log_handler.setFormatter(logging.Formatter("%(name)s: %(message)s"))
+    root_logger = logging.getLogger()
+    root_logger.addHandler(_log_handler)
+
+    # Set the ContextVar so _log_handler.emit() knows which job we're in
+    _ctx_token = _current_job_id.set(job_id)
+
+    async def _flush_logs_to_db(job_id: int, records: list[tuple[str, str]]) -> None:
+        """Flush buffered log records into job_log rows in a single transaction."""
+        if not records:
+            return
+        try:
+            async with session_factory() as session:
+                async with session.begin():
+                    for level, message in records:
+                        session.add(JobLog(job_id=job_id, level=level, message=message))
+        except Exception:  # noqa: BLE001
+            logger.exception(
+                "_execute_job: failed to flush %d log records for job_id=%d",
+                len(records), job_id,
+            )
 
     try:
         # Fetch the job and update to running
@@ -332,6 +415,12 @@ async def _execute_job(
             logger.exception(
                 "_execute_job: could not mark job id=%d as failed after exception", job_id
             )
+    finally:
+        # D-75: flush buffered log records to DB and tear down handler
+        _current_job_id.reset(_ctx_token)
+        root_logger.removeHandler(_log_handler)
+        log_records = _log_buffer.drain()
+        await _flush_logs_to_db(job_id, log_records)
 
 
 # ── Worker loop ─────────────────────────────────────────────────────────────────
