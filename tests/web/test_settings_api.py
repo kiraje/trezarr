@@ -1,16 +1,10 @@
-"""Wave-0 RED stubs for SVC-02 settings masking / write-back / secret-never-in-response.
-
-These stubs are xfail markers — the RED suite runs without import errors.
-All trezarr.web.* imports are deferred inside test bodies.
+"""Tests for SVC-02 settings masking / write-back / secret-never-in-response (Plan 07-04 GREEN).
 
 asyncio_mode="auto" is configured project-wide — no @pytest.mark.asyncio needed.
 """
 from __future__ import annotations
 
-import pytest
 
-
-@pytest.mark.xfail(raises=(ImportError, AssertionError, TypeError), reason="trezarr.web.routes.settings not yet created — Plan 07-02")
 async def test_secrets_masked():
     """GET /api/settings returns masked sentinel for SecretStr fields, not raw values (SVC-02)."""
     from trezarr.web.app import create_app  # noqa: PLC0415
@@ -32,7 +26,6 @@ async def test_secrets_masked():
             )
 
 
-@pytest.mark.xfail(raises=(ImportError, AssertionError, TypeError), reason="trezarr.web.routes.settings not yet created — Plan 07-02")
 async def test_settings_write():
     """PUT /api/settings writes config to config.yaml and returns updated settings (SVC-02)."""
     from trezarr.web.app import create_app  # noqa: PLC0415
@@ -44,7 +37,6 @@ async def test_settings_write():
     assert resp.status_code in (200, 204)
 
 
-@pytest.mark.xfail(raises=(ImportError, AssertionError, TypeError), reason="trezarr.web.routes.settings not yet created — Plan 07-02")
 async def test_secret_never_in_response():
     """GET /api/settings must never return raw SecretStr value (D-70).
 
@@ -58,7 +50,6 @@ async def test_secret_never_in_response():
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         resp = await client.get("/api/settings")
     assert resp.status_code == 200
-    body = resp.text
     # The actual secret value "not-set" or any configured key must never appear in response
     # We check the raw response text for any raw secret pattern
     secret_fields = {"llm_api_key", "sonarr_api_key", "radarr_api_key", "bazarr_api_key"}

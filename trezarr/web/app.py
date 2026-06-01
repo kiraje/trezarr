@@ -263,6 +263,16 @@ def create_app(settings: TrezarrSettings | None = None) -> FastAPI:
         """Docker HEALTHCHECK endpoint — always returns 200 OK (no auth needed)."""
         return JSONResponse({"status": "ok"})
 
+    # GET/PUT /api/settings + GET /api/settings/env-locked (SVC-02, D-70)
+    # Registered BEFORE StaticFiles (Pitfall E)
+    from trezarr.web.routes.settings import router as settings_router  # noqa: PLC0415
+    app.include_router(settings_router, prefix="/api")
+
+    # POST /api/test/{sonarr|radarr|bazarr|llm} — connection-test endpoints (D-71)
+    # Registered BEFORE StaticFiles (Pitfall E)
+    from trezarr.web.routes.test_connection import router as test_connection_router  # noqa: PLC0415
+    app.include_router(test_connection_router, prefix="/api")
+
     # POST /webhook — Sonarr/Radarr/Bazarr inbound webhooks (AUTO-02, D-66)
     # Registered BEFORE StaticFiles (Pitfall E: StaticFiles matches all remaining paths)
     from trezarr.web.routes.webhook import router as webhook_router  # noqa: PLC0415
