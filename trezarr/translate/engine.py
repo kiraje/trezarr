@@ -892,6 +892,30 @@ async def translate_file(
         )
         source_lines_by_index = {line.index: line for line in source_doc.lines}
 
+        # CR-01 (D-56): Stamp dominant_pair onto each review batch from flat_attributions.
+        # batch_subdoc cannot compute dominant_pair — it has no attribution data.
+        # The translated_doc is batched with the SAME cue ordering as the source_doc,
+        # so flat_attributions[doc_offset:doc_offset+batch_size] aligns 1:1 with review batch cues.
+        # name_to_char_id uses the same case-insensitive contract as the Pass-2/3 code (CR-01).
+        if flat_attributions and bible is not None:
+            _name_to_char_id_rev: dict[str, int] = {
+                c.original_latin_name.strip().lower(): c.id for c in bible.characters
+            }
+            _rb_offset = 0
+            for rb in review_batches:
+                _batch_size = len(rb.cues)
+                _rb_attrs = flat_attributions[_rb_offset: _rb_offset + _batch_size]
+                _pair_counts: dict[tuple[int, int], int] = {}
+                for _attr in _rb_attrs:
+                    _spk_id = _name_to_char_id_rev.get((_attr.speaker or "").strip().lower()) if _attr.speaker else None
+                    _addr_id = _name_to_char_id_rev.get((_attr.addressee or "").strip().lower()) if _attr.addressee else None
+                    if _spk_id is not None and _addr_id is not None:
+                        _p = (_spk_id, _addr_id)
+                        if _p in resolved_map:  # only include pairs that were actually resolved
+                            _pair_counts[_p] = _pair_counts.get(_p, 0) + 1
+                rb.dominant_pair = max(_pair_counts, key=lambda p: _pair_counts[p]) if _pair_counts else None
+                _rb_offset += _batch_size
+
         # TaskGroup dispatch — mirrors Pass-2 attribution gather.
         # _review_batch catches all exceptions internally and returns None (D-59).
         # except* correctly unwraps ExceptionGroup from TaskGroup (Python 3.11+, CR-03).

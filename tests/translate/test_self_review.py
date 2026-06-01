@@ -211,3 +211,63 @@ async def test_sentinel_failure_fallback_per_batch():  # formerly @pytest.mark.x
     assert result is None, (
         f"Expected None (sentinel integrity failure fallback), got {result!r}"
     )
+
+
+def test_build_review_prompt_includes_pronoun_pair_when_dominant_pair_set():
+    """CR-01: build_review_prompt includes the 'Pronoun pair' line when dominant_pair is set.
+
+    When dominant_pair is a (speaker_id, addressee_id) key present in resolved_map,
+    the generated prompt must contain the pronoun pair context block so the reviewer
+    knows which pair to check. This is the key grounding for self-review (D-56/D-58).
+    """
+    from trezarr.translate.engine import build_review_prompt
+    from types import SimpleNamespace
+
+    spk_id, addr_id = 1, 2
+    resolved_map = {(spk_id, addr_id): ("anh", "em")}
+
+    # Minimal bible-like object
+    bible = SimpleNamespace(register_value="casual", terms=[])
+
+    settings = SimpleNamespace()  # unused in build_review_prompt body
+
+    prompt = build_review_prompt(
+        source_texts=["I love you."],
+        translated_texts=["Anh yêu em."],
+        resolved_map=resolved_map,
+        bible=bible,
+        settings=settings,
+        dominant_pair=(spk_id, addr_id),
+    )
+
+    assert "Pronoun pair" in prompt, (
+        "build_review_prompt must include 'Pronoun pair' line when dominant_pair is set"
+    )
+    assert "anh" in prompt, (
+        "build_review_prompt must include self_term 'anh' from resolved_map"
+    )
+    assert "em" in prompt, (
+        "build_review_prompt must include address_term 'em' from resolved_map"
+    )
+
+
+def test_build_review_prompt_omits_pronoun_pair_when_dominant_pair_none():
+    """CR-01 complementary: build_review_prompt omits pronoun pair block when dominant_pair is None."""
+    from trezarr.translate.engine import build_review_prompt
+    from types import SimpleNamespace
+
+    bible = SimpleNamespace(register_value="neutral", terms=[])
+    settings = SimpleNamespace()
+
+    prompt = build_review_prompt(
+        source_texts=["Hello."],
+        translated_texts=["Xin chào."],
+        resolved_map={(1, 2): ("anh", "em")},
+        bible=bible,
+        settings=settings,
+        dominant_pair=None,  # no dominant pair — pronoun context must be absent
+    )
+
+    assert "Pronoun pair" not in prompt, (
+        "build_review_prompt must NOT include pronoun pair block when dominant_pair is None"
+    )
