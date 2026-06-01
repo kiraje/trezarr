@@ -7,9 +7,10 @@
 # a TREZARR_<FIELD_NAME> environment variable (uppercase). For example:
 #   TREZARR_LLM_API_KEY=sk-... overrides llm_api_key below.
 #
-# In production, set llm_api_key via the TREZARR_LLM_API_KEY environment variable
-# rather than writing your key into this file — it prevents accidental exposure in
-# config backups or logs.
+# SECURITY: API keys should be provided via TREZARR_*_API_KEY environment variables,
+# not this file. This prevents accidental exposure in config backups, logs, or
+# version control. The docker-compose.example.yml demonstrates the recommended pattern
+# of passing keys via ${TREZARR_*_API_KEY} env var references.
 
 # --- LLM Endpoint ---
 # Base URL for your OpenAI-SDK-compatible LLM endpoint.
@@ -56,3 +57,63 @@ llm_structured_output_mode: "auto"
 # Common values: 8192 (small local), 32768 (mid-tier), 131072 (GPT-4o).
 # Default: 32768
 llm_context_window: 32768
+
+# ── Phase 7: Service runtime (D-76, D-77) ────────────────────────────────────
+
+# Bind address for the Trezarr web UI and REST API.
+# Default "0.0.0.0" listens on all interfaces (appropriate for a LAN-accessible
+# self-hosted service, same as Sonarr/Radarr/Bazarr defaults).
+# Set to "127.0.0.1" to restrict to localhost and put a reverse-proxy (nginx,
+# Caddy, Traefik) with authentication in front for external access (D-78).
+web_host: "0.0.0.0"
+
+# Port for the web UI and REST API.
+# Default 6868 (adjacent to Bazarr's 6767). Map this via Docker -p or
+# the docker-compose.example.yml ports section.
+web_port: 6868
+
+# How often (seconds) to poll Sonarr/Radarr for new eligible items.
+# The poll is the source of truth; webhooks are the low-latency complement (D-65).
+# Default: 900 (15 minutes). Reduce for faster discovery at the cost of more API calls.
+poll_interval_seconds: 900
+
+# Enable the inbound /webhook endpoint for low-latency Sonarr/Radarr/Bazarr triggers (D-65).
+# Webhooks complement the poll — a missed webhook does not cause missed translations.
+# Configure Sonarr/Radarr Connect to POST to http://<trezarr-host>:6868/webhook on
+# "On Import / On Download / On Upgrade" events.
+# Default: true
+enable_webhooks: true
+
+# Enable the filesystem watcher (watchfiles) as an additional trigger source.
+# Default-off for MVP: poll + webhook provide AUTO-02 coverage without it (D-65).
+# Enable only if you need sub-second reaction to new subtitle files appearing on disk.
+# Default: false
+enable_watchfiles: false
+
+# Maximum number of distinct series that may have translation jobs running concurrently (D-68).
+# Each series processes its episodes serially (they share the Series Bible); different
+# series can run in parallel up to this limit. Lower if your LLM endpoint is rate-limited.
+# Default: 2
+worker_max_concurrent_series: 2
+
+# ── Phase 7: Bazarr connection (D-76) ────────────────────────────────────────
+
+# Enable the Bazarr connection and webhook integration.
+# In Phase 7, this connects for webhook receipt only. Inventory reads (querying Bazarr
+# for subtitle state per episode) are Phase 10 scope (INTG-02).
+# Default: false
+bazarr_enabled: false
+
+# Bazarr hostname or IP address.
+# Examples: "192.168.1.100", "bazarr", "bazarr.local"
+# Must be reachable from the Trezarr container (same Docker network or LAN).
+bazarr_host: ""
+
+# Bazarr API port. Default: 6767 (Bazarr's standard port).
+bazarr_port: 6767
+
+# Bazarr API key for authenticated requests.
+# SECURITY: Provide via TREZARR_BAZARR_API_KEY environment variable rather than
+# storing here to avoid the key appearing in config backups (T-07-06-05, T-07-06-02).
+# Find the API key in Bazarr → Settings → General → Security → API Key.
+bazarr_api_key: ""

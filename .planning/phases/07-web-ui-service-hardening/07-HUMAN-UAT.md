@@ -1,10 +1,12 @@
 ---
 status: pending
 phase: 07-web-ui-service-hardening
-plan: 07-05
-source: [07-05-PLAN.md Task 4 — checkpoint:human-verify]
+plan: 07-05, 07-06
+source:
+  - "07-05-PLAN.md Task 4 — checkpoint:human-verify (visual UI-SPEC conformance)"
+  - "07-06-PLAN.md Task 2 — checkpoint:human-verify (Docker build + PUID/PGID ownership)"
 auto_deferred: true
-deferred_reason: "Auto-mode run — no browser available for visual verification; deferred to human UAT"
+deferred_reason: "Auto-mode run — no Docker daemon + no browser available; deferred to human UAT"
 started: 2026-06-02
 updated: 2026-06-02
 ---
@@ -65,3 +67,79 @@ skipped: 0
 blocked: 0
 
 ## Gaps
+
+---
+
+## Wave 6 — Plan 07-06: Docker packaging (Task 2 checkpoint:human-verify)
+
+Source: 07-06-PLAN.md Task 2 (auto-deferred — Docker daemon unavailable in autonomous run)
+
+### Prerequisites
+
+Build the image locally:
+```
+cd /path/to/trezarr
+docker build -t trezarr:dev .
+```
+
+### 7. Docker build succeeds
+expected: `docker build -t trezarr:dev .` exits 0; image is created successfully with no errors.
+Both stages must complete: Node 20-slim compiles the SPA (npm ci + npm run build); Python 3.12-slim installs uv + syncs deps + copies static assets.
+result: [pending]
+
+### 8. trezarr serve command is reachable inside image
+expected:
+```
+docker run --rm trezarr:dev trezarr --help
+```
+Exits 0 and output includes "serve" as a subcommand.
+result: [pending]
+
+### 9. Container starts and health endpoint responds
+expected:
+```
+mkdir -p /tmp/trezarr-config
+docker run -d --name trezarr-smoke \
+  -p 6868:6868 \
+  -v /tmp/trezarr-config:/config \
+  -e PUID=$(id -u) -e PGID=$(id -g) \
+  -e TREZARR_LLM_API_KEY=test-key \
+  trezarr:dev
+sleep 8
+curl -s http://localhost:6868/api/health
+docker rm -f trezarr-smoke
+```
+Expected: `{"status":"ok"}` returned from health endpoint. Docker logs should show lifespan startup sequence (scheduler started, worker started).
+result: [pending]
+
+### 10. SPA loads inside container
+expected: While trezarr-smoke container is running (from test 9), open http://localhost:6868 in a browser.
+The Trezarr React SPA should load: wordmark in TopBar, sidebar with Settings/Queue/History, redirects to /queue.
+result: [pending]
+
+### 11. PUID/PGID ownership is correct in /config volume
+expected: After running test 9, inspect the host-side config directory:
+```
+ls -la /tmp/trezarr-config/
+```
+Files written by the container (trezarr.db, config.yaml if created) should be owned by your UID:GID (matching PUID=$(id -u) PGID=$(id -g)), NOT root.
+result: [pending]
+
+### 12. docker-compose.example.yml is valid
+expected:
+```
+docker compose -f docker-compose.example.yml config
+```
+(This validates the compose file syntax and interpolates env vars.)
+If TREZARR_LLM_API_KEY is not set in the shell, expect a "required variable TREZARR_LLM_API_KEY is not set" error (expected — the compose file uses `:?` for required keys). Otherwise exits 0.
+result: [pending]
+
+## Wave 6 Summary
+
+total: 6
+passed: 0
+issues: 0
+pending: 6
+skipped: 0
+blocked: 0
+
