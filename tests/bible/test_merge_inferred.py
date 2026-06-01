@@ -68,13 +68,21 @@ async def test_locked_field_survives_contradicting_inference(session_factory):
         episode_key="S01E01",
         source="inference",
     )
-    # Manually set locked_fields on the SQLA row (Phase 4 only does this in tests)
+    # Manually set locked_fields on the SQLA row (Phase 4 only does this in tests).
+    # WR-07: an EXPLICIT await session.commit() makes the lock-survives-commit
+    # invariant the actual subject of the test, rather than relying on
+    # session.begin() context exit's implicit commit-on-success. If a future
+    # contributor changes the fixture to expire_on_commit=True, the previous
+    # version of this test could silently pass because the value was read
+    # from an unexpired in-memory cache rather than from a re-fetched DB row.
+    # The explicit commit + new-session re-read closes that gap.
     async with session_factory() as session:
-        async with session.begin():
-            row = await session.get(Character, char_dto.id)
-            row.locked_fields = ["role"]
+        row = await session.get(Character, char_dto.id)
+        row.locked_fields = ["role"]
+        await session.commit()
 
-    # Re-fetch fresh DTO after locking
+    # Re-fetch fresh DTO after locking — a NEW session (D-34 invariant: lock
+    # survives across sessions, not just inside the writer's own context).
     dto = await get_character(session_factory, series_id=series_id, original_latin_name="Mary")
     assert dto is not None
     assert dto.locked_fields == ["role"]
@@ -210,11 +218,12 @@ async def test_multiple_field_partial_lock(session_factory):
         source="inference",
     )
 
-    # Lock role
+    # Lock role — WR-07: explicit commit + new-session re-read; see comment
+    # on test_lock_blocks_inferred_update_d_34 (above) for rationale.
     async with session_factory() as session:
-        async with session.begin():
-            row = await session.get(Character, char_dto.id)
-            row.locked_fields = ["role"]
+        row = await session.get(Character, char_dto.id)
+        row.locked_fields = ["role"]
+        await session.commit()
 
     dto = await get_character(session_factory, series_id=series_id, original_latin_name="Mary")
     assert dto is not None
