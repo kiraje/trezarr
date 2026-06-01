@@ -1,16 +1,15 @@
-"""Wave-0 RED stubs for AUTO-02 webhook handler enqueue + fast-200.
+"""Tests for AUTO-02 webhook handler — enqueue-only + fast-200 (Plan 07-03 GREEN).
 
-These stubs are xfail markers — the RED suite runs without import errors.
-All trezarr.web.* imports are deferred inside test bodies.
+Verifies:
+  - POST /webhook returns 200 with {"status": "accepted"} for any payload
+  - Handler returns in under 1 second (enqueue-only, Pitfall D)
+  - Malicious payload paths are ignored — handler triggers a fresh scan, not path-trust
 
 asyncio_mode="auto" is configured project-wide — no @pytest.mark.asyncio needed.
 """
 from __future__ import annotations
 
-import pytest
 
-
-@pytest.mark.xfail(raises=(ImportError, AssertionError), reason="trezarr.web.routes.webhook not yet created — Plan 07-02")
 async def test_webhook_enqueues():
     """POST /webhook triggers scan and enqueue of newly-eligible items (AUTO-02)."""
     from trezarr.web.app import create_app  # noqa: PLC0415
@@ -29,7 +28,6 @@ async def test_webhook_enqueues():
     assert data.get("status") == "accepted"
 
 
-@pytest.mark.xfail(raises=(ImportError, AssertionError), reason="trezarr.web.routes.webhook not yet created — Plan 07-02")
 async def test_webhook_returns_200_fast():
     """Webhook handler must return 200 without awaiting translation (D-66, Pitfall D).
 
@@ -37,7 +35,6 @@ async def test_webhook_returns_200_fast():
     It must NOT await the translation pipeline inline — doing so would block
     the event loop and violate the non-blocking webhook contract.
     """
-    import asyncio  # noqa: PLC0415
     import time  # noqa: PLC0415
     from trezarr.web.app import create_app  # noqa: PLC0415
     from httpx import AsyncClient, ASGITransport  # noqa: PLC0415
@@ -55,7 +52,6 @@ async def test_webhook_returns_200_fast():
     )
 
 
-@pytest.mark.xfail(raises=(ImportError, AssertionError), reason="trezarr.web.routes.webhook not yet created — Plan 07-02")
 async def test_webhook_ignores_payload_content():
     """Handler triggers scan, never trusts payload source_path directly (AUTO-02/D-66).
 

@@ -43,6 +43,11 @@ _work_queue: asyncio.Queue = asyncio.Queue()
 # ONLY asyncio.Lock (binary ownership) — never a counting semaphore (D-68/Pitfall C).
 _series_locks: dict[int, asyncio.Lock] = {}
 
+# In-memory dedup set for the session_factory=None path (test/stub mode).
+# When session_factory is None, we cannot hit the DB; use this set so the D-66
+# dedup contract holds in unit tests without a real DB.
+_no_db_enqueued: set[str] = set()
+
 
 # ── Enqueue ─────────────────────────────────────────────────────────────────────
 
@@ -50,8 +55,8 @@ _series_locks: dict[int, asyncio.Lock] = {}
 async def enqueue_job(
     session_factory,
     source_path: str,
-    series_id: int | None,
-    trigger: str,
+    series_id: int | None = None,
+    trigger: str = "poll",
 ) -> bool:
     """Enqueue a new translation job for source_path.
 
@@ -59,7 +64,8 @@ async def enqueue_job(
     'queued' or 'running', return False without inserting (D-66).
 
     Args:
-        session_factory: Async session factory.
+        session_factory: Async session factory. When None, uses an in-memory dedup
+                         set (_no_db_enqueued) so the D-66 contract holds in tests.
         source_path:     Subtitle file path to translate.
         series_id:       Series identifier for per-series lock (D-68); None for movies.
         trigger:         Job origin ∈ {poll, webhook, manual-retry, startup-reconcile}.
@@ -70,7 +76,10 @@ async def enqueue_job(
     from trezarr.jobs.models import Job  # noqa: PLC0415 — avoid circular at module scope
 
     if session_factory is None:
-        # Permissive no-op for tests that pass None (Wave-0 xfail stubs)
+        # No-DB path for tests: use module-level set for D-66 dedup contract.
+        if source_path in _no_db_enqueued:
+            return False
+        _no_db_enqueued.add(source_path)
         return True
 
     async with session_factory() as session:
