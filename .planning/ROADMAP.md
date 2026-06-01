@@ -16,7 +16,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 1: Codec & LLM Client Foundation** - Parse/serialize SRT and call the user's OpenAI-compatible endpoint as isolated, testable leaves (completed 2026-05-31)
 - [x] **Phase 2: Mechanical Translation Core + Validation Gate** - Single-pass translate a parsed file and write a valid sidecar, gated by a hard pre-write quality check (completed 2026-05-31)
 - [ ] **Phase 3: \*arr Integration + First Vertical Slice** - Discover a real episode via Sonarr/Radarr and translate it to a sidecar end-to-end (de-risk path-mapping & permissions)
-- [ ] **Phase 4: Series Bible Store & Schema** - Persistent, versioned, lockable per-series consistency store carried forward across episodes
+- [x] **Phase 4: Series Bible Store & Schema** - Persistent, versioned, lockable per-series consistency store carried forward across episodes (completed 2026-06-01)
 - [ ] **Phase 5: Three-Pass Pronoun Engine** - Analyze → translate with the directed Address Map + speaker/addressee attribution to apply correct Vietnamese pronouns
 - [ ] **Phase 6: Relationship Evolution + Self-Review** - Track relationship shifts across episodes and run an LLM self-critique pass before finalizing
 - [ ] **Phase 7: Web UI & Service Hardening** - Dockerized long-running service with config/queue/history/logs/retry, monitoring, and crash-safe resumption
@@ -112,7 +112,7 @@ Decimal phases appear between their surrounding integers in numeric order.
   3. The Bible records a per-series Register/tone grounded in media metadata (genre/plot/era from Sonarr/Radarr/TMDB)
   4. A character/term established in S01E01 is carried forward unchanged to a later episode unless a locked edit or logged event changes it (precedence: human lock > prior value > new inference)
 
-**Plans:** 2/4 plans executed
+**Plans:** 4/4 plans complete
 **Wave 1**
 
 - [x] 04-01-PLAN.md — SQLAlchemy 2.0 async + aiosqlite + Alembic foundation; single baseline migration creates all 7 Bible tables; PRAGMA-per-connection engine; typed declarative models
@@ -120,11 +120,11 @@ Decimal phases appear between their surrounding integers in numeric order.
 **Wave 2** *(blocked on Wave 1 completion)*
 
 - [x] 04-02-PLAN.md — Series + register slice: MediaItem arr_metadata extension, Pydantic DTO boundary, get_or_create_series + load_series_bible (BIBLE-01, BIBLE-05)
-- [ ] 04-03-PLAN.md — Character + term_dictionary + merge_inferred + bible_event audit log; lock-precedence + atomic UPDATE+INSERT + carry-forward (BIBLE-02, BIBLE-04, BIBLE-06)
+- [x] 04-03-PLAN.md — Character + term_dictionary + merge_inferred + bible_event audit log; lock-precedence + atomic UPDATE+INSERT + carry-forward (BIBLE-02, BIBLE-04, BIBLE-06)
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
-- [ ] 04-04-PLAN.md — Ledger backend swap (JSON → SQLAlchemy LedgerSQLA), one-shot JSON→SQLite migration with commit-FIRST/rename-SECOND ordering, async ledger.check/record, cli.py startup wiring
+- [x] 04-04-PLAN.md — Ledger backend swap (JSON → SQLAlchemy LedgerSQLA), one-shot JSON→SQLite migration with commit-FIRST/rename-SECOND ordering, async ledger.check/record, cli.py startup wiring
 
 ### Phase 5: Three-Pass Pronoun Engine
 
@@ -227,7 +227,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 1. Codec & LLM Client Foundation | 3/3 | Complete    | 2026-05-31 |
 | 2. Mechanical Translation Core + Validation Gate | 3/3 | Complete    | 2026-05-31 |
 | 3. \*arr Integration + First Vertical Slice | 5/5 | Awaiting Verification |  |
-| 4. Series Bible Store & Schema | 2/4 | In Progress|  |
+| 4. Series Bible Store & Schema | 4/4 | Complete   | 2026-06-01 |
 | 5. Three-Pass Pronoun Engine | 0/TBD | Not started | - |
 | 6. Relationship Evolution + Self-Review | 0/TBD | Not started | - |
 | 7. Web UI & Service Hardening | 0/TBD | Not started | - |
