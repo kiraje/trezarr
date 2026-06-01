@@ -139,7 +139,25 @@ Decimal phases appear between their surrounding integers in numeric order.
   3. The same character pair keeps the same pronoun pair across an episode (no flips inside an exchange; reciprocal directions consistent)
   4. When attribution is low-confidence, the engine falls back to a safe register rather than risk a wrong intimate pronoun
 
-**Plans**: TBD
+**Plans:** 6 plans
+
+**Wave 0**
+
+- [ ] 05-01-PLAN.md — Wave 0: test scaffold — RED stubs for all Phase-5 test files (ENG-04, BIBLE-03, PRON-01, PRON-02, PRON-03)
+
+**Wave 1**
+
+- [ ] 05-02-PLAN.md — Wave 1A: Address Map store foundation — Series.address_maps ORM relationship, AddressMapDTO, upsert_address_pair/load_address_map, Phase-5 TrezarrSettings fields (BIBLE-03, ENG-04)
+- [ ] 05-03-PLAN.md — Wave 1B: Deterministic reconciliation utility — KINSHIP_RECIPROCAL, get_safe_default, reconcile_attributions (PRON-02, PRON-03)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [ ] 05-04-PLAN.md — Wave 2A: Pass 1 Bible analysis — analyze.py (BibleAnalysis model + analyze_file + merge_bible_analysis + BibleAnalysisError) (ENG-04, BIBLE-03)
+- [ ] 05-05-PLAN.md — Wave 2B: Pass 2 attribution — attribute.py (LineAttribution + attribute_batch + Tier-3 degradation) (PRON-01)
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
+- [ ] 05-06-PLAN.md — Wave 3: Pipeline wiring — engine.py (build_translate_prompt pronoun hints + translate_file 3-pass flow + derive_episode_key) + cli.py (pass eligible_item + session_factory) (ENG-04, PRON-02, PRON-03)
 
 ### Phase 6: Relationship Evolution + Self-Review
 
@@ -228,7 +246,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 2. Mechanical Translation Core + Validation Gate | 3/3 | Complete    | 2026-05-31 |
 | 3. \*arr Integration + First Vertical Slice | 5/5 | Awaiting Verification |  |
 | 4. Series Bible Store & Schema | 4/4 | Complete   | 2026-06-01 |
-| 5. Three-Pass Pronoun Engine | 0/TBD | Not started | - |
+| 5. Three-Pass Pronoun Engine | 0/6 | Not started | - |
 | 6. Relationship Evolution + Self-Review | 0/TBD | Not started | - |
 | 7. Web UI & Service Hardening | 0/TBD | Not started | - |
 | 8. Editable Series Bible UI | 0/TBD | Not started | - |
