@@ -41,14 +41,18 @@ def _make_subdoc(texts: list[str]) -> SubDoc:
 
 
 def _make_settings(**kwargs) -> TrezarrSettings:
-    """Build a TrezarrSettings with sensible test defaults for self-review tests."""
-    return TrezarrSettings(
+    """Build a TrezarrSettings with sensible test defaults for self-review tests.
+
+    kwargs overrides the defaults — callers can set enable_self_review=False etc.
+    """
+    defaults = dict(
         llm_api_key="test-key",
         enable_self_review=True,
         self_review_context_lines_k=0,
         self_review_max_cues_per_batch=10,
-        **kwargs,
     )
+    defaults.update(kwargs)
+    return TrezarrSettings(**defaults)
 
 
 # ---------------------------------------------------------------------------

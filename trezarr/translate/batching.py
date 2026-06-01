@@ -38,10 +38,15 @@ class Batch:
                         (read-only context for the LLM; not translated).
         context_after:  Up to K source cues immediately following this batch
                         (read-only context for the LLM; not translated).
+        dominant_pair:  Optional (speaker_id, addressee_id) pair that is most
+                        prevalent in this batch — used by Pass 4 self-review to
+                        identify which pronoun pair the reviewer should check (D-56).
+                        None when speaker attribution is not available.
     """
     cues: list[SubLine] = field(default_factory=list)
     context_before: list[SubLine] = field(default_factory=list)
     context_after: list[SubLine] = field(default_factory=list)
+    dominant_pair: "tuple[int, int] | None" = None
 
 
 def _compute_budget_chars(settings: "TrezarrSettings") -> int:

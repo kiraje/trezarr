@@ -20,6 +20,8 @@ Critical constraints:
   - tenacity retry wraps ONLY _translate_batch, not translate_file.
   - retry_if_exception_type(BatchValidationError) — never includes openai.APIError (Pitfall 5).
   - New SubLine objects for translated doc — never mutate source SubLines (Pitfall 8).
+  - Pass 4 self-review: _review_batch returns list[str] | None — NEVER raises (D-59).
+  - No quarantine path in Pass 4 — validate_subdoc remains the sole arbiter (D-55/D-59).
 """
 from __future__ import annotations
 
@@ -189,6 +191,152 @@ def build_translate_prompt(
             parts.append(f"[context] {line.strip()}")
 
     return "\n".join(parts)
+
+
+# ── Pass-4 self-review prompt construction ─────────────────────────────────────
+
+def build_review_prompt(
+    source_texts: list[str],
+    translated_texts: list[str],
+    resolved_map: "dict[tuple[int, int], tuple[str, str]]",
+    bible: object,
+    settings: "TrezarrSettings",
+    dominant_pair: "tuple[int, int] | None" = None,
+) -> str:
+    """Build the Pass-4 self-review prompt (D-57, D-58).
+
+    Instructs the reviewer to correct Bible violations only — NOT to paraphrase
+    or "improve" adherent lines (D-58). Reuses the numbered-line [N] protocol.
+
+    Args:
+        source_texts:    Source cue texts for context.
+        translated_texts: Pass-3 Vietnamese cue texts to review (sentinel-cleaned).
+        resolved_map:    (speaker_id, addressee_id) → (self_term, address_term).
+        bible:           SeriesBibleDTO for register + term dictionary context.
+        settings:        TrezarrSettings (unused directly; reserved for future knobs).
+        dominant_pair:   (speaker_id, addressee_id) dominant pair for this batch.
+    """
+    parts = [
+        "[INSTRUCTIONS]",
+        "You are a Vietnamese subtitle reviewer. Check each numbered line for Series Bible violations ONLY.",
+        "",
+        "Series Bible for this batch:",
+    ]
+
+    register = getattr(bible, "register_value", None) or "neutral"
+    parts.append(f"  - Register/tone: {register}")
+
+    if dominant_pair is not None and dominant_pair in resolved_map:
+        self_t, addr_t = resolved_map[dominant_pair]
+        parts.append(
+            f"  - Pronoun pair (speaker→addressee): speaker says \"{self_t}\", "
+            f"addresses as \"{addr_t}\""
+        )
+
+    # Filter term dictionary to relevant terms (those appearing in source texts)
+    source_combined = " ".join(source_texts).lower()
+    relevant_terms = [
+        t for t in getattr(bible, "terms", [])
+        if (t.source_term or "").lower() in source_combined
+    ]
+    for term in relevant_terms[:10]:  # cap at 10 to control token count
+        parts.append(f"  - Term: {term.source_term} → {term.vietnamese_rendering}")
+
+    parts.extend([
+        "",
+        "RULES:",
+        "1. Output ONLY numbered lines [1], [2], ... [N] in order.",
+        "2. Keep <<T0>>, <<T1>>, ... tokens EXACTLY as-is.",
+        "3. Return each line VERBATIM unless it has a SPECIFIC Bible violation:",
+        "   - Wrong pronoun: uses different first-person or second-person term than the Bible pair above.",
+        "   - Wrong term: a proper noun/title/place from the Bible is not rendered as specified above.",
+        "   - Wrong register: significantly more formal or informal than the series register.",
+        "4. Do NOT rephrase, 'improve', or paraphrase lines that already comply.",
+        "",
+        "[LINES TO REVIEW]",
+    ])
+
+    for i, (src, vi) in enumerate(zip(source_texts, translated_texts), 1):
+        parts.append(f"[{i}] (source: {src.strip()}) {vi.strip()}")
+
+    return "\n".join(parts)
+
+
+# ── Pass-4 self-review batch handler ──────────────────────────────────────────
+# No asyncio.Semaphore here. LLMClient._semaphore is the sole gate (D-06, Pitfall 1).
+
+async def _review_batch(
+    review_batch: "Batch",
+    source_lines_by_index: dict,
+    resolved_map: "dict[tuple[int, int], tuple[str, str]]",
+    bible: object,
+    llm_client: LLMClient,
+    settings: "TrezarrSettings",
+) -> "list[str] | None":
+    """Review a batch of translated cues against the Series Bible.
+
+    Returns corrected texts, or None on ANY failure (D-59 best-effort — never raises,
+    never quarantines). Mirrors _translate_batch_inner but with softer error handling.
+
+    Steps (mirror of _translate_batch_inner):
+      1. extract_sentinels per translated cue (D-12)
+      2. build_review_prompt with source text + Bible context (D-57, D-58)
+      3. llm_client.call(messages) — NO response_model (D-57)
+      4. parse_numbered_response
+      5. reinsert_sentinels — return None on integrity failure (D-59)
+    """
+    try:
+        # Step 1: Extract sentinels from TRANSLATED texts (<<T...>> tokens are in translated)
+        cleaned_texts: list[str] = []
+        sentinel_maps: list[dict[str, str]] = []
+        source_texts: list[str] = []
+
+        for cue in review_batch.cues:
+            cleaned, smap = extract_sentinels(cue.text)
+            cleaned_texts.append(cleaned)
+            sentinel_maps.append(smap)
+            src = source_lines_by_index.get(cue.index)
+            source_texts.append(src.text if src else "")
+
+        # Step 2: Build review prompt with Bible context
+        dominant_pair = getattr(review_batch, "dominant_pair", None)
+        prompt = build_review_prompt(
+            source_texts=source_texts,
+            translated_texts=cleaned_texts,
+            resolved_map=resolved_map,
+            bible=bible,
+            settings=settings,
+            dominant_pair=dominant_pair,
+        )
+
+        # Step 3: LLM call — no response_model (D-57)
+        raw_response = await llm_client.call([{"role": "user", "content": prompt}])
+
+        # Step 4: Parse numbered-line response
+        corrected_texts = parse_numbered_response(str(raw_response), len(review_batch.cues))
+
+        # Step 5: Reinsert sentinels — return None on integrity failure (D-59)
+        restored: list[str] = []
+        for text, smap in zip(corrected_texts, sentinel_maps):
+            if smap:
+                restored_text, integrity_ok = reinsert_sentinels(text, smap)
+                if not integrity_ok:
+                    logger.warning(
+                        "Pass 4: sentinel integrity failure — using pre-review output for this batch (D-59)"
+                    )
+                    return None  # fallback, not exception
+                restored.append(restored_text)
+            else:
+                restored.append(text)
+
+        return restored
+
+    except Exception:
+        logger.warning(
+            "Pass 4 review batch failed — using pre-review output (D-59)",
+            exc_info=True,
+        )
+        return None  # NEVER raises, NEVER quarantines (D-59)
 
 
 # ── Numbered-line response parser ──────────────────────────────────────────────
@@ -723,6 +871,77 @@ async def translate_file(
         leading=source_doc.leading,
         trailer=source_doc.trailer,
     )
+
+    # Step 8.5 (Phase 6, D-55): Pass 4 Self-Review — best-effort Bible adherence correction.
+    # Runs ONLY in the Bible-aware branch (eligible_item + session_factory + enable_self_review).
+    # On ANY failure (LLM error, parse failure, sentinel failure): keep pre-review translated_doc.
+    # NEVER quarantines — validate_subdoc (Step 9) remains the sole arbiter (D-59).
+    # Tier-3 guard: if llm_client._mode == "text", Pass 4 naturally degrades via the except
+    # Exception catch in _review_batch (plain-text LLM still returns numbered lines).
+    if (
+        settings.enable_self_review
+        and eligible_item is not None
+        and session_factory is not None
+        and bible is not None
+    ):
+        review_batches = batch_subdoc(
+            translated_doc,  # review the TRANSLATED document (Assumption A4)
+            settings,
+            context_lines_k=settings.self_review_context_lines_k,
+            max_cues_per_batch=settings.self_review_max_cues_per_batch,
+        )
+        source_lines_by_index = {line.index: line for line in source_doc.lines}
+
+        # TaskGroup dispatch — mirrors Pass-2 attribution gather.
+        # CRITICAL DIFFERENCE from Pass-3 TaskGroup: NO except* block here.
+        # _review_batch catches all exceptions internally and returns None (D-59, Pitfall 2).
+        try:
+            async with asyncio.TaskGroup() as tg:
+                review_tasks = [
+                    tg.create_task(_review_batch(
+                        review_batch=rb,
+                        source_lines_by_index=source_lines_by_index,
+                        resolved_map=resolved_map,
+                        bible=bible,
+                        llm_client=llm_client,
+                        settings=settings,
+                    ))
+                    for rb in review_batches
+                ]
+            review_results = [t.result() for t in review_tasks]
+        except Exception:
+            # Bare except: if TaskGroup itself fails unexpectedly, keep pre-review doc (D-59)
+            logger.warning(
+                "Pass 4 TaskGroup failed — keeping pre-review translated_doc (D-59)",
+                exc_info=True,
+            )
+            review_results = [None] * len(review_batches)
+
+        # Splice corrections into translated_doc (Pitfall 8 — new SubLine objects, never mutate)
+        corrected_lines = list(translated_doc.lines)
+        offset = 0
+        for rb, corrected_texts in zip(review_batches, review_results):
+            if corrected_texts is None:
+                offset += len(rb.cues)
+                continue
+            for i, (cue, new_text) in enumerate(zip(rb.cues, corrected_texts)):
+                corrected_lines[offset + i] = SubLine(
+                    index=cue.index,
+                    start_tc=cue.start_tc,
+                    end_tc=cue.end_tc,
+                    text=new_text,
+                    raw=None,
+                )
+            offset += len(rb.cues)
+
+        translated_doc = SubDoc(
+            lines=corrected_lines,
+            encoding=translated_doc.encoding,
+            line_ending=translated_doc.line_ending,
+            separators=translated_doc.separators,
+            leading=translated_doc.leading,
+            trailer=translated_doc.trailer,
+        )
 
     # Step 9: Document-level validation gate (D-16, D-17)
     try:

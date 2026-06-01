@@ -91,6 +91,7 @@ async def test_pronoun_consistency_within_episode(session_factory, tmp_path):
         enable_pass1_analysis=True,
         enable_attribution=True,
         pronoun_confidence_threshold="medium",
+        enable_self_review=False,  # Phase-5 test: disable Phase-6 self-review (mock does not handle review prompts)
     )
 
     ledger = Ledger(tmp_path / "ledger.json")
