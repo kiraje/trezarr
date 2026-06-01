@@ -34,6 +34,7 @@ Atomic write:
 """
 from __future__ import annotations
 
+import asyncio
 import dataclasses
 import hashlib
 import json
@@ -186,11 +187,22 @@ class Ledger:
         Uses the same NamedTemporaryFile + os.replace atomic write pattern as write.py
         so a crash during write never leaves a partial/corrupt ledger file.
 
+        WR-04: the underlying ``_write`` is synchronous blocking file I/O
+        (NamedTemporaryFile + json.dump + os.replace + fsync). Running it
+        directly on the asyncio event loop thread violates the "async
+        everywhere — no sync sqlite3/file I/O in the event loop" contract
+        documented on ``_ledger_protocol.py``. ``asyncio.to_thread`` hands the
+        write off to the default executor so the loop yields back to other
+        tasks. Phase 4 should not import Ledger in production (LedgerSQLA is
+        the authoritative backend) but the one-shot JSON→SQLite migration
+        path still touches it indirectly — and a slow sync write can
+        starve the LLM-translate semaphore for a few hundred milliseconds.
+
         Args:
             entry: The LedgerEntry to record.  entry.source_path is the dict key.
         """
         self._data[entry.source_path] = entry
-        self._write()
+        await asyncio.to_thread(self._write)
 
     def _write(self) -> None:
         """Atomically write the in-memory ledger to self._path as formatted JSON.
