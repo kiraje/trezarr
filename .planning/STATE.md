@@ -2,9 +2,9 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: verifying
-stopped_at: Completed 07-02-PLAN.md
-last_updated: "2026-06-01T23:02:05.300Z"
+status: ready_to_plan
+stopped_at: Phase 7 complete (6/6) — ready to discuss Phase 8
+last_updated: 2026-06-01T23:34:35.183Z
 last_activity: 2026-06-01
 progress:
   total_phases: 10
@@ -21,13 +21,13 @@ progress:
 See: .planning/PROJECT.md (updated 2026-05-31)
 
 **Core value:** Vietnamese subtitles that stay consistent and relationally correct (right pronoun pair, stable names/terms) across an entire series — produced automatically.
-**Current focus:** Phase 7 — web-ui-service-hardening
+**Current focus:** Phase 8 — editable series bible ui
 
 ## Current Position
 
-Phase: 7 (web-ui-service-hardening) — EXECUTING
-Plan: 6 of 6
-Status: Phase complete — ready for verification
+Phase: 8
+Plan: Not started
+Status: Ready to plan
 Last activity: 2026-06-01
 
 Progress: [██████████] 100%
@@ -36,7 +36,7 @@ Progress: [██████████] 100%
 
 **Velocity:**
 
-- Total plans completed: 25
+- Total plans completed: 31
 - Average duration: 6 min
 - Total execution time: 0.1 hours
 
@@ -50,6 +50,7 @@ Progress: [██████████] 100%
 | 04 | 4 | - | - |
 | 05 | 6 | - | - |
 | 6 | 3 | - | - |
+| 7 | 6 | - | - |
 
 **Recent Trend:**
 
