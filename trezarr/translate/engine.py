@@ -616,9 +616,15 @@ async def translate_file(
                 context_lines_k=settings.attribute_context_lines_k,
                 max_cues_per_batch=settings.attribute_max_cues_per_batch,
             )
-            attr_per_batch = await asyncio.gather(
-                *[attribute_batch(b, bible, llm_client, settings) for b in attr_batches]
-            )
+            # WR-04: TaskGroup cancels siblings on first failure; no orphaned tasks.
+            # Attribution degrades gracefully (never raises BatchValidationError),
+            # so no ExceptionGroup handling is needed here.
+            async with asyncio.TaskGroup() as tg:
+                attr_tasks = [
+                    tg.create_task(attribute_batch(b, bible, llm_client, settings))
+                    for b in attr_batches
+                ]
+            attr_per_batch = [t.result() for t in attr_tasks]
             flat_attributions = [a for batch_attrs in attr_per_batch for a in batch_attrs]
         else:
             flat_attributions = []
@@ -659,17 +665,23 @@ async def translate_file(
             per_batch_hints[b_idx] = batch_hints if batch_hints else None
             doc_offset += batch_size
 
-    # Step 7: Dispatch all batches concurrently via asyncio.gather
-    # ONLY catch BatchValidationError (retry-exhausted batch gate failure → quarantine).
+    # Step 7: Dispatch all batches concurrently via TaskGroup (WR-04).
+    # TaskGroup cancels sibling tasks on first failure, avoiding orphaned coroutines
+    # that would otherwise keep consuming the LLM semaphore.
+    # ONLY quarantine on BatchValidationError (retry-exhausted batch gate failure).
     # openai.APIError and any other exception propagate: the file stays out of "done"
     # and is retried on the next poll cycle.  Pitfall 5 / D-18: SDK handles transport
     # failures; never permanently quarantine on a transient endpoint error.
+    # TaskGroup wraps failures in ExceptionGroup — use except* to unwrap (Python 3.11+).
     try:
-        batch_results = await asyncio.gather(
-            *[_translate_batch(b, llm_client, settings, per_batch_hints[i]) for i, b in enumerate(batches)]
-        )
-    except BatchValidationError as exc:
-        reason = str(exc)
+        async with asyncio.TaskGroup() as tg:
+            translate_tasks = [
+                tg.create_task(_translate_batch(b, llm_client, settings, per_batch_hints[i]))
+                for i, b in enumerate(batches)
+            ]
+        batch_results = [t.result() for t in translate_tasks]
+    except* BatchValidationError as eg:
+        reason = str(eg.exceptions[0])
         quarantine_path = _write_quarantine(path, reason, [], settings)
         await ledger.record(LedgerEntry(
             source_path=str(path),
