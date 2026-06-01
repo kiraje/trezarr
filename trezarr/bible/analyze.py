@@ -1,0 +1,448 @@
+"""Pass 1: Full-file Bible analysis — holistic LLM call + merge into Series Bible (D-41, ENG-04, BIBLE-03).
+
+Design decisions honoured:
+  D-41  analyze_file() builds a single holistic prompt from the full source_doc + existing
+        Bible + arr_metadata, calls LLMClient.call(response_model=BibleAnalysis), and merges
+        the result via upsert_character / upsert_term / upsert_address_pair / merge_inferred.
+  D-47  Tier-3 (plain-text) endpoint degrades gracefully: returns empty BibleAnalysis, never
+        quarantines. Only logic failures (malformed JSON that Pydantic rejects after Tier-2)
+        raise BibleAnalysisError and trigger quarantine.
+  ENG-04 Pass 1 is a BARRIER — analyze_file must complete before any Pass 2/3 calls. This is
+        enforced by engine.py's await in Plan 06 (not in this module).
+  BIBLE-03 merge_bible_analysis writes directed address-pair entries via upsert_address_pair.
+
+# No asyncio.Semaphore in this module.  LLMClient._semaphore is the sole gate (D-06, Pitfall 1).
+# No SQLAlchemy imports (D-39, Pitfall D) — only trezarr.bible.dto and trezarr.bible.store.
+"""
+from __future__ import annotations
+
+import logging
+from typing import TYPE_CHECKING
+
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
+
+from trezarr.bible.store import upsert_character, upsert_term, upsert_address_pair, merge_inferred
+
+if TYPE_CHECKING:
+    from trezarr.config import TrezarrSettings
+    from trezarr.llm.client import LLMClient
+    from trezarr.bible.dto import SeriesBibleDTO, SeriesDTO
+    from trezarr.subtitles.model import SubDoc
+
+logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# Exception class — raised on logic failure to signal quarantine
+# ---------------------------------------------------------------------------
+
+
+class BibleAnalysisError(Exception):
+    """Raised on Pass-1 logic failure (e.g., BibleAnalysis Pydantic validation fails
+    after Tier-2 JSON attempt). This signals the engine to quarantine the episode.
+
+    NOT raised on openai.APIError — the SDK handles transport/API retries (Pitfall B).
+    NOT raised on Tier-3 degradation — that path returns empty BibleAnalysis (D-47).
+    """
+
+
+# ---------------------------------------------------------------------------
+# Pydantic inference shapes
+# ---------------------------------------------------------------------------
+
+
+class AddressMapInference(BaseModel):
+    """Directed speaker→addressee pronoun pair inferred from dialogue by the LLM."""
+
+    speaker_name: str
+    addressee_name: str
+    self_term: str
+    address_term: str
+    confidence: float = 0.0
+
+
+class CharacterInference(BaseModel):
+    """Character inferred from dialogue by the LLM."""
+
+    original_latin_name: str
+    gender: str | None = None
+    rough_age: str | None = None
+    role: str | None = None
+
+
+class TermInference(BaseModel):
+    """Proper noun / title / place / jargon term inferred by the LLM."""
+
+    source_term: str
+    vietnamese_rendering: str
+    category: str | None = None
+
+
+class BibleAnalysis(BaseModel):
+    """Structured LLM output for Pass 1 — holistic Bible analysis of a subtitle file.
+
+    All fields have safe defaults so a partial LLM response is still usable.
+    model_config uses extra="ignore" so unknown extra fields from the LLM are silently
+    dropped (T-05-04-03 mitigation).
+
+    CR-02 (following SeriesDTO convention): the Python attribute is named ``register_value``
+    because a field literally named ``register`` shadows Pydantic v2's deprecated
+    ``BaseModel.register`` classmethod, producing a UserWarning. The alias ``register``
+    keeps the LLM JSON key and merge_bible_analysis register-update logic intact.
+    populate_by_name=True allows construction by Python name OR alias.
+    """
+
+    model_config = ConfigDict(extra="ignore", populate_by_name=True)
+
+    register_value: str | None = Field(default=None, alias="register")
+    characters: list[CharacterInference] = []
+    terms: list[TermInference] = []
+    address_map: list[AddressMapInference] = []
+
+
+# ---------------------------------------------------------------------------
+# Internal helpers
+# ---------------------------------------------------------------------------
+
+
+def _build_analysis_prompt(
+    cue_texts: list[str],
+    bible: "SeriesBibleDTO",
+    arr_metadata: dict,
+) -> str:
+    """Build the Pass-1 holistic analysis prompt.
+
+    Prompt structure (RESEARCH.md Key Pattern 1):
+      1. EXISTING BIBLE CONTEXT — ground the LLM with what is already known.
+      2. SERIES METADATA — title, genres, overview, year from arr_metadata.
+      3. DIALOGUE SAMPLE — numbered cue texts for analysis.
+      4. INSTRUCTIONS — what to infer and output.
+
+    Security (T-05-04-01): cue texts are included as numbered data items under
+    a clear [DIALOGUE SAMPLE] heading, not as instructions. Suspiciously long
+    individual cue texts (>500 chars) are logged as a warning.
+
+    Security (T-05-04-02): only known arr_metadata fields are extracted (title,
+    genres, overview, year, network) — never a raw metadata dump.
+    """
+    parts: list[str] = []
+
+    # ── EXISTING BIBLE CONTEXT ────────────────────────────────────────────
+    parts.append("[EXISTING BIBLE CONTEXT]")
+    if bible.register_value:
+        parts.append(f"Register/tone: {bible.register_value}")
+    if bible.characters:
+        char_lines = []
+        for c in bible.characters:
+            desc = c.original_latin_name
+            if c.gender:
+                desc += f" ({c.gender})"
+            if c.role:
+                desc += f" — {c.role}"
+            char_lines.append(f"  - {desc}")
+        parts.append("Known characters:\n" + "\n".join(char_lines))
+    else:
+        parts.append("Known characters: none yet")
+
+    # Include locked address map entries as grounding
+    locked_pairs = [
+        a for a in bible.address_map
+        if "self_term" in (a.locked_fields or []) or "address_term" in (a.locked_fields or [])
+    ]
+    if locked_pairs:
+        pair_lines = []
+        for pair in locked_pairs:
+            pair_lines.append(
+                f"  - speaker_id={pair.speaker_character_id} → "
+                f"addressee_id={pair.addressee_character_id}: "
+                f"self_term={pair.self_term!r}, address_term={pair.address_term!r} [LOCKED]"
+            )
+        parts.append("Locked address pairs:\n" + "\n".join(pair_lines))
+
+    # ── SERIES METADATA ───────────────────────────────────────────────────
+    parts.append("\n[SERIES METADATA]")
+    title = arr_metadata.get("title", "Unknown")
+    genres = arr_metadata.get("genres", [])
+    overview = arr_metadata.get("overview", "")
+    year = arr_metadata.get("year", "")
+    network = arr_metadata.get("network", "")
+
+    parts.append(f"Title: {title}")
+    if genres:
+        genre_str = ", ".join(genres) if isinstance(genres, list) else str(genres)
+        parts.append(f"Genres: {genre_str}")
+    if year:
+        parts.append(f"Year: {year}")
+    if network:
+        parts.append(f"Network: {network}")
+    if overview:
+        parts.append(f"Overview: {overview[:500]}")  # T-05-04-02: cap overview length
+
+    # ── DIALOGUE SAMPLE ───────────────────────────────────────────────────
+    parts.append("\n[DIALOGUE SAMPLE]")
+    for i, text in enumerate(cue_texts, 1):
+        if len(text) > 500:
+            logger.warning("Pass 1: cue %d has suspiciously long text (%d chars) — possible injection (T-05-04-01)", i, len(text))
+        parts.append(f"[{i}] {text.strip()}")
+
+    # ── INSTRUCTIONS ──────────────────────────────────────────────────────
+    parts.append(
+        "\n[INSTRUCTIONS]\n"
+        "Analyze the dialogue sample above. Infer and return a JSON object with:\n"
+        "  - register: overall tone/register of the series (e.g. 'formal', 'casual', 'romantic')\n"
+        "  - characters: list of character objects with original_latin_name, gender (if determinable), "
+        "rough_age (if determinable), role (if determinable)\n"
+        "  - terms: list of proper nouns, titles, places, jargon with source_term and vietnamese_rendering\n"
+        "  - address_map: list of directed pronoun pairs with speaker_name, addressee_name, self_term "
+        "(how speaker refers to themselves), address_term (how speaker addresses the other), confidence (0.0-1.0)\n"
+        "Focus on Vietnamese pronoun accuracy. The most important output is the address_map — "
+        "identify which Vietnamese pronoun pairs (anh/em, chị/em, ông/bà, etc.) are appropriate "
+        "for each speaker→addressee relationship."
+    )
+
+    return "\n".join(parts)
+
+
+# ---------------------------------------------------------------------------
+# Public API
+# ---------------------------------------------------------------------------
+
+
+async def analyze_file(
+    source_doc: "SubDoc",
+    bible: "SeriesBibleDTO",
+    arr_metadata: dict,
+    llm_client: "LLMClient",
+    settings: "TrezarrSettings",
+    episode_key: str,
+) -> BibleAnalysis:
+    """Pass 1: Holistic Bible analysis of a subtitle file.
+
+    Builds a structured prompt from the full source_doc + existing Bible + arr_metadata,
+    calls the LLM, and returns a BibleAnalysis instance for merging.
+
+    Tier-1 path (json_schema): result is a BibleAnalysis instance — return it directly.
+    Tier-2 path (json_object): result is a JSON string — validate via model_validate_json();
+        on ValidationError raise BibleAnalysisError (logic failure → quarantine).
+    Tier-3 path (plain text, _mode == "text"): degrade gracefully — log warning, return
+        empty BibleAnalysis (D-47). Do NOT raise BibleAnalysisError. Do NOT quarantine.
+
+    Args:
+        source_doc:   Parsed subtitle document to analyze.
+        bible:        Current Series Bible state (for grounding).
+        arr_metadata: *arr metadata snapshot (title, genres, overview, year, network).
+        llm_client:   LLMClient instance — concurrency gate is inside LLMClient._semaphore.
+        settings:     TrezarrSettings (for enable_pass1_analysis, pass1_max_cues_per_chunk).
+        episode_key:  Episode identifier for logging.
+
+    Returns:
+        BibleAnalysis instance (possibly empty on Tier-3 or when disabled).
+
+    Raises:
+        BibleAnalysisError: On Tier-2 JSON that fails Pydantic validation (not on API errors).
+    """
+    # D-50: toggle for staged rollout/tests
+    if not settings.enable_pass1_analysis:
+        logger.debug("Pass 1 disabled via enable_pass1_analysis=False (episode: %s)", episode_key)
+        return BibleAnalysis()
+
+    # D-47: Tier-3 degradation — detect text-only endpoint before making the call
+    if getattr(llm_client, "_mode", None) == "text":
+        logger.warning(
+            "Pass 1 skipped: endpoint is Tier-3 text-only (D-47). "
+            "Bible will not be updated for episode: %s",
+            episode_key,
+        )
+        return BibleAnalysis()
+
+    # Build cue texts, chunking if needed (MVP: take first N cues)
+    all_cue_texts = [line.text for line in source_doc.lines if line.text.strip()]
+    max_cues = settings.pass1_max_cues_per_chunk
+    if max_cues > 0 and len(all_cue_texts) > max_cues:
+        logger.debug(
+            "Pass 1 chunking: %d cues total, using first %d (episode: %s)",
+            len(all_cue_texts),
+            max_cues,
+            episode_key,
+        )
+        cue_texts = all_cue_texts[:max_cues]
+    else:
+        cue_texts = all_cue_texts
+
+    prompt = _build_analysis_prompt(cue_texts, bible, arr_metadata)
+
+    # Call LLMClient — sole concurrency gate is inside LLMClient._semaphore (D-06, Pitfall A).
+    # NEVER add asyncio.Semaphore here. response_model triggers Tier-1/2 path (D-47).
+    result = await llm_client.call(
+        messages=[{"role": "user", "content": prompt}],
+        response_model=BibleAnalysis,
+    )
+
+    # Tier-1: result is already a BibleAnalysis instance (LLMClient parsed it)
+    if isinstance(result, BibleAnalysis):
+        logger.debug("Pass 1 Tier-1 success for episode: %s", episode_key)
+        return result
+
+    # Tier-2: result is a JSON string — validate it
+    if isinstance(result, str):
+        try:
+            analysis = BibleAnalysis.model_validate_json(result)
+            logger.debug("Pass 1 Tier-2 success for episode: %s", episode_key)
+            return analysis
+        except ValidationError as exc:
+            raise BibleAnalysisError(
+                f"BibleAnalysis parse failed for episode {episode_key!r}: {exc}"
+            ) from exc
+
+    # Unexpected return type — treat as Tier-2 string
+    try:
+        analysis = BibleAnalysis.model_validate_json(str(result))
+        return analysis
+    except (ValidationError, Exception) as exc:
+        raise BibleAnalysisError(
+            f"BibleAnalysis unexpected result type {type(result).__name__!r} "
+            f"for episode {episode_key!r}: {exc}"
+        ) from exc
+
+
+async def merge_bible_analysis(
+    session_factory: object,
+    series_dto: "SeriesDTO",
+    analysis: BibleAnalysis,
+    episode_key: str,
+) -> None:
+    """Merge a BibleAnalysis result into the Series Bible via store functions.
+
+    Order of operations (D-41):
+      1. If analysis.register is set → merge_inferred(series register field).
+      2. For each character → upsert_character (builds name→id map for address_map step).
+      3. For each term → upsert_term.
+      4. For each address_map entry → resolve speaker+addressee IDs from the name map,
+         then upsert_address_pair. Unresolvable names are warned and skipped (never crash).
+
+    Args:
+        session_factory: Async session factory (passed through to store functions).
+        series_dto:      SeriesDTO for the current series (carries id).
+        analysis:        BibleAnalysis from analyze_file().
+        episode_key:     Episode identifier for bible_event provenance.
+    """
+    series_id = series_dto.id
+
+    # Step 1: Update series register if inferred
+    if analysis.register_value is not None:
+        try:
+            await merge_inferred(
+                session_factory,
+                series_dto,
+                {"register": analysis.register_value},
+                episode_key,
+                source="inference",
+            )
+            logger.debug("Pass 1: merged register=%r for series %d", analysis.register_value, series_id)
+        except Exception as exc:
+            logger.warning("Pass 1: failed to merge register for series %d: %s", series_id, exc)
+
+    # Step 2: Upsert characters — build name→id map for address_map resolution
+    name_to_id: dict[str, int] = {}
+    for char in analysis.characters:
+        try:
+            char_dto, _ = await upsert_character(
+                session_factory,
+                series_id=series_id,
+                original_latin_name=char.original_latin_name,
+                gender=char.gender,
+                rough_age=char.rough_age,
+                role=char.role,
+                episode_key=episode_key,
+                source="inference",
+            )
+            name_to_id[char.original_latin_name] = char_dto.id
+            logger.debug(
+                "Pass 1: upserted character %r (id=%d) for series %d",
+                char.original_latin_name,
+                char_dto.id,
+                series_id,
+            )
+        except Exception as exc:
+            logger.warning(
+                "Pass 1: failed to upsert character %r for series %d: %s",
+                char.original_latin_name,
+                series_id,
+                exc,
+            )
+
+    # Step 3: Upsert terms
+    for term in analysis.terms:
+        try:
+            await upsert_term(
+                session_factory,
+                series_id=series_id,
+                source_term=term.source_term,
+                vietnamese_rendering=term.vietnamese_rendering,
+                category=term.category,
+                episode_key=episode_key,
+                source="inference",
+            )
+            logger.debug("Pass 1: upserted term %r for series %d", term.source_term, series_id)
+        except Exception as exc:
+            logger.warning(
+                "Pass 1: failed to upsert term %r for series %d: %s",
+                term.source_term,
+                series_id,
+                exc,
+            )
+
+    # Step 4: Upsert address pairs — resolve names to character IDs
+    for pair in analysis.address_map:
+        spk_id = name_to_id.get(pair.speaker_name)
+        addr_id = name_to_id.get(pair.addressee_name)
+
+        if spk_id is None:
+            logger.warning(
+                "Pass 1: could not resolve speaker name %r to a character ID for series %d — "
+                "skipping address pair (%r → %r)",
+                pair.speaker_name,
+                series_id,
+                pair.speaker_name,
+                pair.addressee_name,
+            )
+            continue
+
+        if addr_id is None:
+            logger.warning(
+                "Pass 1: could not resolve addressee name %r to a character ID for series %d — "
+                "skipping address pair (%r → %r)",
+                pair.addressee_name,
+                series_id,
+                pair.speaker_name,
+                pair.addressee_name,
+            )
+            continue
+
+        try:
+            await upsert_address_pair(
+                session_factory,
+                series_id=series_id,
+                speaker_character_id=spk_id,
+                addressee_character_id=addr_id,
+                self_term=pair.self_term,
+                address_term=pair.address_term,
+                valid_from_episode=episode_key,
+                episode_key=episode_key,
+                source="inference",
+            )
+            logger.debug(
+                "Pass 1: upserted address pair %r→%r (self=%r, address=%r) for series %d",
+                pair.speaker_name,
+                pair.addressee_name,
+                pair.self_term,
+                pair.address_term,
+                series_id,
+            )
+        except Exception as exc:
+            logger.warning(
+                "Pass 1: failed to upsert address pair %r→%r for series %d: %s",
+                pair.speaker_name,
+                pair.addressee_name,
+                series_id,
+                exc,
+            )
