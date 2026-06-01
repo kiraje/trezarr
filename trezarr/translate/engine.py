@@ -544,11 +544,17 @@ async def translate_file(
     # Step 4.5 (Phase 5, D-48): Three-pass pronoun engine.
     # Bypassed when eligible_item or session_factory is None (backward compat).
     # No new asyncio.Semaphore here — all LLM calls go through LLMClient._semaphore (D-06, Pitfall A).
+    # WR-02: gate only on eligible_item+session_factory — NOT on enable_pass1_analysis.
+    # Each pass honours its own toggle internally:
+    #   analyze_file()  → early-returns on enable_pass1_analysis=False (analyze.py:244)
+    #   attribute_batch → skips on enable_attribution=False (attribute.py:278)
+    # Coupling the engine gate to enable_pass1_analysis silently disabled attribution
+    # and reconciliation whenever Pass 1 was toggled off, contrary to D-50 semantics.
     resolved_map: dict[tuple[int, int], tuple[str, str]] = {}
     flat_attributions: list = []
     bible = None  # populated below when Phase-5 path is active
 
-    if eligible_item is not None and session_factory is not None and settings.enable_pass1_analysis:
+    if eligible_item is not None and session_factory is not None:
         from trezarr.bible.store import get_or_create_series, load_series_bible
         from trezarr.bible.analyze import analyze_file, merge_bible_analysis, BibleAnalysisError
         from trezarr.translate.attribute import attribute_batch
