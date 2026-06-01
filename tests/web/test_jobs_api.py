@@ -7,10 +7,7 @@ asyncio_mode="auto" is configured project-wide — no @pytest.mark.asyncio neede
 """
 from __future__ import annotations
 
-import pytest
 
-
-@pytest.mark.xfail(raises=(ImportError, AssertionError, TypeError), reason="trezarr.web.routes.queue not yet created — Plan 07-02")
 async def test_get_queue():
     """GET /api/queue returns list of in-flight job rows with status queued/running (SVC-03)."""
     from trezarr.web.app import create_app  # noqa: PLC0415
@@ -28,7 +25,6 @@ async def test_get_queue():
         )
 
 
-@pytest.mark.xfail(raises=(ImportError, AssertionError, TypeError), reason="trezarr.web.routes.queue not yet created — Plan 07-02")
 async def test_get_history():
     """GET /api/jobs returns history list of done/failed jobs with reason field (SVC-03)."""
     from trezarr.web.app import create_app  # noqa: PLC0415
@@ -49,7 +45,6 @@ async def test_get_history():
         )
 
 
-@pytest.mark.xfail(raises=(ImportError, AssertionError, TypeError), reason="trezarr.web.routes.queue not yet created — Plan 07-02")
 async def test_get_job_logs():
     """GET /api/jobs/{id}/logs returns per-job log trail for a given job id (SVC-03)."""
     from trezarr.web.app import create_app  # noqa: PLC0415
@@ -67,7 +62,6 @@ async def test_get_job_logs():
             assert "level" in entry
 
 
-@pytest.mark.xfail(raises=(ImportError, AssertionError, TypeError), reason="trezarr.web.routes.queue not yet created — Plan 07-02")
 async def test_retry_requeues():
     """POST /api/jobs/{id}/retry must re-enqueue and set trigger=manual-retry (D-74).
 
