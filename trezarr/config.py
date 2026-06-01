@@ -114,6 +114,17 @@ class TrezarrSettings(BaseSettings):
     pgid: int = -1
     umask: int = 0o022
 
+    # ── Phase 4: Series Bible persistence (D-31, D-38) ─────────────────────────
+    # bible_db_url: SQLite DB at the /config volume convention (*arr ecosystem).
+    # NOT a SecretStr — it is a file path, not a secret.
+    # Four slashes in sqlite+aiosqlite:////config/... are correct: protocol://[empty-host]/abs-path.
+    bible_db_url: str = "sqlite+aiosqlite:////config/trezarr.db"
+    bible_db_run_migrations_on_startup: bool = True
+    # Toggle PRAGMAs at engine construction — default ON per D-38.
+    # Only flip these in tests that need to verify the toggle behaviour.
+    bible_db_enable_wal: bool = True
+    bible_db_enforce_fk: bool = True
+
     def __init__(self, _yaml_file: str | None = None, **data: Any) -> None:
         """Create settings.
 
