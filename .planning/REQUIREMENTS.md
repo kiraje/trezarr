@@ -36,7 +36,7 @@ Requirements for initial release. Each maps to roadmap phases.
 - [x] **ENG-02**: Trezarr batches/chunks long subtitle files within token limits without splitting a sentence or scene across batch boundaries
 - [x] **ENG-03**: Each batch is translated with a surrounding-line context window (read-only lines before/after) for conversational coherence
 - [x] **ENG-04**: Trezarr runs a two-pass pipeline — Pass 1 analyzes the full file + media metadata to build/update the Series Bible before Pass 2 translates any line
-- [ ] **ENG-05**: Trezarr runs an LLM self-review pass over translated output, checking Series Bible adherence (pronouns/terms/register) and correcting violations before finalizing
+- [x] **ENG-05**: Trezarr runs an LLM self-review pass over translated output, checking Series Bible adherence (pronouns/terms/register) and correcting violations before finalizing
 - [x] **ENG-06**: A hard pre-write validation gate verifies cue-count match, no untranslated lines, monotonic timestamps, and format integrity — failing files are quarantined, never written
 - [x] **ENG-07**: A failed or rejected translation can be retried/re-run idempotently, reusing existing Series Bible state
 
@@ -48,7 +48,7 @@ Requirements for initial release. Each maps to roadmap phases.
 - [ ] **BIBLE-04**: The Bible records a Term Dictionary mapping recurring proper nouns, titles, places, and jargon to fixed Vietnamese renderings (incl. character-name romanization policy)
 - [ ] **BIBLE-05**: The Bible records a Register/tone per series, grounded in media metadata (genre/plot/era from Sonarr/Radarr/TMDB)
 - [ ] **BIBLE-06**: The Bible is carried forward across episodes so a character is addressed consistently from S01E01 to the finale
-- [ ] **BIBLE-07**: Trezarr tracks relationship evolution across episodes (e.g. strangers→lovers, enemies→rivals) with episode markers so pronoun choices change correctly over the series
+- [x] **BIBLE-07**: Trezarr tracks relationship evolution across episodes (e.g. strangers→lovers, enemies→rivals) with episode markers so pronoun choices change correctly over the series
 - [ ] **BIBLE-08**: User can view and edit the Series Bible (characters, address map, term dictionary, register); edits are lockable and survive re-analysis
 - [ ] **BIBLE-09**: Locked corrections propagate forward to all subsequent episode translations (the human override valve)
 
@@ -125,7 +125,7 @@ Which phases cover which requirements. Populated during roadmap creation.
 | ENG-02 | Phase 2 | Complete |
 | ENG-03 | Phase 2 | Complete |
 | ENG-04 | Phase 5 | Complete |
-| ENG-05 | Phase 6 | Pending |
+| ENG-05 | Phase 6 | Complete |
 | ENG-06 | Phase 2 | Complete |
 | ENG-07 | Phase 2 | Complete |
 | BIBLE-01 | Phase 4 | Pending |
@@ -134,7 +134,7 @@ Which phases cover which requirements. Populated during roadmap creation.
 | BIBLE-04 | Phase 4 | Pending |
 | BIBLE-05 | Phase 4 | Pending |
 | BIBLE-06 | Phase 4 | Pending |
-| BIBLE-07 | Phase 6 | Pending |
+| BIBLE-07 | Phase 6 | Complete |
 | BIBLE-08 | Phase 8 | Pending |
 | BIBLE-09 | Phase 8 | Pending |
 | PRON-01 | Phase 5 | Complete |
