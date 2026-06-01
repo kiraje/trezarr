@@ -16,12 +16,15 @@ Security:
 """
 from __future__ import annotations
 
+import logging
 import os
 from typing import TYPE_CHECKING
 
 import yaml
 
 from trezarr.config import CONFIG_PATH
+
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from trezarr.config import TrezarrSettings
@@ -45,10 +48,16 @@ SENTINEL: str = "**REDACTED**"
 
 # Settings fields that cannot be hot-reloaded — changing these requires a
 # daemon restart. The PUT handler includes these names in `restart_required`.
+# WR-03: poll_interval_seconds is baked into the APScheduler job at startup
+# (setup_scheduler registers it with a fixed `seconds=` kwarg). A hot PUT
+# updates app.state.settings but does NOT reschedule the job, so the interval
+# change is silently ignored at runtime. Report it as restart-required so the
+# UI does not mislead operators.
 RESTART_REQUIRED_FIELDS: frozenset[str] = frozenset({
     "bible_db_url",
     "web_host",
     "web_port",
+    "poll_interval_seconds",
 })
 
 
@@ -116,8 +125,19 @@ def write_settings_to_yaml(current: "TrezarrSettings", patch: dict) -> None:
     except FileNotFoundError:
         pass  # No existing file — will be created fresh.
 
-    # Apply the patch, skipping sentinel secret values.
+    # WR-04: filter patch to only known TrezarrSettings field names before writing.
+    # Unknown keys (e.g., typos, injected junk, future UI bugs) are dropped so
+    # they never land in config.yaml. pydantic-settings silently ignores unknown
+    # YAML keys on load, so they would accumulate undetected without this guard.
+    # Access model_fields on the class (not the instance) — Pydantic V2.11+ deprecates
+    # instance-level access of model_fields.
+    known_fields = set(type(current).model_fields.keys())
+
+    # Apply the patch, skipping sentinel secret values and unknown fields.
     for key, value in patch.items():
+        if key not in known_fields:
+            logger.warning("write_settings_to_yaml: ignoring unknown field %r", key)
+            continue
         if key in SECRET_FIELDS and value == SENTINEL:
             # Sentinel means "unchanged" — do NOT overwrite the stored secret.
             continue
