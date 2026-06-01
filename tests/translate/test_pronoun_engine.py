@@ -42,25 +42,34 @@ def test_pronoun_hint_in_prompt():
 async def test_pronoun_consistency_within_episode(session_factory, tmp_path):
     """Same character pair → identical pronouns across all cues in one episode (PRON-02).
 
-    Golden-fixture end-to-end test with mocked LLM:
+    Golden-fixture end-to-end test with mocked LLM that CAPTURES Pass-3 prompts and
+    ECHOES injected hints in its output — so a broken hint/reconcile/bridge pipeline
+    causes the output-content assertions to FAIL (CR-02 hardening):
+
     - 6-cue SubDoc: alternating John→Mary and Mary→John dialogue
     - Pass 1 returns BibleAnalysis with John+Mary characters and address_map
       [{John→Mary: anh/em HIGH}, {Mary→John: em/anh HIGH}]
     - Pass 2 returns BatchAttribution attributing John lines speaker=John/addressee=Mary,
       Mary lines speaker=Mary/addressee=John
-    - Pass 3 returns translated lines with consistent pronoun pair across all cues
+    - Pass 3 mock: captures the prompt it receives, then echoes the hint terms back in
+      the numbered-line response; if no hints reach it the echo can't produce "anh"/"em"
 
-    Asserts: all John lines contain "anh", all Mary lines contain "em" in the output.
+    Asserts:
+    - "(speaker says: anh; addresses as: em)" hint appears in at least one Pass-3 prompt
+    - "(speaker says: em; addresses as: anh)" reciprocal hint appears in a Pass-3 prompt
+    - Output contains "anh" (the self_term John uses) somewhere in the translated text
+    - Output contains "em" (the address_term John uses / Mary's self_term) in the text
+    - status == "done", output file exists, no quarantine written
     """
-    from unittest.mock import AsyncMock, MagicMock
+    import re as _re
+    from unittest.mock import AsyncMock
     from pathlib import Path
     from dataclasses import dataclass
 
     from trezarr.translate.engine import translate_file
     from trezarr.bible.analyze import BibleAnalysis, CharacterInference, AddressMapInference
     from trezarr.translate.attribute import BatchAttribution, LineAttribution, AttributionConfidence
-    from trezarr.output._ledger_protocol import LedgerProtocol
-    from trezarr.output.ledger import LedgerEntry, Ledger
+    from trezarr.output.ledger import Ledger
     from trezarr.config import TrezarrSettings
 
     # ── Build a 6-line SRT fixture ────────────────────────────────────────────
@@ -126,29 +135,52 @@ async def test_pronoun_consistency_within_episode(session_factory, tmp_path):
         ]
     )
 
-    # ── Pass 3 mock LLM response — proper Vietnamese with diacritics ─────────
-    # Lines must contain Vietnamese diacritics (U+1E00-U+1EFF range: ổ, ợ, ẫ, ộ, ề, ể, ạ, ặ, ợ...)
-    # to pass the validate_subdoc diacritic-ratio gate (threshold 0.70).
-    pass3_response = (
-        "[1] Anh yêu em ạ.\n"         # ạ U+1EA1 ✓
-        "[2] Em cũng yêu anh ạ.\n"    # ạ U+1EA1 ✓
-        "[3] Em ổn không ạ?\n"        # ổ U+1ED5 ✓
-        "[4] Vâng, anh ổn lắm.\n"     # ổ U+1ED5 ✓
-        "[5] Chúng ta cùng đi ạ.\n"   # ạ U+1EA1 ✓
-        "[6] Được rồi, đi thôi ạ.\n"  # ợ U+1EE3 in Được, ạ U+1EA1 ✓
-    )
+    # ── Mock LLM client: capture prompts; echo hints back in Pass-3 output ────
+    # The mock CAPTURES every Pass-3 prompt it receives.
+    # For Pass 3 (no response_model), it reads the hint text from the prompt and
+    # ECHOES it into the numbered output — so if hints never reach Pass 3, the
+    # output lines won't contain "anh"/"em" and the assertions below WILL FAIL.
+    # This is the guard: a broken hint/reconcile/bridge pipeline breaks this test.
+    captured_prompts: list[str] = []
 
-    # ── Mock LLM client: route by response_model ──────────────────────────────
-    call_count_holder = [0]
+    # Regex to extract hint terms from "[N] (speaker says: X; addresses as: Y) ..." lines
+    _HINT_RE = _re.compile(r'\[\d+\]\s*\(speaker says:\s*(\w+);\s*addresses as:\s*(\w+)\)')
+
+    def _build_pass3_response(prompt: str) -> str:
+        """Build a numbered-line response that echoes injected hint terms.
+
+        For each line [N] in [LINES TO TRANSLATE]:
+          - If the line has a hint "(speaker says: X; addresses as: Y)", echo
+            "[N] <X> ơi, <Y> ạ." — so "anh"/"em" appear only when hints are present.
+          - Without a hint, return a generic Vietnamese phrase that has diacritics but
+            does NOT contain "anh" or "em" (proves the terms come from hints, not defaults).
+        """
+        lines_section = prompt.split("[LINES TO TRANSLATE]", 1)[-1]
+        result_lines: list[str] = []
+        for raw in lines_section.splitlines():
+            m_hint = _HINT_RE.match(raw.strip())
+            m_num = _re.match(r'\[(\d+)\]', raw.strip())
+            if m_hint:
+                n = _re.match(r'\[(\d+)\]', raw.strip()).group(1)
+                self_t = m_hint.group(1)
+                addr_t = m_hint.group(2)
+                # Output echoes the hint terms — Vietnamese diacritics satisfy the gate
+                result_lines.append(f"[{n}] {self_t} ơi, {addr_t} ạ.")
+            elif m_num:
+                n = m_num.group(1)
+                # No hint: neutral output WITHOUT "anh"/"em"
+                result_lines.append(f"[{n}] Vâng, được rồi ổn.")
+        return "\n".join(result_lines)
 
     async def mock_llm_call(messages, response_model=None):
-        call_count_holder[0] += 1
+        prompt_text = messages[0]["content"] if messages else ""
         if response_model is BibleAnalysis:
             return bible_analysis
         if response_model is BatchAttribution:
             return batch_attribution
-        # Pass 3 (no response_model) — plain text
-        return pass3_response
+        # Pass 3 (no response_model) — capture prompt and echo hints
+        captured_prompts.append(prompt_text)
+        return _build_pass3_response(prompt_text)
 
     from trezarr.llm.client import LLMClient
     llm_client = LLMClient(settings)
@@ -195,9 +227,38 @@ async def test_pronoun_consistency_within_episode(session_factory, tmp_path):
     assert result.status == "done", f"Expected status='done', got {result.status!r} (reason={result.reason!r})"
     assert result.output_path is not None and result.output_path.exists(), "Output .vi.srt must exist"
 
-    # ── Verify output has content ─────────────────────────────────────────────
+    # ── Verify pronoun hints were injected into Pass-3 prompts ───────────────
+    # These assertions FAIL if hint injection, reconciliation, or the
+    # resolved_map→hint bridge (engine.py per_batch_hints) is broken.
+    assert len(captured_prompts) > 0, "Mock LLM must have received at least one Pass-3 prompt"
+
+    john_mary_hint = "(speaker says: anh; addresses as: em)"
+    mary_john_hint = "(speaker says: em; addresses as: anh)"
+
+    assert any(john_mary_hint in p for p in captured_prompts), (
+        f"John→Mary hint {john_mary_hint!r} must appear in at least one Pass-3 prompt. "
+        "If this fails, pronoun hints are not reaching Pass 3 (broken reconcile/bridge)."
+    )
+    assert any(mary_john_hint in p for p in captured_prompts), (
+        f"Mary→John hint {mary_john_hint!r} must appear in at least one Pass-3 prompt. "
+        "If this fails, reciprocal hint injection is broken."
+    )
+
+    # ── Verify output pronouns come from hints (not hardcoded) ───────────────
+    # The mock echoes hint terms: "anh" appears ONLY in hint-carrying lines.
+    # If hints don't reach Pass 3, _build_pass3_response returns neutral lines
+    # without "anh"/"em", and the assertions below fail.
     output_text = result.output_path.read_text(encoding="utf-8")
     assert len(output_text.strip()) > 0, "Output .vi.srt must not be empty"
+    assert "anh" in output_text, (
+        "Output must contain 'anh' — echoed from John→Mary hint. "
+        "Absence means hints did not reach Pass-3 mock."
+    )
+    assert "em" in output_text, (
+        "Output must contain 'em' — echoed from Mary→John hint. "
+        "Absence means hints did not reach Pass-3 mock."
+    )
+
     # Verify no quarantine file written
     assert not quarantine_dir.exists() or not any(quarantine_dir.iterdir()), (
         "No quarantine file should be written on success"
