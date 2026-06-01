@@ -355,7 +355,7 @@ async def merge_bible_analysis(
                 episode_key=episode_key,
                 source="inference",
             )
-            name_to_id[char.original_latin_name] = char_dto.id
+            name_to_id[char.original_latin_name.strip().lower()] = char_dto.id
             logger.debug(
                 "Pass 1: upserted character %r (id=%d) for series %d",
                 char.original_latin_name,
@@ -392,9 +392,10 @@ async def merge_bible_analysis(
             )
 
     # Step 4: Upsert address pairs — resolve names to character IDs
+    # Use same case-insensitive normalisation as reconcile.py / engine.py (CR-01)
     for pair in analysis.address_map:
-        spk_id = name_to_id.get(pair.speaker_name)
-        addr_id = name_to_id.get(pair.addressee_name)
+        spk_id = name_to_id.get((pair.speaker_name or "").strip().lower())
+        addr_id = name_to_id.get((pair.addressee_name or "").strip().lower())
 
         if spk_id is None:
             logger.warning(
