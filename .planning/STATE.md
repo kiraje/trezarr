@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 05-01-PLAN.md (Wave-0 xfail stubs)
-last_updated: "2026-06-01T14:05:59.545Z"
+stopped_at: Completed 05-03-PLAN.md (reconcile.py + 4 tests GREEN)
+last_updated: "2026-06-01T14:13:52.228Z"
 last_activity: 2026-06-01
 progress:
   total_phases: 10
   completed_phases: 4
   total_plans: 21
-  completed_plans: 17
+  completed_plans: 18
   percent: 40
 ---
 
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-05-31)
 ## Current Position
 
 Phase: 05 (three-pass-pronoun-engine) — EXECUTING
-Plan: 3 of 6
+Plan: 4 of 6
 Status: Ready to execute
 Last activity: 2026-06-01
 
-Progress: [████████░░] 81%
+Progress: [█████████░] 86%
 
 ## Performance Metrics
 
@@ -66,6 +66,7 @@ Progress: [████████░░] 81%
 | Phase 3 P05 | 50min | 2 tasks | 5 files |
 | Phase 05-three-pass-pronoun-engine P01 | 2min | 2 tasks | 5 files |
 | Phase 05-three-pass-pronoun-engine P02 | 4 min | 2 tasks | 5 files |
+| Phase 05-three-pass-pronoun-engine P03 | 4 min | 1 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -94,6 +95,7 @@ Recent decisions affecting current work:
 - [Phase 03-05]: Rule 3 deviation — Added `[tool.uv] package = true` + `[build-system] hatchling` + `[tool.hatch.build.targets.wheel] packages = ["trezarr"]` so `uv sync` actually installs `[project.scripts] trezarr = "trezarr.cli:main"`. Without `package = true`, uv silently skips the entry point and `uv run trezarr` does not resolve.
 - [Phase 03-05]: Soft observation — `trezarr.cli.MediaItem` and `trezarr.arr.sonarr.MediaItem` are two separate dataclasses. cli.MediaItem carries source_sub_path (post-scan); arr.sonarr.MediaItem carries raw discovery payload. Intentional per Plan-03-01 test contract; future-cleanup candidate (consolidate to EligibleItem) but not a Phase-3 blocker.
 - [Phase ?]: xfail raises=(ImportError, AssertionError, TypeError) for stubs in existing modules — trezarr.translate.engine exists from Phase 3, so raises=ImportError alone would cause FAILED not XFAIL for test_pronoun_engine.py stubs
+- [Phase ?]: [Phase 05-03]: D-44 threshold gate: confirmed pair uses Address Map entry terms; below-threshold unlocked entry skipped → safe default
 
 ### Pending Todos
 
@@ -114,6 +116,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-06-01T14:05:59.539Z
-Stopped at: Completed 05-01-PLAN.md (Wave-0 xfail stubs)
+Last session: 2026-06-01T14:13:52.222Z
+Stopped at: Completed 05-03-PLAN.md (reconcile.py + 4 tests GREEN)
 Resume file: None
