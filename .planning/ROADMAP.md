@@ -18,7 +18,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [ ] **Phase 3: \*arr Integration + First Vertical Slice** - Discover a real episode via Sonarr/Radarr and translate it to a sidecar end-to-end (de-risk path-mapping & permissions)
 - [x] **Phase 4: Series Bible Store & Schema** - Persistent, versioned, lockable per-series consistency store carried forward across episodes (completed 2026-06-01)
 - [x] **Phase 5: Three-Pass Pronoun Engine** - Analyze → translate with the directed Address Map + speaker/addressee attribution to apply correct Vietnamese pronouns (completed 2026-06-01)
-- [ ] **Phase 6: Relationship Evolution + Self-Review** - Track relationship shifts across episodes and run an LLM self-critique pass before finalizing
+- [x] **Phase 6: Relationship Evolution + Self-Review** - Track relationship shifts across episodes and run an LLM self-critique pass before finalizing (completed 2026-06-01)
 - [ ] **Phase 7: Web UI & Service Hardening** - Dockerized long-running service with config/queue/history/logs/retry, monitoring, and crash-safe resumption
 - [ ] **Phase 8: Editable Series Bible UI** - View, correct, and lock Bible fields so human overrides propagate forward (the override valve)
 - [ ] **Phase 9: Multi-Format — ASS/SSA + VTT** - Translate ASS/SSA and VTT while preserving styling, tags, positioning, and cue settings byte-identical
@@ -171,7 +171,7 @@ Decimal phases appear between their surrounding integers in numeric order.
   2. A self-review pass re-reads translated output, checks Series Bible adherence (pronoun pairs, terms, register), and corrects violations before the validation gate
   3. The same character pair keeps a consistent pronoun pair from S01E01 to a later episode across a logged relationship change, with the change auditable
 
-**Plans:** 2/3 plans executed
+**Plans:** 3/3 plans complete
 
 **Wave 0**
 
@@ -183,7 +183,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-- [ ] 06-03-PLAN.md — Wave 2: Self-Review slice — build_review_prompt + _review_batch + translate_file Step 8.5 (Pass 4 best-effort, no quarantine), Phase-6-B config fields (ENG-05)
+- [x] 06-03-PLAN.md — Wave 2: Self-Review slice — build_review_prompt + _review_batch + translate_file Step 8.5 (Pass 4 best-effort, no quarantine), Phase-6-B config fields (ENG-05)
 
 ### Phase 7: Web UI & Service Hardening
 
@@ -259,7 +259,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 3. \*arr Integration + First Vertical Slice | 5/5 | Awaiting Verification |  |
 | 4. Series Bible Store & Schema | 4/4 | Complete   | 2026-06-01 |
 | 5. Three-Pass Pronoun Engine | 6/6 | Complete   | 2026-06-01 |
-| 6. Relationship Evolution + Self-Review | 2/3 | In Progress|  |
+| 6. Relationship Evolution + Self-Review | 3/3 | Complete   | 2026-06-01 |
 | 7. Web UI & Service Hardening | 0/TBD | Not started | - |
 | 8. Editable Series Bible UI | 0/TBD | Not started | - |
 | 9. Multi-Format — ASS/SSA + VTT | 0/TBD | Not started | - |
