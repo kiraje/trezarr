@@ -171,7 +171,19 @@ Decimal phases appear between their surrounding integers in numeric order.
   2. A self-review pass re-reads translated output, checks Series Bible adherence (pronoun pairs, terms, register), and corrects violations before the validation gate
   3. The same character pair keeps a consistent pronoun pair from S01E01 to a later episode across a logged relationship change, with the change auditable
 
-**Plans**: TBD
+**Plans:** 3 plans
+
+**Wave 0**
+
+- [ ] 06-01-PLAN.md — Wave 0: RED test scaffold — 3 test files (10 xfail stubs) for all Phase-6 behaviors (BIBLE-07, ENG-05)
+
+**Wave 1** *(blocked on Wave 0 completion)*
+
+- [ ] 06-02-PLAN.md — Wave 1: Relationship Evolution slice — models.py ORM relationship, RelationshipEventDTO, record_relationship_event store writer, load_series_bible extension, RelationshipEventInference + BibleAnalysis + merge_bible_analysis Step 5, _find_transition_for_pair + reconcile_attributions transition-precedence branch, Phase-6-A config fields (BIBLE-07)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [ ] 06-03-PLAN.md — Wave 2: Self-Review slice — build_review_prompt + _review_batch + translate_file Step 8.5 (Pass 4 best-effort, no quarantine), Phase-6-B config fields (ENG-05)
 
 ### Phase 7: Web UI & Service Hardening
 
@@ -247,7 +259,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 3. \*arr Integration + First Vertical Slice | 5/5 | Awaiting Verification |  |
 | 4. Series Bible Store & Schema | 4/4 | Complete   | 2026-06-01 |
 | 5. Three-Pass Pronoun Engine | 6/6 | Complete   | 2026-06-01 |
-| 6. Relationship Evolution + Self-Review | 0/TBD | Not started | - |
+| 6. Relationship Evolution + Self-Review | 0/3 | Not started | - |
 | 7. Web UI & Service Hardening | 0/TBD | Not started | - |
 | 8. Editable Series Bible UI | 0/TBD | Not started | - |
 | 9. Multi-Format — ASS/SSA + VTT | 0/TBD | Not started | - |
