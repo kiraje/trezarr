@@ -611,7 +611,11 @@ async def translate_file(
         # cue grouping is identical (K does not affect scene-gap/budget boundaries),
         # so flat_attributions aligns 1:1 with the Pass-3 batches below.
         if settings.enable_attribution:
-            attr_batches = batch_subdoc(source_doc, settings, context_lines_k=settings.attribute_context_lines_k)
+            attr_batches = batch_subdoc(
+                source_doc, settings,
+                context_lines_k=settings.attribute_context_lines_k,
+                max_cues_per_batch=settings.attribute_max_cues_per_batch,
+            )
             attr_per_batch = await asyncio.gather(
                 *[attribute_batch(b, bible, llm_client, settings) for b in attr_batches]
             )

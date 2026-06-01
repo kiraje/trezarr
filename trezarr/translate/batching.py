@@ -99,6 +99,7 @@ def batch_subdoc(
     doc: SubDoc,
     settings: "TrezarrSettings",
     context_lines_k: int | None = None,
+    max_cues_per_batch: int | None = None,
 ) -> list[Batch]:
     """Pack a SubDoc into LLM-sized batches respecting scene gaps and token budget.
 
@@ -106,7 +107,7 @@ def batch_subdoc(
     1. Compute char budget from settings.
     2. Walk cues in order, accumulating into the current batch while:
        - current_chars + len(cue.text) <= budget_chars, AND
-       - current cue count < translate_max_cues_per_batch
+       - current cue count < effective max cues per batch
     3. Before adding each cue, check for a scene gap >= translate_scene_gap_ms.
        If found, emit the current batch and start a new one (gap takes priority).
     4. A single cue that alone exceeds the budget is emitted as a one-cue batch
@@ -120,11 +121,16 @@ def batch_subdoc(
                   behaviour preserved for all callers).  Pass this as
                   settings.attribute_context_lines_k when building attribution batches
                   to honour the D-50 "wider context than translate" design (WR-01).
+        max_cues_per_batch: Override the maximum cue count per batch.  When None
+                  (default), uses settings.translate_max_cues_per_batch.  Pass this as
+                  settings.attribute_max_cues_per_batch when building attribution batches
+                  to honour the D-50 "smaller attribution batches" design (WR-03).
 
     Returns:
         List of Batch objects in document order.
     """
     budget_chars = _compute_budget_chars(settings)
+    effective_max_cues = max_cues_per_batch if max_cues_per_batch is not None else settings.translate_max_cues_per_batch
     batches: list[Batch] = []
     current: list[SubLine] = []
     current_chars = 0
@@ -135,7 +141,7 @@ def batch_subdoc(
 
         would_overflow = (
             current_chars + len(cue.text) > budget_chars
-            or len(current) >= settings.translate_max_cues_per_batch
+            or len(current) >= effective_max_cues
         )
 
         if current and (at_scene_gap or would_overflow):
