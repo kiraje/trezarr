@@ -58,10 +58,15 @@ async def test_bible_event_carries_all_required_fields(session_factory):
     assert len(events) == 1
 
     # Verify via a fresh DB query (not just the returned DTO)
+    # Filter specifically for the merge event (episode_key=S01E02) to avoid
+    # matching the first-insert event from upsert_character.
     async with session_factory() as session:
         db_evt = (
             await session.execute(
-                select(BibleEvent).where(BibleEvent.entity_id == char_dto.id)
+                select(BibleEvent).where(
+                    BibleEvent.entity_id == char_dto.id,
+                    BibleEvent.episode_key == "S01E02",
+                )
             )
         ).scalar_one()
 

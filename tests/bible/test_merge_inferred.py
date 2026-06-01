@@ -79,6 +79,13 @@ async def test_locked_field_survives_contradicting_inference(session_factory):
     assert dto is not None
     assert dto.locked_fields == ["role"]
 
+    # Count events BEFORE the contradicting merge (may include first-insert events)
+    async with session_factory() as session:
+        pre_count = await session.scalar(
+            select(func.count()).select_from(BibleEvent)
+            .where(BibleEvent.entity_id == char_dto.id)
+        )
+
     # Act
     updated, events = await merge_inferred(
         session_factory, dto, {"role": "spy"}, episode_key="S02E03", source="inference"
@@ -89,11 +96,13 @@ async def test_locked_field_survives_contradicting_inference(session_factory):
     assert events == [], "no event must be emitted for a locked field"
 
     async with session_factory() as session:
-        evt_count = await session.scalar(
+        post_count = await session.scalar(
             select(func.count()).select_from(BibleEvent)
             .where(BibleEvent.entity_id == char_dto.id)
         )
-        assert evt_count == 0, "zero bible_event rows expected"
+    assert post_count == pre_count, (
+        "merge_inferred with locked field must not append any new bible_event rows"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -130,13 +139,17 @@ async def test_unlocked_field_updates_and_emits_event(session_factory):
     assert evt.source == "inference"
     assert evt.episode_key == "S02E03"
 
-    # DB confirmation
+    # DB confirmation: exactly one event for S02E03/role/spy change
     async with session_factory() as session:
-        evt_count = await session.scalar(
+        merge_evt_count = await session.scalar(
             select(func.count()).select_from(BibleEvent)
-            .where(BibleEvent.entity_id == char_dto.id)
+            .where(
+                BibleEvent.entity_id == char_dto.id,
+                BibleEvent.episode_key == "S02E03",
+                BibleEvent.field == "role",
+            )
         )
-        assert evt_count == 1
+        assert merge_evt_count == 1
 
 
 # ---------------------------------------------------------------------------
@@ -158,6 +171,13 @@ async def test_noop_inference_emits_no_event_BIBLE_06(session_factory):
     dto = await get_character(session_factory, series_id=series_id, original_latin_name="Mary")
     assert dto is not None
 
+    # Count events BEFORE the no-op merge
+    async with session_factory() as session:
+        pre_count = await session.scalar(
+            select(func.count()).select_from(BibleEvent)
+            .where(BibleEvent.entity_id == char_dto.id)
+        )
+
     updated, events = await merge_inferred(
         session_factory, dto, {"role": "detective"}, episode_key="S02E03", source="inference"
     )
@@ -166,11 +186,11 @@ async def test_noop_inference_emits_no_event_BIBLE_06(session_factory):
     assert events == []
 
     async with session_factory() as session:
-        evt_count = await session.scalar(
+        post_count = await session.scalar(
             select(func.count()).select_from(BibleEvent)
             .where(BibleEvent.entity_id == char_dto.id)
         )
-        assert evt_count == 0, "no-op inference must not write any bible_event"
+    assert post_count == pre_count, "no-op inference must not append any bible_event rows"
 
 
 # ---------------------------------------------------------------------------
@@ -212,12 +232,17 @@ async def test_multiple_field_partial_lock(session_factory):
     assert len(events) == 1
     assert events[0].field == "gender"
 
+    # DB confirmation: exactly one event from the merge for S02E03/gender change
     async with session_factory() as session:
-        evt_count = await session.scalar(
+        merge_evt_count = await session.scalar(
             select(func.count()).select_from(BibleEvent)
-            .where(BibleEvent.entity_id == char_dto.id)
+            .where(
+                BibleEvent.entity_id == char_dto.id,
+                BibleEvent.episode_key == "S02E03",
+                BibleEvent.field == "gender",
+            )
         )
-        assert evt_count == 1
+        assert merge_evt_count == 1
 
 
 # ---------------------------------------------------------------------------
