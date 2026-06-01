@@ -14,7 +14,6 @@ Design decisions honoured:
 from __future__ import annotations
 
 import logging
-from collections import Counter
 from typing import TYPE_CHECKING
 
 from trezarr.bible.store import upsert_address_pair
