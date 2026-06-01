@@ -370,12 +370,18 @@ async def _run_pipeline_steps(
     # surfaced separately from no_source (a missing-source skip). It is
     # included in scan_skipped for the headline total but broken out in the
     # parenthesised breakdown alongside the existing pre-translate counters.
-    scan_error = getattr(scan_stats, "error", 0)
+    # WR-08: read scan_stats.error directly (no getattr defensive fallback).
+    # ScanStats is a typed dataclass with `error: int = 0` — the attribute is
+    # always present on real returns. The previous defensive `getattr(...,
+    # "error", 0)` only papered over test sloppiness (test MagicMocks built
+    # without the field); silencing a future real contract break (e.g. a
+    # rename of ScanStats.error) into a silent zero would lose operator
+    # visibility. Tests now provide the full ScanStats shape.
     n_scan_skipped = (
         scan_stats.no_source
         + scan_stats.foreign_vi
         + scan_stats.already_done
-        + scan_error
+        + scan_stats.error
     )
     summary = (
         f"Run complete: discovered={n_discovered}, eligible={n_eligible}, "
@@ -384,7 +390,7 @@ async def _run_pipeline_steps(
         f"(no_source={scan_stats.no_source}, "
         f"foreign_vi={scan_stats.foreign_vi}, "
         f"already_done={scan_stats.already_done}, "
-        f"error={scan_error}), "
+        f"error={scan_stats.error}), "
         f"quarantined={n_quar}, failed={n_fail}"
     )
     if discovery_failures:

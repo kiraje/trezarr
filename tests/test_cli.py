@@ -126,7 +126,7 @@ async def test_batch_run_continues_past_failure(tmp_path, settings_factory):
         stack.enter_context(patch("trezarr.cli.discover_radarr_items", return_value=[]))
         stack.enter_context(patch(
             "trezarr.cli.scan_for_eligible_items",
-            new=AsyncMock(return_value=([item_ok, item_bad, item_ok_2], MagicMock(scanned=3, no_source=0, foreign_vi=0, already_done=0))),
+            new=AsyncMock(return_value=([item_ok, item_bad, item_ok_2], MagicMock(scanned=3, no_source=0, foreign_vi=0, already_done=0, error=0))),
         ))
         stack.enter_context(patch("trezarr.cli.translate_file", new=AsyncMock(side_effect=_flaky_translate)))
         stack.enter_context(patch("trezarr.cli.apply_permissions"))
@@ -164,7 +164,7 @@ async def test_run_once_returns_int_zero_on_all_success(tmp_path, settings_facto
         stack.enter_context(patch("trezarr.cli.discover_radarr_items", return_value=[]))
         stack.enter_context(patch(
             "trezarr.cli.scan_for_eligible_items",
-            new=AsyncMock(return_value=([item], MagicMock(scanned=1, no_source=0, foreign_vi=0, already_done=0))),
+            new=AsyncMock(return_value=([item], MagicMock(scanned=1, no_source=0, foreign_vi=0, already_done=0, error=0))),
         ))
         stack.enter_context(patch("trezarr.cli.translate_file", new=AsyncMock(side_effect=_ok_translate)))
         stack.enter_context(patch("trezarr.cli.apply_permissions"))
@@ -196,7 +196,7 @@ async def test_run_once_returns_int_nonzero_on_any_failure(tmp_path, settings_fa
         stack.enter_context(patch("trezarr.cli.discover_radarr_items", return_value=[]))
         stack.enter_context(patch(
             "trezarr.cli.scan_for_eligible_items",
-            new=AsyncMock(return_value=([item], MagicMock(scanned=1, no_source=0, foreign_vi=0, already_done=0))),
+            new=AsyncMock(return_value=([item], MagicMock(scanned=1, no_source=0, foreign_vi=0, already_done=0, error=0))),
         ))
         stack.enter_context(patch("trezarr.cli.translate_file", new=AsyncMock(side_effect=_failing_translate)))
         stack.enter_context(patch("trezarr.cli.apply_permissions"))
@@ -239,7 +239,7 @@ async def test_batch_summary_printed_with_widened_fields(tmp_path, capsys, setti
         stack.enter_context(patch("trezarr.cli.discover_radarr_items", return_value=[]))
         stack.enter_context(patch(
             "trezarr.cli.scan_for_eligible_items",
-            new=AsyncMock(return_value=([item], MagicMock(scanned=5, no_source=2, foreign_vi=1, already_done=1))),
+            new=AsyncMock(return_value=([item], MagicMock(scanned=5, no_source=2, foreign_vi=1, already_done=1, error=0))),
         ))
         stack.enter_context(patch("trezarr.cli.translate_file", new=AsyncMock(side_effect=_ok_translate)))
         stack.enter_context(patch("trezarr.cli.apply_permissions"))
@@ -287,7 +287,7 @@ async def test_llm_client_not_constructed_when_no_eligible(tmp_path, settings_fa
         stack.enter_context(patch("trezarr.cli.discover_radarr_items", return_value=[]))
         stack.enter_context(patch(
             "trezarr.cli.scan_for_eligible_items",
-            new=AsyncMock(return_value=([], MagicMock(scanned=0, no_source=0, foreign_vi=0, already_done=0))),
+            new=AsyncMock(return_value=([], MagicMock(scanned=0, no_source=0, foreign_vi=0, already_done=0, error=0))),
         ))
         stack.enter_context(patch("trezarr.cli.translate_file", new=AsyncMock()))
         stack.enter_context(patch("trezarr.cli.apply_permissions"))
@@ -386,7 +386,7 @@ async def test_one_arr_failure_does_not_kill_other_arr(tmp_path, settings_factor
         stack.enter_context(patch(
             "trezarr.cli.scan_for_eligible_items",
             # Radarr's one item is already-done so no eligible
-            new=AsyncMock(return_value=([], MagicMock(scanned=1, no_source=0, foreign_vi=0, already_done=1))),
+            new=AsyncMock(return_value=([], MagicMock(scanned=1, no_source=0, foreign_vi=0, already_done=1, error=0))),
         ))
         stack.enter_context(patch("trezarr.cli.translate_file", new=AsyncMock()))
         stack.enter_context(patch("trezarr.cli.apply_permissions"))
@@ -591,7 +591,7 @@ async def test_chmod_error_quarantines_item(tmp_path, settings_factory):
         stack.enter_context(patch("trezarr.cli.discover_radarr_items", return_value=[]))
         stack.enter_context(patch(
             "trezarr.cli.scan_for_eligible_items",
-            new=AsyncMock(return_value=([item], MagicMock(scanned=1, no_source=0, foreign_vi=0, already_done=0))),
+            new=AsyncMock(return_value=([item], MagicMock(scanned=1, no_source=0, foreign_vi=0, already_done=0, error=0))),
         ))
         stack.enter_context(patch("trezarr.cli.translate_file", new=AsyncMock(side_effect=_ok_translate)))
         stack.enter_context(patch("trezarr.cli.apply_permissions", side_effect=PermissionApplyError("chmod failed")))
@@ -655,7 +655,7 @@ async def test_run_once_builds_engine_and_runs_migrations_before_discovery(tmp_p
         stack.enter_context(patch("trezarr.cli.discover_radarr_items", side_effect=_record_discover_radarr))
         stack.enter_context(patch(
             "trezarr.cli.scan_for_eligible_items",
-            new=AsyncMock(return_value=([], MagicMock(scanned=0, no_source=0, foreign_vi=0, already_done=0))),
+            new=AsyncMock(return_value=([], MagicMock(scanned=0, no_source=0, foreign_vi=0, already_done=0, error=0))),
         ))
         stack.enter_context(patch("trezarr.cli.apply_permissions"))
         stack.enter_context(patch("trezarr.cli.probe_media_roots"))
@@ -700,7 +700,7 @@ async def test_run_once_constructs_ledger_sqla_not_json_ledger(tmp_path, capsys,
 
     async def _capture_scan(items, ledger, *_a, **_kw):
         captured_ledger.append(ledger)
-        return ([], MagicMock(scanned=0, no_source=0, foreign_vi=0, already_done=0))
+        return ([], MagicMock(scanned=0, no_source=0, foreign_vi=0, already_done=0, error=0))  # WR-08: error=0 required (was missing pre-fix)
 
     # Use a real LedgerSQLA instance from a temp DB to confirm the type
     from tests.db.conftest import session_factory as _sf_fixture  # use fixture indirectly via MagicMock
@@ -796,7 +796,7 @@ async def test_run_once_logs_but_continues_on_ledger_migration_failure(tmp_path,
         stack.enter_context(patch("trezarr.cli.discover_radarr_items", return_value=[]))
         stack.enter_context(patch(
             "trezarr.cli.scan_for_eligible_items",
-            new=AsyncMock(return_value=([], MagicMock(scanned=0, no_source=0, foreign_vi=0, already_done=0))),
+            new=AsyncMock(return_value=([], MagicMock(scanned=0, no_source=0, foreign_vi=0, already_done=0, error=0))),
         ))
         stack.enter_context(patch("trezarr.cli.apply_permissions"))
         stack.enter_context(patch("trezarr.cli.probe_media_roots"))
