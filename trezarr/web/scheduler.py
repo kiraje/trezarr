@@ -139,6 +139,7 @@ async def poll_and_enqueue(
             str(eligible_item.source_sub_path),
             item_series_id,
             trigger="poll",
+            media_item=eligible_item.media_item,
         )
         if queued:
             enqueued += 1

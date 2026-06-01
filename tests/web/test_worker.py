@@ -6,14 +6,16 @@ Tests verify:
   - Two episodes of same series_id run serially via asyncio.Lock (D-68)
   - Two episodes of distinct series_id run concurrently (D-68)
   - worker module does not introduce a second asyncio.Semaphore (D-68/Pitfall C)
+  - CR-01: _execute_job with media_item_json drives Bible-aware path (process_one_item with session_factory)
+  - CR-01: _execute_job without media_item_json falls back to mechanical path (session_factory=None)
+  - CR-02: _background_tasks module-level set exists for strong GC references
 
 asyncio_mode="auto" is configured project-wide — no @pytest.mark.asyncio needed.
 """
 from __future__ import annotations
 
 import asyncio
-
-import pytest
+from unittest.mock import AsyncMock, MagicMock, patch
 
 
 async def test_reconcile_in_progress():
@@ -124,4 +126,163 @@ async def test_no_second_semaphore():
     assert semaphore_vars == [], (
         f"D-68/Pitfall C: worker module has module-level Semaphore(s): {semaphore_vars}. "
         "Use asyncio.Lock per series_id instead."
+    )
+
+
+async def test_background_tasks_set_exists():
+    """CR-02: _background_tasks module-level set must exist for strong GC references.
+
+    asyncio holds only a weak reference to tasks. Without a strong reference,
+    the GC can collect the task object mid-execution under memory pressure.
+    The _background_tasks set provides those strong references.
+    """
+    from trezarr.web import worker as worker_mod  # noqa: PLC0415
+
+    assert hasattr(worker_mod, "_background_tasks"), (
+        "CR-02: worker module must expose _background_tasks set for strong task references"
+    )
+    assert isinstance(worker_mod._background_tasks, set), (
+        "CR-02: _background_tasks must be a set"
+    )
+
+
+async def test_execute_job_bible_aware_path_with_media_item_json():
+    """CR-01: _execute_job with media_item_json reconstructs media_item and calls process_one_item Bible-aware.
+
+    When a Job row carries media_item_json, _execute_job must build a SimpleNamespace
+    media_item from it, wrap it in an eligible_stub, and call process_one_item with
+    session_factory set (enabling the Bible-aware path in translate_file).
+    """
+    from trezarr.web import worker as worker_mod  # noqa: PLC0415
+
+    # Build a fake Job with media_item_json populated
+    fake_job = MagicMock()
+    fake_job.series_id = 42
+    fake_job.source_path = "/media/show.en.srt"
+    fake_job.media_item_json = {
+        "arr_kind": "sonarr",
+        "series_id": 42,
+        "title": "Test Show",
+    }
+    fake_job.status = "queued"
+    fake_job.attempts = 0
+
+    # Capture the call args to process_one_item
+    captured_calls: list[dict] = []
+
+    async def fake_process_one_item(eligible_item, settings, llm_client, ledger, media_roots, *, session_factory=None):
+        captured_calls.append({
+            "eligible_item": eligible_item,
+            "session_factory": session_factory,
+        })
+        result = MagicMock()
+        result.status = "done"
+        return result
+
+    # Mock session_factory: returns an async context manager whose __aenter__ yields
+    # an inner session mock that handles .get() / .commit() / .begin() cleanly.
+    mock_session = MagicMock()
+    mock_session.get = AsyncMock(return_value=fake_job)
+    mock_session.commit = AsyncMock()
+    # Make session.begin() a proper async context manager (used in _flush_logs_to_db)
+    mock_begin_ctx = MagicMock()
+    mock_begin_ctx.__aenter__ = AsyncMock(return_value=None)
+    mock_begin_ctx.__aexit__ = AsyncMock(return_value=False)
+    mock_session.begin = MagicMock(return_value=mock_begin_ctx)
+
+    mock_session_ctx = MagicMock()
+    mock_session_ctx.__aenter__ = AsyncMock(return_value=mock_session)
+    mock_session_ctx.__aexit__ = AsyncMock(return_value=False)
+
+    mock_session_factory = MagicMock(return_value=mock_session_ctx)
+
+    with patch("trezarr.cli.process_one_item", fake_process_one_item):
+        await worker_mod._execute_job(
+            job_id=1,
+            session_factory=mock_session_factory,
+            settings=MagicMock(),
+            llm_client=MagicMock(),
+            ledger=MagicMock(),
+            media_roots=[],
+        )
+
+    assert len(captured_calls) == 1, "process_one_item must be called exactly once"
+    call = captured_calls[0]
+
+    # Bible-aware path: session_factory must be set (not None)
+    assert call["session_factory"] is mock_session_factory, (
+        "CR-01: Bible-aware path requires session_factory to be passed to process_one_item"
+    )
+
+    # eligible_item must have media_item populated from the snapshot
+    eligible = call["eligible_item"]
+    assert hasattr(eligible, "media_item"), (
+        "CR-01: eligible_stub must have media_item attribute"
+    )
+    assert eligible.media_item is not None, (
+        "CR-01: media_item must be reconstructed from media_item_json (not None)"
+    )
+    assert getattr(eligible.media_item, "arr_kind", None) == "sonarr", (
+        "CR-01: reconstructed media_item must carry fields from media_item_json"
+    )
+
+
+async def test_execute_job_mechanical_fallback_without_media_item_json():
+    """CR-01: _execute_job without media_item_json falls back to session_factory=None (mechanical path).
+
+    When a Job row has media_item_json=None (ARM-2 reconcile of a bare ProcessedFile),
+    _execute_job must call process_one_item with session_factory=None so translate_file
+    takes the mechanical (non-Bible-aware) path — no AttributeError crash.
+    """
+    from trezarr.web import worker as worker_mod  # noqa: PLC0415
+
+    # Build a fake Job without media_item_json
+    fake_job = MagicMock()
+    fake_job.series_id = None
+    fake_job.source_path = "/media/show.en.srt"
+    fake_job.media_item_json = None  # ARM-2 path: no media_item context
+    fake_job.status = "queued"
+    fake_job.attempts = 0
+
+    captured_calls: list[dict] = []
+
+    async def fake_process_one_item(eligible_item, settings, llm_client, ledger, media_roots, *, session_factory=None):
+        captured_calls.append({
+            "eligible_item": eligible_item,
+            "session_factory": session_factory,
+        })
+        result = MagicMock()
+        result.status = "done"
+        return result
+
+    mock_session = MagicMock()
+    mock_session.get = AsyncMock(return_value=fake_job)
+    mock_session.commit = AsyncMock()
+    mock_begin_ctx = MagicMock()
+    mock_begin_ctx.__aenter__ = AsyncMock(return_value=None)
+    mock_begin_ctx.__aexit__ = AsyncMock(return_value=False)
+    mock_session.begin = MagicMock(return_value=mock_begin_ctx)
+
+    mock_session_ctx = MagicMock()
+    mock_session_ctx.__aenter__ = AsyncMock(return_value=mock_session)
+    mock_session_ctx.__aexit__ = AsyncMock(return_value=False)
+
+    mock_session_factory = MagicMock(return_value=mock_session_ctx)
+
+    with patch("trezarr.cli.process_one_item", fake_process_one_item):
+        await worker_mod._execute_job(
+            job_id=2,
+            session_factory=mock_session_factory,
+            settings=MagicMock(),
+            llm_client=MagicMock(),
+            ledger=MagicMock(),
+            media_roots=[],
+        )
+
+    assert len(captured_calls) == 1, "process_one_item must be called exactly once"
+    call = captured_calls[0]
+
+    # Mechanical path: session_factory must be None to prevent Bible-aware guard from firing
+    assert call["session_factory"] is None, (
+        "CR-01: mechanical fallback path must call process_one_item with session_factory=None"
     )

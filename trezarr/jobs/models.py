@@ -23,6 +23,7 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     Integer,
+    JSON,
     String,
     Text,
     func,
@@ -62,6 +63,13 @@ class Job(Base):
     trigger: Mapped[str] = mapped_column(String, nullable=False)
     error_reason: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
     attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    # Snapshot of the discovery MediaItem fields needed for Bible-aware translation (CR-01).
+    # Serialised at enqueue time by enqueue_job; reconstructed at execution time by
+    # _execute_job so translate_file can take the Bible-aware path (Phase-5 pipeline).
+    # None when the job was enqueued without discovery context (e.g. ARM-2 reconcile
+    # from a bare ProcessedFile row) — in that case _execute_job falls back to the
+    # mechanical (non-Bible-aware) path.
+    media_item_json: Mapped[dict | None] = mapped_column(JSON, nullable=True, default=None)
     enqueued_at: Mapped[datetime] = mapped_column(
         DateTime, nullable=False, server_default=func.current_timestamp()
     )

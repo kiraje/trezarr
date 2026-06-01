@@ -33,6 +33,8 @@ import asyncio
 import contextvars
 import logging
 from datetime import datetime, timezone
+from types import SimpleNamespace
+from typing import Any
 
 from sqlalchemy import select
 
@@ -52,6 +54,12 @@ _series_locks: dict[int, asyncio.Lock] = {}
 # When session_factory is None, we cannot hit the DB; use this set so the D-66
 # dedup contract holds in unit tests without a real DB.
 _no_db_enqueued: set[str] = set()
+
+# Strong references to in-flight background asyncio.Tasks (CR-02).
+# asyncio holds only a weak reference to tasks — without a strong reference here,
+# the GC can collect a task mid-execution under memory pressure (asyncio docs warning).
+# Each task is added at creation and removed via add_done_callback when it completes.
+_background_tasks: set[asyncio.Task] = set()
 
 
 # ── Per-job log capture (D-75) ───────────────────────────────────────────────────
@@ -109,12 +117,26 @@ class _JobLogHandler(logging.Handler):
 
 # ── Enqueue ─────────────────────────────────────────────────────────────────────
 
+# Fields from the discovery MediaItem that translate_file reads via getattr in
+# the Bible-aware path. We snapshot only these — all others are ignored.
+_MEDIA_ITEM_SNAPSHOT_FIELDS = (
+    "arr_kind",
+    "series_id",
+    "tvdb_id",
+    "tmdb_id",
+    "title",
+    "season_number",
+    "source_type",
+    # arr_metadata included separately via getattr below
+)
+
 
 async def enqueue_job(
     session_factory,
     source_path: str,
     series_id: int | None = None,
     trigger: str = "poll",
+    media_item: Any = None,
 ) -> bool:
     """Enqueue a new translation job for source_path.
 
@@ -127,6 +149,9 @@ async def enqueue_job(
         source_path:     Subtitle file path to translate.
         series_id:       Series identifier for per-series lock (D-68); None for movies.
         trigger:         Job origin ∈ {poll, webhook, manual-retry, startup-reconcile}.
+        media_item:      Optional discovery MediaItem. When provided, a safe snapshot
+                         of its fields is persisted on the Job row as media_item_json
+                         so _execute_job can reconstruct the Bible-aware path (CR-01).
 
     Returns:
         True if the job was enqueued; False if already queued/running (dedup).
@@ -139,6 +164,20 @@ async def enqueue_job(
             return False
         _no_db_enqueued.add(source_path)
         return True
+
+    # Build a safe snapshot of the MediaItem for Bible-aware reconstruction (CR-01).
+    media_item_json: dict | None = None
+    if media_item is not None:
+        snapshot: dict = {}
+        for field in _MEDIA_ITEM_SNAPSHOT_FIELDS:
+            val = getattr(media_item, field, None)
+            if val is not None:
+                snapshot[field] = val
+        # arr_metadata is a dict of series metadata; include if present
+        arr_meta = getattr(media_item, "arr_metadata", None)
+        if arr_meta is not None:
+            snapshot["arr_metadata"] = arr_meta
+        media_item_json = snapshot if snapshot else None
 
     async with session_factory() as session:
         async with session.begin():
@@ -157,6 +196,7 @@ async def enqueue_job(
                 series_id=series_id,
                 status="queued",
                 trigger=trigger,
+                media_item_json=media_item_json,
             )
             session.add(job)
 
@@ -186,6 +226,10 @@ async def reconcile_in_progress(session_factory) -> None:
     result of a prior process crash. Reset them all to 'queued' and put their
     IDs back on the in-process queue (D-67 ARM 1).
 
+    WR-02 fix: collect IDs, commit first, then put onto the queue. This ensures
+    that a commit failure (e.g. SQLite I/O error) never leaves IDs on the queue
+    whose DB state did not actually persist.
+
     Args:
         session_factory: Async session factory. If None, this is a no-op (test stub).
     """
@@ -207,11 +251,16 @@ async def reconcile_in_progress(session_factory) -> None:
                 len(stale_jobs),
             )
 
+        # WR-02: collect IDs first, commit, then enqueue — commit failure must not
+        # leave IDs on the queue whose DB state did not persist.
+        stale_ids = [job.id for job in stale_jobs]
         for job in stale_jobs:
             job.status = "queued"
-            await _work_queue.put(job.id)
 
         await session.commit()
+
+    for job_id in stale_ids:
+        await _work_queue.put(job_id)
 
 
 # ── Crash-resume reconciliation — ARM 2 (ProcessedFile ledger) ─────────────────
@@ -267,6 +316,8 @@ async def reconcile_in_progress_from_ledger(session_factory) -> None:
                     series_id = int(series_id)
                 except (ValueError, TypeError):
                     series_id = None
+            # ARM 2: enqueued without media_item context — _execute_job will use
+            # the mechanical (non-Bible-aware) path for these items.
             await enqueue_job(
                 session_factory,
                 pf.source_path,
@@ -298,6 +349,11 @@ async def _execute_job(
 
     Per D-30: wraps the entire execution in except Exception so one bad job
     never aborts the worker loop (WR-05: logger.exception for traceback).
+
+    CR-01 fix: reconstructs the eligible_item from job.media_item_json so the
+    Bible-aware translation path in translate_file receives a proper media_item.
+    If media_item_json is None (ARM-2 reconcile path), falls back to
+    session_factory=None so translate_file uses the mechanical path.
 
     Args:
         job_id:          Primary key of the Job row to execute.
@@ -345,6 +401,7 @@ async def _execute_job(
 
             series_id = job.series_id
             source_path = job.source_path
+            media_item_json = job.media_item_json  # CR-01: snapshot persisted at enqueue time
 
             job.status = "running"
             job.started_at = datetime.now(timezone.utc).replace(tzinfo=None)
@@ -358,21 +415,43 @@ async def _execute_job(
         )
 
         async with lock:
-            # Build a minimal eligible_item-like object from the job's source_path.
-            # In real usage the eligible_item comes from scan_for_eligible_items;
-            # in the daemon worker we reconstruct a stub that carries source_sub_path.
-            class _EligibleItemStub:
-                def __init__(self, sp: str) -> None:
-                    self.source_sub_path = sp
+            # CR-01: reconstruct the eligible_item from the persisted media_item_json.
+            #
+            # If media_item_json is present: build a SimpleNamespace media_item carrying
+            # the discovery fields (arr_kind, series_id, tvdb_id, …) and wrap it in an
+            # eligible_stub with both source_sub_path and media_item. translate_file's
+            # Bible-aware guard (eligible_item is not None and session_factory is not None)
+            # passes, and eligible_item.media_item is set — no AttributeError.
+            #
+            # If media_item_json is None (ARM-2 reconcile of a bare ProcessedFile row):
+            # pass session_factory=None so translate_file's guard fails and it takes the
+            # mechanical (non-Bible-aware) path. Log a warning so the operator knows
+            # Bible-aware features were skipped; the item will be picked up Bible-aware
+            # on the next full poll cycle.
+            if media_item_json is not None:
+                media_item = SimpleNamespace(**media_item_json)
+                eligible_stub = SimpleNamespace(
+                    source_sub_path=source_path,
+                    media_item=media_item,
+                )
+                sf_arg = session_factory
+            else:
+                logger.warning(
+                    "_execute_job: job_id=%d has no media_item_json (ARM-2 reconcile path); "
+                    "Bible-aware translation skipped — item will be retried Bible-aware on "
+                    "next full poll cycle.",
+                    job_id,
+                )
+                eligible_stub = SimpleNamespace(source_sub_path=source_path, media_item=None)
+                sf_arg = None  # Forces mechanical path in translate_file
 
-            eligible_stub = _EligibleItemStub(source_path)
             item_result = await process_one_item(
                 eligible_stub,
                 settings,
                 llm_client,
                 ledger,
                 media_roots,
-                session_factory=session_factory,
+                session_factory=sf_arg,
             )
 
         # Update job status based on outcome
@@ -439,6 +518,9 @@ async def worker_loop(
     series to run concurrently up to worker_max_concurrent_series. Per-series
     serialization is enforced inside _execute_job via the _series_locks map.
 
+    CR-02 fix: tasks are added to _background_tasks for strong GC references.
+    Each task removes itself via add_done_callback when it completes.
+
     Args:
         session_factory: Async session factory.
         settings:        TrezarrSettings.
@@ -450,8 +532,12 @@ async def worker_loop(
     while True:
         job_id = await _work_queue.get()
         logger.info("worker_loop: dispatching job_id=%d", job_id)
-        # Create a task so the worker loop can dispatch multiple series concurrently
-        asyncio.create_task(
+        # CR-02: hold a strong reference to the task to prevent GC under memory pressure.
+        # asyncio holds only a weak reference — without _background_tasks the task
+        # object can be collected mid-execution (asyncio docs warning).
+        t = asyncio.create_task(
             _execute_job(job_id, session_factory, settings, llm_client, ledger, media_roots)
         )
+        _background_tasks.add(t)
+        t.add_done_callback(_background_tasks.discard)
         _work_queue.task_done()

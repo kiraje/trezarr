@@ -228,3 +228,22 @@ async def test_0002_migration_creates_job_tables(db_engine):
         tables = {row[0] for row in result}
     assert "job" in tables, f"Expected 'job' table; got tables: {tables}"
     assert "job_log" in tables, f"Expected 'job_log' table; got tables: {tables}"
+
+
+async def test_job_table_has_media_item_json_column(db_engine):
+    """CR-01: the 'job' table must have a 'media_item_json' column after migration.
+
+    The media_item_json column (sa.JSON, nullable) is added in the 0002 migration
+    to persist the discovery MediaItem snapshot at enqueue time. _execute_job reads
+    it back to reconstruct the Bible-aware eligible_item for translate_file.
+    """
+    async with db_engine.connect() as conn:
+        result = await conn.execute(
+            text("SELECT sql FROM sqlite_master WHERE type='table' AND name='job'")
+        )
+        job_sql = result.scalar() or ""
+
+    assert "media_item_json" in job_sql, (
+        f"CR-01: 'media_item_json' column not found in job table DDL.\n"
+        f"Actual DDL: {job_sql}"
+    )

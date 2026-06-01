@@ -50,6 +50,7 @@ def upgrade() -> None:
             nullable=False,
             server_default=sa.text("(CURRENT_TIMESTAMP)"),
         ),
+        sa.Column("media_item_json", sa.JSON, nullable=True),
         sa.Column("started_at", sa.DateTime, nullable=True),
         sa.Column("finished_at", sa.DateTime, nullable=True),
         sa.CheckConstraint(
