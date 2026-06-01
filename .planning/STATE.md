@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: executing
-stopped_at: Completed 05-03-PLAN.md (reconcile.py + 4 tests GREEN)
-last_updated: "2026-06-01T14:25:03.340Z"
+status: verifying
+stopped_at: Completed 05-06-PLAN.md (three-pass pipeline integration, 0 xfailed)
+last_updated: "2026-06-01T14:36:11.401Z"
 last_activity: 2026-06-01
 progress:
   total_phases: 10
-  completed_phases: 4
+  completed_phases: 5
   total_plans: 21
-  completed_plans: 20
-  percent: 40
+  completed_plans: 21
+  percent: 50
 ---
 
 # Project State
@@ -27,10 +27,10 @@ See: .planning/PROJECT.md (updated 2026-05-31)
 
 Phase: 05 (three-pass-pronoun-engine) — EXECUTING
 Plan: 6 of 6
-Status: Ready to execute
+Status: Phase complete — ready for verification
 Last activity: 2026-06-01
 
-Progress: [██████████] 95%
+Progress: [██████████] 100%
 
 ## Performance Metrics
 
@@ -68,6 +68,7 @@ Progress: [██████████] 95%
 | Phase 05-three-pass-pronoun-engine P02 | 4 min | 2 tasks | 5 files |
 | Phase 05-three-pass-pronoun-engine P03 | 4 min | 1 tasks | 3 files |
 | Phase 05 P04 | 3 min | 1 tasks | 2 files |
+| Phase 05 P06 | 15min | 2 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -97,6 +98,8 @@ Recent decisions affecting current work:
 - [Phase 03-05]: Soft observation — `trezarr.cli.MediaItem` and `trezarr.arr.sonarr.MediaItem` are two separate dataclasses. cli.MediaItem carries source_sub_path (post-scan); arr.sonarr.MediaItem carries raw discovery payload. Intentional per Plan-03-01 test contract; future-cleanup candidate (consolidate to EligibleItem) but not a Phase-3 blocker.
 - [Phase ?]: xfail raises=(ImportError, AssertionError, TypeError) for stubs in existing modules — trezarr.translate.engine exists from Phase 3, so raises=ImportError alone would cause FAILED not XFAIL for test_pronoun_engine.py stubs
 - [Phase ?]: [Phase 05-03]: D-44 threshold gate: confirmed pair uses Address Map entry terms; below-threshold unlocked entry skipped → safe default
+- [Phase ?]: translate_file three-pass flow: Pass 1 BARRIER + Pass 2 gather + reconcile + Pass 3 pronoun hints; BibleAnalysisError quarantines; openai.APIError propagates (D-40 D-48 Pitfall B)
+- [Phase ?]: derive_episode_key parses SxxExx from subtitle filename stem not episode_number field (D-49 Pitfall F confirmed)
 
 ### Pending Todos
 
@@ -117,6 +120,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-06-01T14:25:03.335Z
-Stopped at: Completed 05-03-PLAN.md (reconcile.py + 4 tests GREEN)
+Last session: 2026-06-01T14:36:11.396Z
+Stopped at: Completed 05-06-PLAN.md (three-pass pipeline integration, 0 xfailed)
 Resume file: None

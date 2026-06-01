@@ -17,7 +17,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 2: Mechanical Translation Core + Validation Gate** - Single-pass translate a parsed file and write a valid sidecar, gated by a hard pre-write quality check (completed 2026-05-31)
 - [ ] **Phase 3: \*arr Integration + First Vertical Slice** - Discover a real episode via Sonarr/Radarr and translate it to a sidecar end-to-end (de-risk path-mapping & permissions)
 - [x] **Phase 4: Series Bible Store & Schema** - Persistent, versioned, lockable per-series consistency store carried forward across episodes (completed 2026-06-01)
-- [ ] **Phase 5: Three-Pass Pronoun Engine** - Analyze → translate with the directed Address Map + speaker/addressee attribution to apply correct Vietnamese pronouns
+- [x] **Phase 5: Three-Pass Pronoun Engine** - Analyze → translate with the directed Address Map + speaker/addressee attribution to apply correct Vietnamese pronouns (completed 2026-06-01)
 - [ ] **Phase 6: Relationship Evolution + Self-Review** - Track relationship shifts across episodes and run an LLM self-critique pass before finalizing
 - [ ] **Phase 7: Web UI & Service Hardening** - Dockerized long-running service with config/queue/history/logs/retry, monitoring, and crash-safe resumption
 - [ ] **Phase 8: Editable Series Bible UI** - View, correct, and lock Bible fields so human overrides propagate forward (the override valve)
@@ -139,7 +139,7 @@ Decimal phases appear between their surrounding integers in numeric order.
   3. The same character pair keeps the same pronoun pair across an episode (no flips inside an exchange; reciprocal directions consistent)
   4. When attribution is low-confidence, the engine falls back to a safe register rather than risk a wrong intimate pronoun
 
-**Plans:** 5/6 plans executed
+**Plans:** 6/6 plans complete
 
 **Wave 0**
 
@@ -157,7 +157,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
-- [ ] 05-06-PLAN.md — Wave 3: Pipeline wiring — engine.py (build_translate_prompt pronoun hints + translate_file 3-pass flow + derive_episode_key) + cli.py (pass eligible_item + session_factory) (ENG-04, PRON-02, PRON-03)
+- [x] 05-06-PLAN.md — Wave 3: Pipeline wiring — engine.py (build_translate_prompt pronoun hints + translate_file 3-pass flow + derive_episode_key) + cli.py (pass eligible_item + session_factory) (ENG-04, PRON-02, PRON-03)
 
 ### Phase 6: Relationship Evolution + Self-Review
 
@@ -246,7 +246,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 2. Mechanical Translation Core + Validation Gate | 3/3 | Complete    | 2026-05-31 |
 | 3. \*arr Integration + First Vertical Slice | 5/5 | Awaiting Verification |  |
 | 4. Series Bible Store & Schema | 4/4 | Complete   | 2026-06-01 |
-| 5. Three-Pass Pronoun Engine | 5/6 | In Progress|  |
+| 5. Three-Pass Pronoun Engine | 6/6 | Complete   | 2026-06-01 |
 | 6. Relationship Evolution + Self-Review | 0/TBD | Not started | - |
 | 7. Web UI & Service Hardening | 0/TBD | Not started | - |
 | 8. Editable Series Bible UI | 0/TBD | Not started | - |
