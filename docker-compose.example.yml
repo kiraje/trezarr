@@ -1,0 +1,121 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# docker-compose.example.yml — Trezarr example deployment (D-64, D-78)
+#
+# Copy this file to docker-compose.yml and adjust for your environment.
+#
+# IMPORTANT — Media path alignment:
+#   The media volume mount MUST use the SAME path that Sonarr/Radarr/Bazarr
+#   see inside their containers.  For example, if Sonarr mounts your library
+#   at /media, Trezarr must also mount it at /media.  Path mismatches cause
+#   the pipeline to fail to locate source subtitle files or write output.
+#   See CLAUDE.md §Docker Packaging and §*arr Integration.
+#
+# SECURITY (D-78 single-user / trusted LAN):
+#   Trezarr has no built-in authentication — it is designed for a private,
+#   trusted local network alongside Sonarr/Radarr/Bazarr.
+#   To restrict external access, either:
+#     a) Bind to localhost only: change "6868:6868" to "127.0.0.1:6868:6868"
+#        and put a reverse-proxy (nginx, Caddy, Traefik) with auth in front.
+#     b) Keep Trezarr on an internal Docker network with no published ports
+#        and access it through the reverse-proxy exclusively.
+#   API keys are provided via environment variables (not written into
+#   config.yaml) per T-07-06-02.
+#
+# Environment variables:
+#   PUID / PGID  — set to $(id -u) / $(id -g) of the user who owns your media
+#                  files so subtitle sidecars are written with correct ownership
+#   TREZARR_OPENAI_API_KEY — your LLM endpoint API key (required)
+#   TREZARR_SONARR_API_KEY — Sonarr API key (Settings → General → API Key)
+#   TREZARR_RADARR_API_KEY — Radarr API key (Settings → General → API Key)
+#   TREZARR_BAZARR_API_KEY — Bazarr API key (if bazarr_enabled: true)
+# ─────────────────────────────────────────────────────────────────────────────
+
+services:
+  trezarr:
+    # Option A: use a pre-built image from a registry
+    image: trezarr:latest
+    # Option B: build from source (uncomment and comment out `image:` above)
+    # build: .
+
+    container_name: trezarr
+
+    # Web UI + REST API.  For LAN-only deployments leave as-is.
+    # For external access via reverse-proxy, change to:
+    #   127.0.0.1:6868:6868
+    ports:
+      - "6868:6868"
+
+    volumes:
+      # Config volume: SQLite Series Bible DB, config.yaml, quarantine, logs.
+      # Map a host directory (e.g. ./config or /opt/trezarr/config) to /config.
+      - ./config:/config
+
+      # Media volume(s): MUST match the path(s) Sonarr/Radarr/Bazarr use.
+      # Example: if Sonarr maps your TV library to /media/tv, use the same here.
+      # Add additional mounts for movies, etc., as needed.
+      - /path/to/media:/media
+
+    environment:
+      # PUID/PGID: set to the UID/GID of the user who owns your media files.
+      # Run `id` on your host to find these values.
+      - PUID=${PUID:-1000}
+      - PGID=${PGID:-1000}
+
+      # LLM endpoint (required).  Override llm_base_url and llm_model in
+      # /config/config.yaml or via additional TREZARR_LLM_* env vars.
+      - TREZARR_LLM_API_KEY=${TREZARR_LLM_API_KEY:?TREZARR_LLM_API_KEY is required}
+
+      # *arr API keys — provide at runtime; do not hardcode in this file.
+      - TREZARR_SONARR_API_KEY=${TREZARR_SONARR_API_KEY:-}
+      - TREZARR_RADARR_API_KEY=${TREZARR_RADARR_API_KEY:-}
+      - TREZARR_BAZARR_API_KEY=${TREZARR_BAZARR_API_KEY:-}
+
+      # Optional: set the config file path if you mount it somewhere other
+      # than the default /config/config.yaml.
+      # - TREZARR_CONFIG_PATH=/config/config.yaml
+
+    restart: unless-stopped
+
+    # Trezarr polls Sonarr/Radarr/Bazarr on its own schedule; it does not
+    # need a hard depends_on health-check dependency.  However, starting
+    # Sonarr/Radarr/Bazarr before Trezarr avoids benign connection errors
+    # in the first poll cycle.
+    # Uncomment and adjust service names to match your stack:
+    # depends_on:
+    #   sonarr:
+    #     condition: service_started
+    #   radarr:
+    #     condition: service_started
+    #   bazarr:
+    #     condition: service_started
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Example: include Trezarr in an existing *arr compose file by appending
+# the `trezarr:` block above under the same `services:` key.
+#
+# Full *arr + Trezarr stack example (paths and image tags are illustrative):
+#
+#   services:
+#     sonarr:
+#       image: lscr.io/linuxserver/sonarr:latest
+#       ...
+#     radarr:
+#       image: lscr.io/linuxserver/radarr:latest
+#       ...
+#     bazarr:
+#       image: lscr.io/linuxserver/bazarr:latest
+#       ...
+#     trezarr:
+#       image: trezarr:latest
+#       ports: ["6868:6868"]
+#       volumes:
+#         - ./trezarr-config:/config
+#         - /media:/media          # same path as sonarr/radarr/bazarr
+#       environment:
+#         - PUID=1000
+#         - PGID=1000
+#         - TREZARR_LLM_API_KEY=sk-...
+#         - TREZARR_SONARR_API_KEY=...
+#         - TREZARR_RADARR_API_KEY=...
+#       restart: unless-stopped
+# ─────────────────────────────────────────────────────────────────────────────

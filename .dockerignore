@@ -1,0 +1,76 @@
+# ── Trezarr .dockerignore ────────────────────────────────────────────────────
+# Excludes files that are irrelevant inside the Docker build context.
+# The node-builder stage handles its own npm install from package.json/lockfile,
+# so pre-installed node_modules from the host would shadow those deps.
+
+# Frontend build artifacts (rebuilt in node-builder stage)
+frontend/node_modules/
+frontend/dist/
+frontend/.cache/
+frontend/tsconfig.tsbuildinfo
+
+# Python build artifacts
+__pycache__/
+*.py[cod]
+*.pyc
+*.pyo
+*.pyd
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+.eggs/
+.uv/
+.venv/
+venv/
+env/
+
+# Vite/SPA build output (copied from node-builder; not needed from host)
+trezarr/web/static/
+
+# Test code (not included in production image)
+tests/
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.mypy_cache/
+.ruff_cache/
+
+# Planning / documentation / GSD artifacts
+.planning/
+.agents/
+.claude/
+.codegraph/
+.gsd/
+.gsd.lock/
+.trezarr-harness/
+.gsd_*
+
+# Version control
+.git/
+.gitignore
+.gitattributes
+
+# Development / editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# Secrets / environment files
+.env
+.env.*
+
+# CI / scripts not needed in image
+*.sh.bak
+
+# Markdown docs (keep README.md if present, exclude planning docs)
+.planning/**/*.md
+CLAUDE.md
+skills-lock.json
