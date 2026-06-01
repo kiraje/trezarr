@@ -11,8 +11,6 @@ async def test functions run without @pytest.mark.asyncio.
 """
 from __future__ import annotations
 
-import pytest
-
 
 def test_pronoun_hint_in_prompt():
     """Reconciled pronoun pair is injected as a hint in the Pass-3 translate prompt (PRON-02, D-46).
