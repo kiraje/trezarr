@@ -249,8 +249,6 @@ def create_app(settings: TrezarrSettings | None = None) -> FastAPI:
 
     # Convenience property: app.state.engine reads from the cell.
     # We patch the State object to provide the 'engine' attribute dynamically.
-    original_app = outer_app
-
     class _StateWithEngine:
         """Proxy that exposes engine from the mutable cell."""
         def __getattr__(self, name: str):
