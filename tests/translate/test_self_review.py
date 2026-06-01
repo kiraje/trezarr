@@ -9,13 +9,10 @@ Tests cover:
 asyncio_mode="auto" is configured project-wide in pyproject.toml, so
 async def test functions run without @pytest.mark.asyncio.
 
-Wave 0: All tests are xfail stubs — production code does not yet exist.
-xfail uses raises=(ImportError, AssertionError, TypeError) because the module imports
-cleanly from Phase 3/5 but _review_batch / build_review_prompt are not yet defined.
+Phase 6 complete: all tests promoted to real PASS — xfail markers removed.
 """
 from __future__ import annotations
 
-import pytest
 from unittest.mock import AsyncMock, patch
 
 from trezarr.subtitles.model import SubDoc, SubLine
@@ -56,11 +53,10 @@ def _make_settings(**kwargs) -> TrezarrSettings:
 
 
 # ---------------------------------------------------------------------------
-# Tests — ENG-05-A, B, C, D (Wave 0 RED stubs)
+# Tests — ENG-05-A, B, C, D
 # ---------------------------------------------------------------------------
 
-@pytest.mark.xfail(strict=False, raises=(ImportError, AssertionError, TypeError))
-async def test_pass4_corrects_violation_before_gate():
+async def test_pass4_corrects_violation_before_gate():  # formerly @pytest.mark.xfail — promoted to passing in Phase 6
     """ENG-05-A: Pass 4 corrects a pronoun violation; corrected output seen before validate_subdoc.
 
     Arrange: build a Batch with one cue containing a known pronoun violation.
@@ -103,8 +99,7 @@ async def test_pass4_corrects_violation_before_gate():
     )
 
 
-@pytest.mark.xfail(strict=False, raises=(ImportError, AssertionError, TypeError))
-async def test_pass4_failure_fallback_no_quarantine():
+async def test_pass4_failure_fallback_no_quarantine():  # formerly @pytest.mark.xfail — promoted to passing in Phase 6
     """ENG-05-B: Pass 4 LLM failure → pre-review output used; no quarantine (D-59).
 
     Arrange: mock LLM client whose .call() raises an Exception.
@@ -141,8 +136,7 @@ async def test_pass4_failure_fallback_no_quarantine():
     )
 
 
-@pytest.mark.xfail(strict=False, raises=(ImportError, AssertionError, TypeError))
-async def test_pass4_disabled_skips_review():
+async def test_pass4_disabled_skips_review():  # formerly @pytest.mark.xfail — promoted to passing in Phase 6
     """ENG-05-C: enable_self_review=False → Pass 4 skipped; translated_doc unchanged.
 
     Arrange: settings with enable_self_review=False.
@@ -178,8 +172,7 @@ async def test_pass4_disabled_skips_review():
         )
 
 
-@pytest.mark.xfail(strict=False, raises=(ImportError, AssertionError, TypeError))
-async def test_sentinel_failure_fallback_per_batch():
+async def test_sentinel_failure_fallback_per_batch():  # formerly @pytest.mark.xfail — promoted to passing in Phase 6
     """ENG-05-D: Sentinel integrity failure in review → pre-review batch kept (D-59).
 
     Arrange: a cue with sentinel tokens (<<T0>>); mock LLM returns a response that

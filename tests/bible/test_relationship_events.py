@@ -8,13 +8,10 @@ Tests cover:
 asyncio_mode="auto" is configured project-wide in pyproject.toml, so
 async def test functions run without @pytest.mark.asyncio.
 
-Wave 0: All tests are xfail stubs — production code does not yet exist.
-xfail uses raises=(ImportError, AssertionError, TypeError) because existing modules
-import cleanly (Phase-5 precedent); the failure is on missing functionality, not imports.
+Phase 6 complete: all tests promoted to real PASS — xfail markers removed.
 """
 from __future__ import annotations
 
-import pytest
 from unittest.mock import AsyncMock
 
 
@@ -59,11 +56,10 @@ async def _create_characters(
 
 
 # ---------------------------------------------------------------------------
-# Tests — BIBLE-07-A, B, F (Wave 0 RED stubs)
+# Tests — BIBLE-07-A, B, F
 # ---------------------------------------------------------------------------
 
-@pytest.mark.xfail(strict=False, raises=(ImportError, AssertionError, TypeError))
-async def test_relationship_event_written_to_db(session_factory):
+async def test_relationship_event_written_to_db(session_factory):  # formerly @pytest.mark.xfail — promoted to passing in Phase 6
     """BIBLE-07-A: record_relationship_event writes a row; DTO has correct character IDs.
 
     Arrange: create a series and two characters via real DB fixtures.
@@ -97,8 +93,7 @@ async def test_relationship_event_written_to_db(session_factory):
     )
 
 
-@pytest.mark.xfail(strict=False, raises=(ImportError, AssertionError, TypeError))
-async def test_load_series_bible_includes_events(session_factory):
+async def test_load_series_bible_includes_events(session_factory):  # formerly @pytest.mark.xfail — promoted to passing in Phase 6
     """BIBLE-07-B: load_series_bible returns relationship_events in SeriesBibleDTO.
 
     Arrange: write a relationship_event row for a series.
@@ -129,8 +124,7 @@ async def test_load_series_bible_includes_events(session_factory):
     )
 
 
-@pytest.mark.xfail(strict=False, raises=(ImportError, AssertionError, TypeError))
-async def test_name_matching_case_insensitive(session_factory):
+async def test_name_matching_case_insensitive(session_factory):  # formerly @pytest.mark.xfail — promoted to passing in Phase 6
     """BIBLE-07-F: case-insensitive name matching in merge_bible_analysis (CR-01).
 
     Arrange: create series + characters with names "alice" / "bob".

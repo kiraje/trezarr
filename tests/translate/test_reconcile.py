@@ -473,14 +473,12 @@ async def test_below_threshold_ignores_address_map(session_factory):
 
 
 # ---------------------------------------------------------------------------
-# Phase 6 Wave-0 RED stubs — BIBLE-07-C, D, E
+# Phase 6 tests — BIBLE-07-C, D, E (promoted to real PASS — xfail removed)
 # ---------------------------------------------------------------------------
 
-import pytest  # noqa: E402 — pytest imported here to not perturb module-level import order above
 
 
-@pytest.mark.xfail(strict=False, raises=(ImportError, AssertionError, TypeError))
-async def test_transition_authorizes_terms_change(session_factory):
+async def test_transition_authorizes_terms_change(session_factory):  # formerly @pytest.mark.xfail — promoted to passing in Phase 6
     """BIBLE-07-C: reconcile_attributions — transition authorizes terms change.
 
     Arrange: bible with a relationship_event for pair (A, B) at the current episode
@@ -553,8 +551,7 @@ async def test_transition_authorizes_terms_change(session_factory):
     )
 
 
-@pytest.mark.xfail(strict=False, raises=(ImportError, AssertionError, TypeError))
-async def test_lock_beats_transition(session_factory):
+async def test_lock_beats_transition(session_factory):  # formerly @pytest.mark.xfail — promoted to passing in Phase 6
     """BIBLE-07-D: reconcile_attributions — lock beats transition (D-34/D-54).
 
     Arrange: bible with a LOCKED address_map entry AND a relationship_event for
@@ -630,8 +627,7 @@ async def test_lock_beats_transition(session_factory):
     )
 
 
-@pytest.mark.xfail(strict=False, raises=(ImportError, AssertionError, TypeError))
-async def test_no_transition_no_survivors_safe_default(session_factory):
+async def test_no_transition_no_survivors_safe_default(session_factory):  # formerly @pytest.mark.xfail — promoted to passing in Phase 6
     """BIBLE-07-E: no transition + no high-confidence survivors → safe default (Phase-5 Success #4 preserved).
 
     Arrange: bible with NO relationship_event and NO high-confidence attribution for the pair.
