@@ -21,7 +21,7 @@ from trezarr.bible.store import upsert_address_pair
 
 if TYPE_CHECKING:
     from trezarr.config import TrezarrSettings
-    from trezarr.bible.dto import SeriesBibleDTO, AddressMapDTO
+    from trezarr.bible.dto import SeriesBibleDTO, AddressMapDTO, RelationshipEventDTO
     from trezarr.translate.attribute import LineAttribution
     from sqlalchemy.ext.asyncio import async_sessionmaker
 
@@ -125,6 +125,44 @@ def get_safe_default(
     return (SAFE_DEFAULT_SELF, address)
 
 
+def _find_transition_for_pair(
+    relationship_events: "list[RelationshipEventDTO]",
+    spk_id: int,
+    addr_id: int,
+    episode_key: str,
+) -> "RelationshipEventDTO | None":
+    """Find a logged relationship_event for the ordered pair at this episode.
+
+    Events are undirected (character_a_id, character_b_id) — match EITHER direction.
+    Filter to current episode only (Pitfall 6: never apply future-episode transitions).
+    """
+    for event in relationship_events:
+        if event.episode_marker != episode_key:
+            continue  # Pitfall 6: only current episode's event authorizes a change
+        if (event.character_a_id == spk_id and event.character_b_id == addr_id) or \
+           (event.character_a_id == addr_id and event.character_b_id == spk_id):
+            return event
+    return None
+
+
+def _derive_transition_terms(
+    transition: "RelationshipEventDTO",
+    resolved_map: dict,
+    addr_id: int,
+    id_to_gender: dict,
+    settings: "TrezarrSettings",
+) -> tuple[str, str]:
+    """Derive (self_term, address_term) for a transition (D-54 preferred order):
+      1. LLM-suggested terms from transition (suggested_self_term / suggested_address_term)
+      2. get_safe_default fallback
+    """
+    if transition.suggested_self_term and transition.suggested_address_term:
+        return (transition.suggested_self_term, transition.suggested_address_term)
+    # Fallback: use get_safe_default
+    addr_gender = id_to_gender.get(addr_id)
+    return get_safe_default(addr_gender, settings)
+
+
 async def reconcile_attributions(
     flat_attributions: "list[LineAttribution]",
     bible: "SeriesBibleDTO",
@@ -204,13 +242,53 @@ async def reconcile_attributions(
         spk_id, addr_id = pair
         attributions = pair_attributions.get(pair, [])
 
+        # LOCK CHECK — lock always wins (D-34, D-54).
+        # Must be FIRST — before transition check and confidence gate.
+        existing = existing_map.get(pair)
+        if existing is not None:
+            locked = set(existing.locked_fields or [])
+            if "self_term" in locked or "address_term" in locked:
+                st = existing.self_term
+                at = existing.address_term
+                if st is not None and at is not None:
+                    resolved_map[pair] = (st, at)
+                    continue  # lock wins — skip transition + confidence gate
+
+        # [Phase 6] TRANSITION CHECK — logged event authorizes term change (D-54).
+        # Precedence: human lock > logged transition (this episode) > carried-forward > safe-default.
+        if getattr(settings, "enable_relationship_events", True):
+            transition = _find_transition_for_pair(
+                getattr(bible, "relationship_events", []),
+                spk_id, addr_id, episode_key,
+            )
+            if transition is not None:
+                new_self, new_addr = _derive_transition_terms(
+                    transition, resolved_map, addr_id, id_to_gender, settings
+                )
+                resolved_map[pair] = (new_self, new_addr)
+                await upsert_address_pair(
+                    session_factory,
+                    series_id=series_id,
+                    speaker_character_id=spk_id,
+                    addressee_character_id=addr_id,
+                    self_term=new_self,
+                    address_term=new_addr,
+                    valid_from_episode=episode_key,  # D-53: bump version marker
+                    episode_key=episode_key,
+                    source="inference",
+                )
+                logger.debug(
+                    "reconcile: transition-authorized change for %d→%d: (%s/%s) at %s",
+                    spk_id, addr_id, new_self, new_addr, episode_key,
+                )
+                continue  # transition handled — skip confidence gate
+
         # (c) Apply threshold gate
         survivors = [a for a in attributions if _confidence_value(a.confidence) >= threshold_val]
 
         if survivors:
             # Pair is "confirmed" — use existing Address Map entry if available;
             # the entry supplies the actual (self_term, address_term).
-            existing = existing_map.get(pair)
             if (
                 existing is not None
                 and existing.self_term is not None
@@ -238,20 +316,10 @@ async def reconcile_attributions(
 
         else:
             # No survivors — all attributions below threshold (or no attributions).
-            existing = existing_map.get(pair)
-            if existing is not None:
-                locked = set(existing.locked_fields or [])
-                if "self_term" in locked or "address_term" in locked:
-                    # LOCKED entry: honour it even below threshold (D-34)
-                    st = existing.self_term
-                    at = existing.address_term
-                    if st is not None and at is not None:
-                        resolved_map[pair] = (st, at)
-                        continue
-                # Unlocked entry — SKIP it, fall through to safe default
-                # (Success #4 invariant: below-threshold → safe default regardless of
-                # what unlocked prior-episode Address Map rows say)
-            # Fall through to safe default
+            # Lock check already handled above — if we're here, pair is either unlocked or no lock.
+            # Unlocked entry — SKIP it, fall through to safe default
+            # (Success #4 invariant: below-threshold → safe default regardless of
+            # what unlocked prior-episode Address Map rows say)
             addr_gender = id_to_gender.get(addr_id)
             st, at = get_safe_default(addr_gender, settings)
             resolved_map[pair] = (st, at)
