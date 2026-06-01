@@ -893,8 +893,11 @@ async def translate_file(
         source_lines_by_index = {line.index: line for line in source_doc.lines}
 
         # TaskGroup dispatch — mirrors Pass-2 attribution gather.
-        # CRITICAL DIFFERENCE from Pass-3 TaskGroup: NO except* block here.
-        # _review_batch catches all exceptions internally and returns None (D-59, Pitfall 2).
+        # _review_batch catches all exceptions internally and returns None (D-59).
+        # except* correctly unwraps ExceptionGroup from TaskGroup (Python 3.11+, CR-03).
+        # _review_batch must never raise (D-59); reaching except* indicates a bug.
+        # NOTE: `return` is not allowed inside except* — use a flag variable instead.
+        _review_failed = False
         try:
             async with asyncio.TaskGroup() as tg:
                 review_tasks = [
@@ -909,12 +912,16 @@ async def translate_file(
                     for rb in review_batches
                 ]
             review_results = [t.result() for t in review_tasks]
-        except Exception:
-            # Bare except: if TaskGroup itself fails unexpectedly, keep pre-review doc (D-59)
-            logger.warning(
-                "Pass 4 TaskGroup failed — keeping pre-review translated_doc (D-59)",
-                exc_info=True,
+        except* Exception as eg:
+            # _review_batch must never raise (D-59); reaching here indicates a violated contract
+            logger.error(
+                "Pass 4 TaskGroup raised unexpectedly (%d exceptions) — "
+                "this violates the D-59 best-effort contract; keeping pre-review doc",
+                len(eg.exceptions), exc_info=True,
             )
+            _review_failed = True
+
+        if _review_failed:
             review_results = [None] * len(review_batches)
 
         # Splice corrections into translated_doc (Pitfall 8 — new SubLine objects, never mutate)
