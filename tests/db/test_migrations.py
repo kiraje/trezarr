@@ -212,3 +212,13 @@ async def test_indexes_exist_in_schema(db_engine):
     assert source_path_unique, (
         f"No UNIQUE index found for processed_file.source_path. Available: {index_names}"
     )
+
+
+@pytest.mark.xfail(raises=(AssertionError,), reason="Alembic 0002 migration not yet authored — Plan 07-02")
+async def test_0002_migration_creates_job_tables(db_engine):
+    """After run_migrations_to_head, 'job' and 'job_log' tables must exist in sqlite_master (D-69).
+
+    Proves that the Alembic 0002 migration (job queue schema) runs cleanly on top
+    of the 0001 baseline and creates the required job infrastructure tables.
+    """
+    assert False  # Stub: xfail until Plan 07-02 authors the 0002 migration
