@@ -424,7 +424,10 @@ async def _upsert_character_in_session(
     existing_row = (await session.execute(stmt)).scalar_one_or_none()
 
     if existing_row is None:
-        # First insert: construct the row and emit one event per non-None field
+        # First insert: construct the row and emit one event per non-None field.
+        # WR-05: locked_fields is intentionally hard-coded to [] here — Phase 4
+        # never sets locks in production (only tests, via direct row mutation).
+        # See upsert_character docstring for the lock-list constraint contract.
         row = Character(
             series_id=series_id,
             original_latin_name=original_latin_name,
@@ -514,7 +517,10 @@ async def _upsert_term_in_session(
     existing_row = (await session.execute(stmt)).scalar_one_or_none()
 
     if existing_row is None:
-        # First insert: vietnamese_rendering is required for TermDictionary (NOT NULL)
+        # First insert: vietnamese_rendering is required for TermDictionary (NOT NULL).
+        # WR-05: locked_fields is intentionally hard-coded to [] here — Phase 4
+        # never sets locks in production (only tests, via direct row mutation).
+        # See upsert_term docstring for the lock-list constraint contract.
         row = TermDictionary(
             series_id=series_id,
             source_term=source_term,
@@ -644,6 +650,17 @@ async def upsert_character(
     _upsert_character_in_session which calls _merge_inferred_in_session internally.
     This avoids nested transactions (HIGH finding).
 
+    WR-05 (lock-list constraint): on first INSERT, locked_fields is
+    hard-coded to ``[]`` by ``_upsert_character_in_session``; there is NO
+    parameter to seed a caller-supplied lock list on creation. This is
+    intentional for Phase 4 (per merge.py:3-4, Phase 4 never sets
+    locked_fields in production — only tests). If Phase 8's UI needs to
+    pre-seed a row with a locked field set, it must use the Phase 8 lock-
+    management API (writes to ``Character.locked_fields`` directly via the
+    UI write path), NOT this function. Adding a ``locked_fields=...``
+    parameter here without also wiring the merge engine to respect a
+    just-created lock during the same call would be a footgun.
+
     Args:
         session_factory:       Async session factory.
         series_id:             FK to the parent Series row.
@@ -690,6 +707,11 @@ async def upsert_term(
 
     Mirror of upsert_character for TermDictionary. Delegates to
     _upsert_term_in_session which calls _merge_inferred_in_session internally.
+
+    WR-05 (lock-list constraint): same as upsert_character — on first INSERT,
+    locked_fields is hard-coded to ``[]`` by ``_upsert_term_in_session``.
+    There is NO parameter to seed a caller-supplied lock list on creation.
+    Phase 8 lock-management is the authoritative path for setting locks.
 
     Args:
         session_factory:       Async session factory.
