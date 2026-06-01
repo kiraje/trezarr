@@ -17,10 +17,10 @@ Requirements for initial release. Each maps to roadmap phases.
 ### Discovery & Automation
 
 - [x] **AUTO-01**: Trezarr automatically detects media that has a source subtitle but no good Vietnamese subtitle and queues it for translation
-- [ ] **AUTO-02**: Trezarr monitors for newly added media / new source subtitles on an ongoing basis (polling, with webhook trigger support)
+- [x] **AUTO-02**: Trezarr monitors for newly added media / new source subtitles on an ongoing basis (polling, with webhook trigger support)
 - [x] **AUTO-03**: Trezarr is idempotent — it tracks per-item translation state (incl. source-sub hash) and skips items already up to date, never causing re-translation storms
 - [x] **AUTO-04**: Trezarr excludes its own output from re-triggering the watcher (no self-reprocessing loop)
-- [ ] **AUTO-05**: Processing resumes safely after a crash or restart without losing or duplicating work
+- [x] **AUTO-05**: Processing resumes safely after a crash or restart without losing or duplicating work
 
 ### Subtitle Formats
 
@@ -65,10 +65,10 @@ Requirements for initial release. Each maps to roadmap phases.
 
 ### Service & Web UI
 
-- [ ] **SVC-01**: Trezarr ships as a single Dockerized, long-running self-hosted service deployable alongside the *arr stack (`/config` volume for DB + config)
-- [ ] **SVC-02**: A web UI lets the user configure connections (Sonarr/Radarr/Bazarr, LLM endpoint, paths) and global settings
-- [ ] **SVC-03**: The web UI shows a Queue (in-flight), History (completed/failed with per-item reason), and per-job logs
-- [ ] **SVC-04**: User can retry or re-run a failed/rejected item from the UI
+- [x] **SVC-01**: Trezarr ships as a single Dockerized, long-running self-hosted service deployable alongside the *arr stack (`/config` volume for DB + config)
+- [x] **SVC-02**: A web UI lets the user configure connections (Sonarr/Radarr/Bazarr, LLM endpoint, paths) and global settings
+- [x] **SVC-03**: The web UI shows a Queue (in-flight), History (completed/failed with per-item reason), and per-job logs
+- [x] **SVC-04**: User can retry or re-run a failed/rejected item from the UI
 - [ ] **SVC-05**: User can set per-series overrides (source-language preference, register, model)
 
 ## v2 Requirements
@@ -112,10 +112,10 @@ Which phases cover which requirements. Populated during roadmap creation.
 | INTG-03 | Phase 3 | Complete |
 | INTG-04 | Phase 3 | Complete |
 | AUTO-01 | Phase 3 | Complete |
-| AUTO-02 | Phase 7 | Pending |
+| AUTO-02 | Phase 7 | Complete |
 | AUTO-03 | Phase 3 | Complete |
 | AUTO-04 | Phase 3 | Complete |
-| AUTO-05 | Phase 7 | Pending |
+| AUTO-05 | Phase 7 | Complete |
 | FMT-01 | Phase 1 | Complete |
 | FMT-02 | Phase 9 | Pending |
 | FMT-03 | Phase 9 | Pending |
@@ -142,10 +142,10 @@ Which phases cover which requirements. Populated during roadmap creation.
 | PRON-03 | Phase 5 | Complete |
 | SRC-01 | Phase 10 | Pending |
 | SRC-02 | Phase 10 | Pending |
-| SVC-01 | Phase 7 | Pending |
-| SVC-02 | Phase 7 | Pending |
-| SVC-03 | Phase 7 | Pending |
-| SVC-04 | Phase 7 | Pending |
+| SVC-01 | Phase 7 | Complete |
+| SVC-02 | Phase 7 | Complete |
+| SVC-03 | Phase 7 | Complete |
+| SVC-04 | Phase 7 | Complete |
 | SVC-05 | Phase 10 | Pending |
 
 **Coverage:**

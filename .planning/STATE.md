@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Phase 7 UI-SPEC approved
-last_updated: "2026-06-01T21:53:20.352Z"
-last_activity: 2026-06-01 -- Phase 7 planning complete
+stopped_at: Completed 07-01-PLAN.md
+last_updated: "2026-06-01T22:01:04.188Z"
+last_activity: 2026-06-01
 progress:
   total_phases: 10
   completed_phases: 6
   total_plans: 30
-  completed_plans: 24
+  completed_plans: 25
   percent: 60
 ---
 
@@ -21,16 +21,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-05-31)
 
 **Core value:** Vietnamese subtitles that stay consistent and relationally correct (right pronoun pair, stable names/terms) across an entire series — produced automatically.
-**Current focus:** Phase 7 — web ui & service hardening
+**Current focus:** Phase 7 — web-ui-service-hardening
 
 ## Current Position
 
-Phase: 7
-Plan: Not started
+Phase: 7 (web-ui-service-hardening) — EXECUTING
+Plan: 2 of 6
 Status: Ready to execute
-Last activity: 2026-06-01 -- Phase 7 planning complete
+Last activity: 2026-06-01
 
-Progress: [██████████] 100%
+Progress: [████████░░] 83%
 
 ## Performance Metrics
 
@@ -73,6 +73,7 @@ Progress: [██████████] 100%
 | Phase 05 P06 | 15min | 2 tasks | 5 files |
 | Phase 06 P06-02 | 25 min | 2 tasks | 5 files |
 | Phase 06 P06-03 | 15min | 2 tasks | 4 files |
+| Phase 07-web-ui-service-hardening P01 | 3 minutes | 2 tasks | 9 files |
 
 ## Accumulated Context
 
@@ -104,6 +105,8 @@ Recent decisions affecting current work:
 - [Phase ?]: [Phase 05-03]: D-44 threshold gate: confirmed pair uses Address Map entry terms; below-threshold unlocked entry skipped → safe default
 - [Phase ?]: translate_file three-pass flow: Pass 1 BARRIER + Pass 2 gather + reconcile + Pass 3 pronoun hints; BibleAnalysisError quarantines; openai.APIError propagates (D-40 D-48 Pitfall B)
 - [Phase ?]: derive_episode_key parses SxxExx from subtitle filename stem not episode_number field (D-49 Pitfall F confirmed)
+- [Phase ?]: xfail(strict=False) with raises=(ImportError, AssertionError, TypeError) for Wave-0 stubs targeting not-yet-created modules
+- [Phase ?]: D-67 ProcessedFile arm uses separate reconcile_in_progress_from_ledger function for independent testability
 
 ### Pending Todos
 
@@ -130,6 +133,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-06-01T21:20:52.120Z
-Stopped at: Phase 7 UI-SPEC approved
-Resume file: .planning/phases/07-web-ui-service-hardening/07-UI-SPEC.md
+Last session: 2026-06-01T22:01:04.180Z
+Stopped at: Completed 07-01-PLAN.md
+Resume file: None
