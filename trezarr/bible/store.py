@@ -62,18 +62,34 @@ Known limitations:
     than finding the existing row. This is an accepted v1 trade-off — document for
     operators if reported (future phase).
 """
+
 from __future__ import annotations
 
 import json
 import logging
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import async_sessionmaker, AsyncSession
 
-from trezarr.bible.models import BibleEvent, Series, Character, TermDictionary, AddressMap
-from trezarr.bible.dto import BibleEventDTO, SeriesDTO, SeriesBibleDTO, CharacterDTO, TermDTO, AddressMapDTO
+from trezarr.bible.models import (
+    BibleEvent,
+    Series,
+    Character,
+    TermDictionary,
+    AddressMap,
+    RelationshipEvent,
+)
+from trezarr.bible.dto import (
+    BibleEventDTO,
+    SeriesDTO,
+    SeriesBibleDTO,
+    CharacterDTO,
+    TermDTO,
+    AddressMapDTO,
+    RelationshipEventDTO,
+)
 from trezarr.bible.merge import get_locked_fields, compute_field_changes
 
 logger = logging.getLogger(__name__)
@@ -151,7 +167,7 @@ async def get_or_create_series(
                     tvdb_id=tvdb_id,
                     tmdb_id=tmdb_id,
                     arr_metadata=arr_metadata_snapshot,
-                    register=None,   # D-35: Phase 5 sets via merge_inferred
+                    register=None,  # D-35: Phase 5 sets via merge_inferred
                     locked_fields=[],
                 )
                 session.add(row)
@@ -199,6 +215,7 @@ async def load_series_bible(
                 selectinload(Series.characters),
                 selectinload(Series.terms),
                 selectinload(Series.address_maps),
+                selectinload(Series.relationship_events),  # [Phase 6 NEW]
             )
         )
         row = (await session.execute(stmt)).scalar_one()
@@ -216,16 +233,15 @@ async def load_series_bible(
             arr_metadata=row.arr_metadata if row.arr_metadata is not None else {},
             locked_fields=row.locked_fields if row.locked_fields is not None else [],
             characters=[
-                CharacterDTO.model_validate(c, from_attributes=True)
-                for c in row.characters
+                CharacterDTO.model_validate(c, from_attributes=True) for c in row.characters
             ],
-            terms=[
-                TermDTO.model_validate(t, from_attributes=True)
-                for t in row.terms
-            ],
+            terms=[TermDTO.model_validate(t, from_attributes=True) for t in row.terms],
             address_map=[
-                AddressMapDTO.model_validate(a, from_attributes=True)
-                for a in row.address_maps
+                AddressMapDTO.model_validate(a, from_attributes=True) for a in row.address_maps
+            ],
+            relationship_events=[
+                RelationshipEventDTO.model_validate(e, from_attributes=True)
+                for e in row.relationship_events
             ],
         )
 
@@ -277,6 +293,7 @@ def _validate_mergeable_fields(entity_type: str, inferred: dict[str, Any]) -> No
 # ---------------------------------------------------------------------------
 # Private session-scoped helpers (NEVER open a transaction — run inside one)
 # ---------------------------------------------------------------------------
+
 
 async def _merge_inferred_in_session(
     session: AsyncSession,
@@ -422,10 +439,10 @@ async def _upsert_character_in_session(
     Returns:
         (Character_row, list_of_BibleEvent_instances)
     """
-    # SELECT existing row by identity key
+    # SELECT existing row by identity key (case- and whitespace-insensitive, CR-01)
     stmt = select(Character).where(
         Character.series_id == series_id,
-        Character.original_latin_name == original_latin_name,
+        func.lower(Character.original_latin_name) == original_latin_name.strip().lower(),
     )
     existing_row = (await session.execute(stmt)).scalar_one_or_none()
 
@@ -434,6 +451,7 @@ async def _upsert_character_in_session(
         # WR-05: locked_fields is intentionally hard-coded to [] here — Phase 4
         # never sets locks in production (only tests, via direct row mutation).
         # See upsert_character docstring for the lock-list constraint contract.
+        # Display-case is preserved on INSERT — only the SELECT identity comparison is normalized.
         row = Character(
             series_id=series_id,
             original_latin_name=original_latin_name,
@@ -464,7 +482,8 @@ async def _upsert_character_in_session(
 
     # Existing row: build inferred dict of non-None provided fields
     inferred = {
-        k: v for k, v in [("gender", gender), ("rough_age", rough_age), ("role", role)]
+        k: v
+        for k, v in [("gender", gender), ("rough_age", rough_age), ("role", role)]
         if v is not None
     }
     if not inferred:
@@ -559,7 +578,8 @@ async def _upsert_term_in_session(
 
     # Existing row: build inferred dict of non-None provided fields
     inferred = {
-        k: v for k, v in [
+        k: v
+        for k, v in [
             ("vietnamese_rendering", vietnamese_rendering),
             ("category", category),
         ]
@@ -701,6 +721,7 @@ async def _upsert_address_pair_in_session(
 # Public API — read functions
 # ---------------------------------------------------------------------------
 
+
 async def get_character(
     session_factory: async_sessionmaker[AsyncSession],
     series_id: int,
@@ -711,7 +732,8 @@ async def get_character(
     Args:
         session_factory:       Async session factory.
         series_id:             FK to the parent Series row.
-        original_latin_name:   Identity key (exact match, case-sensitive).
+        original_latin_name:   Identity key (case- and whitespace-insensitive match;
+                               display-case preserved in DB).
 
     Returns:
         CharacterDTO if found, None if no such character exists for this series.
@@ -719,7 +741,7 @@ async def get_character(
     async with session_factory() as session:
         stmt = select(Character).where(
             Character.series_id == series_id,
-            Character.original_latin_name == original_latin_name,
+            func.lower(Character.original_latin_name) == original_latin_name.strip().lower(),
         )
         row = (await session.execute(stmt)).scalar_one_or_none()
         return CharacterDTO.model_validate(row, from_attributes=True) if row else None
@@ -752,6 +774,7 @@ async def get_term(
 # ---------------------------------------------------------------------------
 # Public API — write functions (the ONLY transaction owners)
 # ---------------------------------------------------------------------------
+
 
 async def upsert_character(
     session_factory: async_sessionmaker[AsyncSession],
@@ -929,6 +952,58 @@ async def upsert_address_pair(
         )
 
 
+async def record_relationship_event(
+    session_factory: async_sessionmaker[AsyncSession],
+    *,
+    series_id: int,
+    character_a_id: int,
+    character_b_id: int,
+    episode_marker: str,
+    description: str | None = None,
+) -> RelationshipEventDTO:
+    """INSERT a relationship_event row (no-op if dedup key already exists).
+
+    Dedup key: (series_id, character_a_id, character_b_id, episode_marker).
+    INSERT-only — no merge/update path (relationship_event has no locked_fields).
+    The SELECT+INSERT runs inside a SINGLE session.begin() block (D-32, Pitfall 9).
+
+    Args:
+        session_factory:   Async session factory.
+        series_id:         FK → series.id.
+        character_a_id:    FK → character.id (first party in the relationship).
+        character_b_id:    FK → character.id (second party in the relationship).
+        episode_marker:    Episode key where the transition occurs (e.g. "S01E04").
+        description:       Optional narrative description of the transition.
+
+    Returns:
+        RelationshipEventDTO for the found or newly-created row.
+    """
+    async with session_factory() as session:
+        async with session.begin():
+            # Dedup check: SELECT before INSERT (D-32, Pitfall 9 — single txn)
+            stmt = select(RelationshipEvent).where(
+                RelationshipEvent.series_id == series_id,
+                RelationshipEvent.character_a_id == character_a_id,
+                RelationshipEvent.character_b_id == character_b_id,
+                RelationshipEvent.episode_marker == episode_marker,
+            )
+            existing = (await session.execute(stmt)).scalar_one_or_none()
+            if existing is not None:
+                return RelationshipEventDTO.model_validate(existing, from_attributes=True)
+
+            row = RelationshipEvent(
+                series_id=series_id,
+                character_a_id=character_a_id,
+                character_b_id=character_b_id,
+                episode_marker=episode_marker,
+                description=description,
+            )
+            session.add(row)
+            await session.flush()  # populate row.id before txn commits (Pitfall 7)
+        # expire_on_commit=False — attributes accessible post-commit (Pitfall 2)
+        return RelationshipEventDTO.model_validate(row, from_attributes=True)
+
+
 async def load_address_map(
     session_factory: async_sessionmaker[AsyncSession],
     series_id: int,
@@ -992,9 +1067,7 @@ async def merge_inferred(
     """
     # Validate source enum BEFORE opening any session (fail-fast, T-04-11)
     if source not in VALID_SOURCES:
-        raise ValueError(
-            f"source must be one of {VALID_SOURCES}, got {source!r}"
-        )
+        raise ValueError(f"source must be one of {VALID_SOURCES}, got {source!r}")
 
     # Determine model class, entity_type string, and DTO class by isinstance check
     if isinstance(entity_dto, CharacterDTO):
@@ -1025,9 +1098,7 @@ async def merge_inferred(
             # Fetch the row (to pass to _merge_inferred_in_session which will re-read it)
             row = await session.get(model_cls, entity_dto.id)
             if row is None:
-                raise ValueError(
-                    f"No {entity_type} row found with id={entity_dto.id}"
-                )
+                raise ValueError(f"No {entity_type} row found with id={entity_dto.id}")
 
             # Delegate to the private helper (runs inside the current transaction)
             result, raw_events = await _merge_inferred_in_session(

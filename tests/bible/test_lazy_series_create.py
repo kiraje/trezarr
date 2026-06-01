@@ -12,6 +12,7 @@ Verifies:
 asyncio_mode = "auto" is configured project-wide in pyproject.toml, so tests are
 `async def` without @pytest.mark.asyncio.
 """
+
 from __future__ import annotations
 
 import pytest
@@ -51,9 +52,7 @@ async def test_first_call_inserts_series_row(session_factory):
 
     # Verify exactly one row in the database
     async with session_factory() as session:
-        count = await session.scalar(
-            select(func.count()).select_from(Series)
-        )
+        count = await session.scalar(select(func.count()).select_from(Series))
     assert count == 1, f"Expected 1 series row after first creation, got {count}"
 
 
@@ -90,12 +89,8 @@ async def test_second_call_returns_same_row(session_factory):
 
     # Verify no duplicate row was created
     async with session_factory() as session:
-        count = await session.scalar(
-            select(func.count()).select_from(Series)
-        )
-    assert count == 1, (
-        f"Expected exactly 1 series row (idempotent get-or-create), got {count}"
-    )
+        count = await session.scalar(select(func.count()).select_from(Series))
+    assert count == 1, f"Expected exactly 1 series row (idempotent get-or-create), got {count}"
 
 
 async def test_different_arr_kind_creates_separate_rows(session_factory):
@@ -132,9 +127,7 @@ async def test_different_arr_kind_creates_separate_rows(session_factory):
     assert dto_radarr.arr_kind == "radarr"
 
     async with session_factory() as session:
-        count = await session.scalar(
-            select(func.count()).select_from(Series)
-        )
+        count = await session.scalar(select(func.count()).select_from(Series))
     assert count == 2, f"Expected 2 series rows (one per arr_kind), got {count}"
 
 
@@ -165,9 +158,7 @@ async def test_tvdb_tmdb_captured_at_creation(session_factory):
 
     # Reload and verify DB values
     async with session_factory() as session:
-        row = (await session.execute(
-            select(Series).where(Series.id == dto.id)
-        )).scalar_one()
+        row = (await session.execute(select(Series).where(Series.id == dto.id))).scalar_one()
     assert row.tvdb_id == 12345
     assert row.tmdb_id is None
 
@@ -198,16 +189,14 @@ async def test_get_or_create_uses_single_transaction(session_factory):
 
     # After the call, exactly one row must exist — the transaction completed atomically
     async with session_factory() as session:
-        count = await session.scalar(
-            select(func.count()).select_from(Series)
-        )
-        row = (await session.execute(
-            select(Series).where(Series.id == dto.id)
-        )).scalar_one()
+        count = await session.scalar(select(func.count()).select_from(Series))
+        row = (await session.execute(select(Series).where(Series.id == dto.id))).scalar_one()
 
     assert count == 1, "Single transaction must have committed exactly one row"
     assert row.arr_series_id == 77, "Row must have the correct arr_series_id after commit"
-    assert row.arr_metadata == {"year": 2023}, "arr_metadata must be persisted in the same transaction"
+    assert row.arr_metadata == {"year": 2023}, (
+        "arr_metadata must be persisted in the same transaction"
+    )
 
 
 async def test_arr_metadata_size_validation(session_factory):
@@ -233,3 +222,101 @@ async def test_arr_metadata_size_validation(session_factory):
             arr_series_id=1,
             arr_metadata_snapshot=oversized_metadata,
         )
+
+
+# ---------------------------------------------------------------------------
+# CR-01 regression tests — M1 MEDIUM: case/whitespace-insensitive character identity in store.py
+# ---------------------------------------------------------------------------
+
+
+async def test_upsert_character_strips_whitespace_does_not_fork(session_factory):
+    """upsert_character called with 'Minh' then ' Minh' (leading space) must NOT fork a second row (M1 fix).
+
+    After both calls, Character count for the series must be exactly 1.
+    The returned DTO from both calls must have the same id.
+    """
+    from sqlalchemy import select, func
+
+    from trezarr.bible.models import Character
+    from trezarr.bible.store import get_or_create_series, upsert_character
+
+    series_dto = await get_or_create_series(
+        session_factory,
+        arr_kind="sonarr",
+        arr_instance="default",
+        arr_series_id=901,
+        arr_metadata_snapshot={"title": "M1 Whitespace Test"},
+    )
+    series_id = series_dto.id
+
+    dto1, _ = await upsert_character(
+        session_factory,
+        series_id=series_id,
+        original_latin_name="Minh",
+        gender="male",
+        source="inference",
+    )
+    dto2, _ = await upsert_character(
+        session_factory,
+        series_id=series_id,
+        original_latin_name=" Minh",  # leading space — must match existing row
+        gender="male",
+        source="inference",
+    )
+
+    assert dto1.id == dto2.id, (
+        f"Whitespace variant ' Minh' must resolve to same Character row as 'Minh' "
+        f"(got dto1.id={dto1.id}, dto2.id={dto2.id})"
+    )
+
+    async with session_factory() as session:
+        count = await session.scalar(
+            select(func.count()).select_from(Character).where(Character.series_id == series_id)
+        )
+    assert count == 1, f"Whitespace variant must NOT fork a second Character row (got {count} rows)"
+
+
+async def test_upsert_character_casing_does_not_fork(session_factory):
+    """upsert_character called with 'MINH' then 'minh' must NOT fork a second row (M1 fix, CR-01).
+
+    After both calls, Character count for the series must be exactly 1.
+    """
+    from sqlalchemy import select, func
+
+    from trezarr.bible.models import Character
+    from trezarr.bible.store import get_or_create_series, upsert_character
+
+    series_dto = await get_or_create_series(
+        session_factory,
+        arr_kind="sonarr",
+        arr_instance="default",
+        arr_series_id=902,
+        arr_metadata_snapshot={"title": "M1 Casing Test"},
+    )
+    series_id = series_dto.id
+
+    dto1, _ = await upsert_character(
+        session_factory,
+        series_id=series_id,
+        original_latin_name="MINH",
+        gender="male",
+        source="inference",
+    )
+    dto2, _ = await upsert_character(
+        session_factory,
+        series_id=series_id,
+        original_latin_name="minh",  # lowercase variant — must match existing row
+        gender="male",
+        source="inference",
+    )
+
+    assert dto1.id == dto2.id, (
+        f"Casing variant 'minh' must resolve to same Character row as 'MINH' "
+        f"(got dto1.id={dto1.id}, dto2.id={dto2.id})"
+    )
+
+    async with session_factory() as session:
+        count = await session.scalar(
+            select(func.count()).select_from(Character).where(Character.series_id == series_id)
+        )
+    assert count == 1, f"Casing variant must NOT fork a second Character row (got {count} rows)"
