@@ -34,6 +34,12 @@ this consistency must work.
 - [x] Bible tracks a Term Dictionary — recurring proper nouns, titles, places, domain/fantasy/sci-fi jargon → fixed Vietnamese rendering — Validated in Phase 4 (BIBLE-02 `term_dictionary` table + `upsert_term`).
 - [x] The Series Bible is auto-built but **editable** — corrections lock and propagate forward — Validated in Phase 4 (BIBLE-04 per-field `locked_fields` JSON enforced by `merge_inferred`; "human lock > prior value > new inference" verified). Editor UI deferred to a later phase.
 
+**Pronoun engine + Bible auto-population (Phase 5):**
+- [x] Three-pass pipeline — Pass 1 analyzes the full file + media metadata into the Bible (barrier), Pass 2 infers speaker/addressee per line, Pass 3 translates applying the resolved pronoun pair — Validated in Phase 5 (ENG-04 analyze-before-translate ordering). LLM self-review pass is Phase 6 (ENG-05).
+- [x] Bible tracks a directed Address Map — per ordered character pair, self-term + address-term (e.g. `John→Mary: self=anh, address=em`), with reciprocal coherence — Validated in Phase 5 (BIBLE-03 `upsert_address_pair` + deterministic per-episode reconciliation).
+- [x] Bible Register/tone inferred from media metadata + dialogue and grounded into prompts — Validated in Phase 5 (BIBLE-05, populated via `merge_inferred`).
+- [x] Infer speaker and addressee per line from dialogue context and apply the correct pronoun pair; low-confidence → safe neutral/polite default rather than a wrong intimate pronoun — Validated in Phase 5 (PRON-01 attribution, PRON-02 application, PRON-03 safe fallback). Per-episode consistency is a deterministic reconciliation property, not an LLM gamble. (Live-LLM pronoun quality tracked in `05-HUMAN-UAT.md`.)
+
 ### Active
 
 <!-- Current scope. Building toward these. Hypotheses until shipped. -->
@@ -44,17 +50,13 @@ this consistency must work.
 
 **Translation engine:**
 - [ ] Use the user's own OpenAI-SDK-compatible LLM endpoint (configurable base URL / model / key)
-- [ ] Two-pass pipeline: (1) analyze the full subtitle file + media metadata to build/update the Series Bible, (2) translate line-by-line with context
-- [ ] LLM self-review pass — model critiques and corrects its own translation for consistency before the file is finalized
-- [ ] Translation context includes: surrounding subtitle lines, full-file glossary, media metadata (plot/cast/genre from Sonarr/Radarr/TMDB), and the prior-episode Series Bible
+- [ ] LLM self-review pass — model critiques and corrects its own translation for consistency before the file is finalized — Phase 6 (ENG-05). The analyze→attribute→translate pipeline it reviews shipped in Phase 5 (now Validated).
+- [ ] Translation context includes: surrounding subtitle lines, full-file glossary, media metadata (plot/cast/genre from Sonarr/Radarr/TMDB), and the prior-episode Series Bible (Pass-1 metadata + Bible grounding shipped in Phase 5)
 
-**Vietnamese consistency engine — the "Series Bible" (Phase 4 ships persistence/lock substrate; LLM auto-population is Phase 5):**
-- [ ] Bible tracks a directed Address Map — for each ordered character pair, the self-term and address-term (the pronoun engine, e.g. `John→Mary: self=anh, address=em`) — Phase 5 (BIBLE-03)
-- [ ] Bible tracks Register/tone (formal historical vs casual sitcom), grounded by media metadata — schema exists in Phase 4; LLM-driven inference ships in Phase 5 (BIBLE-05)
-- [ ] Track relationship **evolution** across episodes (enemies→lovers, strangers→friends) with episode markers so pronoun choices change correctly over the series — Phase 6
+**Vietnamese consistency engine — the "Series Bible" (persistence Phase 4, LLM auto-population + Address Map Phase 5):**
+- [ ] Track relationship **evolution** across episodes (enemies→lovers, strangers→friends) with episode markers so pronoun choices change correctly over the series — Phase 6 (BIBLE-07). Phase 5 writes a static-per-episode Address Map with `valid_from_episode` set; Phase 6 makes the active pair change over the series.
 
 **Smart attribution & source selection:**
-- [ ] Infer speaker and addressee per line from dialogue context + the Series Bible (subtitles rarely carry speaker labels), and apply the correct pronoun pair
 - [ ] Source-agnostic input, but **intelligently prioritized**: when multiple source subtitles exist for the same media, prefer the source language whose honorific/relational system best preserves the information Vietnamese needs (e.g. prefer a Chinese/Korean/Japanese source for East-Asian content over English, which flattens all relationships to "I/you"); fall back to whatever is available
 
 **Formats & delivery:**
@@ -95,11 +97,11 @@ this consistency must work.
 | Decision | Rationale | Outcome |
 |----------|-----------|---------|
 | Companion to Bazarr/*arr, not a replacement | Bazarr already downloads source subs seamlessly; Trezarr adds translation as the smart layer | — Pending |
-| Persistent, editable per-series "Series Bible" as the consistency core | Vietnamese needs relationship state to choose pronouns; it must persist across episodes and be human-correctable | — Pending |
-| LLM infers speaker/addressee from context | Subtitles rarely carry speaker labels; frontier-model inference is where "ultimate" quality comes from | — Pending |
+| Persistent, editable per-series "Series Bible" as the consistency core | Vietnamese needs relationship state to choose pronouns; it must persist across episodes and be human-correctable | ✓ Implemented (Phase 4 persistence/locks + Phase 5 LLM auto-population incl. directed Address Map). Editor UI deferred. |
+| LLM infers speaker/addressee from context | Subtitles rarely carry speaker labels; frontier-model inference is where "ultimate" quality comes from | ✓ Implemented (Phase 5) — Pass 2 attribution + deterministic reconciliation; one pronoun pair per ordered pair per episode, low-confidence → safe default |
 | Track relationship evolution across episodes | Pronoun pairs change as relationships change (enemies→lovers); static maps would drift wrong | — Pending |
 | Source-agnostic input, prioritized by relational fidelity to Vietnamese | English flattens relationships; the original East-Asian source preserves the info Vietnamese needs | — Pending |
-| Two-pass + LLM self-review pipeline | Full-file analysis enables consistency; a self-critique pass earns blind-trust automation | — Pending |
+| Two-pass + LLM self-review pipeline | Full-file analysis enables consistency; a self-critique pass earns blind-trust automation | ◑ Partial — three-pass analyze→attribute→translate shipped (Phase 5); LLM self-review pass is Phase 6 (ENG-05) |
 | User-provided OpenAI-compatible endpoint | User already has their own LLM endpoint; avoids hosting models and cost-management scope | ✓ Implemented (Phase 1) — AsyncOpenAI client wraps base_url/model/key with retries, an asyncio.Semaphore concurrency cap, and json_schema→json_object→text fallback, as an isolated tested leaf |
 | Dockerized service + web UI | Matches *arr-stack conventions self-hosters expect | — Pending |
 
@@ -121,7 +123,9 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-06-01 after Phase 4 (Series Bible Store & Schema) — see Phase 4 entry below for what shipped.
+*Last updated: 2026-06-02 after Phase 5 (Three-Pass Pronoun Engine) — see Phase 5 entry below for what shipped.
+
+*Phase 5 (Three-Pass Pronoun Engine, 2026-06-02): the translation pipeline became Bible-aware and shipped the core differentiator. `translate_file` now runs Pass 1 (full-file Bible analysis → merge characters/terms/register/directed Address Map, a barrier) → Pass 2 (per-cue speaker/addressee attribution with confidence) → deterministic reconciliation (one `(self_term, address_term)` per ordered pair per episode, reciprocal-coherent via a Vietnamese kinship table) → Pass 3 (numbered-line translation with per-line pronoun hints injected into the prompt; no mechanical substitution) → existing document gate → atomic write. New: `trezarr/bible/analyze.py`, `trezarr/translate/attribute.py`, `trezarr/translate/reconcile.py`, `upsert_address_pair`/`load_address_map` + `AddressMapDTO`, `Series.address_maps` relationship (no migration), `derive_episode_key` (parses SxxExx from filename), and Phase-5 `TrezarrSettings` fields. Low-confidence/unknown → safe neutral default (`tôi`/`bạn`); Tier-3-only endpoints degrade gracefully rather than quarantine; only Pass-1/2 logic failures quarantine. Single `asyncio.Semaphore` invariant and Pydantic-only store boundary preserved. Code review found + fixed 2 blockers (case-sensitive name resolution silently dropping pairs; a consistency test that didn't actually test consistency) and 7 warnings. 226 tests GREEN, 0 xfailed. Verified 4/4 must-haves (ENG-04, BIBLE-03, PRON-01/02/03). 2 live-LLM items pending in `05-HUMAN-UAT.md` (real-episode pronoun quality; the enable_pass1_analysis/enable_attribution toggle in production).*
 
 *Phase 2 (Mechanical Translation Core + Validation Gate, 2026-05-31): `translate_file()` batches a parsed source (scene-gap/token-aware), translates via a single LLM pass with surrounding-line context, enforces a hard 7-check pre-write validation gate (failing files quarantined, never written), and writes an atomic UTF-8 `Show.S01E01.vi.srt` sidecar with idempotent re-run via a content-hash ledger (ENG-02, ENG-03, ENG-06, ENG-07, FMT-05 — verified 4/4).*
 
