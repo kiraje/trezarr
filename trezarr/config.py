@@ -152,6 +152,21 @@ class TrezarrSettings(BaseSettings):
     self_review_context_lines_k: int = 3            # context K for review batches (translate default)
     self_review_max_cues_per_batch: int = 20        # smaller batches → fewer tokens per review call
 
+    # ── Phase 7: Service runtime (D-76, D-77) ──────────────────────────────────
+    web_host: str = "0.0.0.0"
+    web_port: int = 6868
+    poll_interval_seconds: int = 900                # D-76: 15-minute default poll interval
+    enable_webhooks: bool = True                    # D-77: toggle webhook receiver
+    enable_watchfiles: bool = False                 # D-65: default-off; deferred within phase
+    worker_max_concurrent_series: int = 2           # D-68: distinct series in parallel
+
+    # ── Phase 7: Bazarr connection (D-76) ──────────────────────────────────────
+    # Connection + webhook ONLY. Inventory reads are Phase 10 (INTG-02).
+    bazarr_host: str = ""
+    bazarr_port: int = 6767
+    bazarr_api_key: SecretStr = SecretStr("")       # NEVER logged; SecretStr masks in repr/str
+    bazarr_enabled: bool = False
+
     def __init__(self, _yaml_file: str | None = None, **data: Any) -> None:
         """Create settings.
 

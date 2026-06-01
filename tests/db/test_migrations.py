@@ -44,7 +44,8 @@ async def test_baseline_creates_all_seven_tables(db_engine):
         "series", "character", "term_dictionary",
         "address_map", "relationship_event",
         "bible_event", "processed_file",
-        "alembic_version",  # Alembic bookkeeping table
+        "job", "job_log",              # Phase 7 / 0002 migration
+        "alembic_version",             # Alembic bookkeeping table
     }
     assert expected == tables, f"Expected tables {expected}, got {tables}"
 
@@ -214,11 +215,16 @@ async def test_indexes_exist_in_schema(db_engine):
     )
 
 
-@pytest.mark.xfail(raises=(AssertionError,), reason="Alembic 0002 migration not yet authored — Plan 07-02")
 async def test_0002_migration_creates_job_tables(db_engine):
     """After run_migrations_to_head, 'job' and 'job_log' tables must exist in sqlite_master (D-69).
 
     Proves that the Alembic 0002 migration (job queue schema) runs cleanly on top
     of the 0001 baseline and creates the required job infrastructure tables.
     """
-    assert False  # Stub: xfail until Plan 07-02 authors the 0002 migration
+    async with db_engine.connect() as conn:
+        result = await conn.execute(
+            text("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")
+        )
+        tables = {row[0] for row in result}
+    assert "job" in tables, f"Expected 'job' table; got tables: {tables}"
+    assert "job_log" in tables, f"Expected 'job_log' table; got tables: {tables}"

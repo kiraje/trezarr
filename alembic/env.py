@@ -24,6 +24,7 @@ from trezarr.db.base import Base
 from trezarr.bible import models  # noqa: F401 — LIVE import (Pitfall 8 in 04-RESEARCH.md)
 # The import above causes trezarr.bible.models to register all 7 SQLAlchemy
 # model classes into Base.metadata so autogenerate can compare them.
+from trezarr.jobs import models as _job_models  # noqa: F401 — registers Job/JobLog into Base.metadata (Pitfall F)
 
 config = context.config
 
