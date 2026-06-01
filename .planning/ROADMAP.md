@@ -198,8 +198,28 @@ Decimal phases appear between their surrounding integers in numeric order.
   3. The UI shows a Queue (in-flight), History (completed/failed with per-item reason), and per-job logs, and a failed/rejected item can be retried from the UI
   4. Trezarr monitors for newly added media / new source subs on an ongoing basis (polling with webhook-trigger support), and resumes safely after a crash or restart without losing or duplicating work (per-series serialized, checkpointed)
 
-**Plans**: TBD
-**UI hint**: yes
+**Plans**: 6 plans
+
+**Wave 1**
+
+- [ ] 07-01-PLAN.md — Wave 1: RED test scaffold — tests/web/ package (8 test files) + migration stub for Alembic 0002 (SVC-01..04, AUTO-02, AUTO-05)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [ ] 07-02-PLAN.md — Wave 2: Service spine — job/job_log models + Alembic 0002 migration + Phase-7 TrezarrSettings + FastAPI lifespan (CR-01) + worker loop (per-series asyncio.Lock + crash-resume reconcile) + trezarr serve CLI (SVC-01, AUTO-05)
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
+- [ ] 07-03-PLAN.md — Wave 3A: Continuous monitoring — APScheduler interval poll + POST /webhook enqueue-only handler (AUTO-02)
+- [ ] 07-04-PLAN.md — Wave 3B: Config API — config read/write + secret masking + POST /api/test/{sonarr|radarr|bazarr|llm} connection tests (SVC-02)
+
+**Wave 5** *(blocked on Wave 3 completion)*
+
+- [ ] 07-05-PLAN.md — Wave 5: Queue/History/Logs REST API + per-job log capture + React 19 + Vite 7 SPA (Settings/Queue/History/Logs + Retry) (SVC-03, SVC-04)
+
+**Wave 6** *(blocked on Wave 5 completion)*
+
+- [ ] 07-06-PLAN.md — Wave 6: Docker multi-stage packaging (PUID/PGID + /config volume + port 6868) + config.yaml.example Phase-7 fields (SVC-01 completion)
 
 ### Phase 8: Editable Series Bible UI
 
@@ -260,7 +280,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 4. Series Bible Store & Schema | 4/4 | Complete   | 2026-06-01 |
 | 5. Three-Pass Pronoun Engine | 6/6 | Complete   | 2026-06-01 |
 | 6. Relationship Evolution + Self-Review | 3/3 | Complete    | 2026-06-01 |
-| 7. Web UI & Service Hardening | 0/TBD | Not started | - |
+| 7. Web UI & Service Hardening | 0/6 | Not started | - |
 | 8. Editable Series Bible UI | 0/TBD | Not started | - |
 | 9. Multi-Format — ASS/SSA + VTT | 0/TBD | Not started | - |
 | 10. Source Selection & Per-Series Overrides | 0/TBD | Not started | - |
