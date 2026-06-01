@@ -139,7 +139,7 @@ Decimal phases appear between their surrounding integers in numeric order.
   3. The same character pair keeps the same pronoun pair across an episode (no flips inside an exchange; reciprocal directions consistent)
   4. When attribution is low-confidence, the engine falls back to a safe register rather than risk a wrong intimate pronoun
 
-**Plans:** 3/6 plans executed
+**Plans:** 4/6 plans executed
 
 **Wave 0**
 
@@ -152,7 +152,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-- [ ] 05-04-PLAN.md — Wave 2A: Pass 1 Bible analysis — analyze.py (BibleAnalysis model + analyze_file + merge_bible_analysis + BibleAnalysisError) (ENG-04, BIBLE-03)
+- [x] 05-04-PLAN.md — Wave 2A: Pass 1 Bible analysis — analyze.py (BibleAnalysis model + analyze_file + merge_bible_analysis + BibleAnalysisError) (ENG-04, BIBLE-03)
 - [ ] 05-05-PLAN.md — Wave 2B: Pass 2 attribution — attribute.py (LineAttribution + attribute_batch + Tier-3 degradation) (PRON-01)
 
 **Wave 3** *(blocked on Wave 2 completion)*
@@ -246,7 +246,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 2. Mechanical Translation Core + Validation Gate | 3/3 | Complete    | 2026-05-31 |
 | 3. \*arr Integration + First Vertical Slice | 5/5 | Awaiting Verification |  |
 | 4. Series Bible Store & Schema | 4/4 | Complete   | 2026-06-01 |
-| 5. Three-Pass Pronoun Engine | 3/6 | In Progress|  |
+| 5. Three-Pass Pronoun Engine | 4/6 | In Progress|  |
 | 6. Relationship Evolution + Self-Review | 0/TBD | Not started | - |
 | 7. Web UI & Service Hardening | 0/TBD | Not started | - |
 | 8. Editable Series Bible UI | 0/TBD | Not started | - |
