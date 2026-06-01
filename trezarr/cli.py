@@ -198,7 +198,7 @@ async def _run_once(config_path: str | None) -> int:
                 exc_info=True,
             )
 
-        return await _run_pipeline_steps(settings, ledger, media_roots)
+        return await _run_pipeline_steps(settings, ledger, media_roots, session_factory)
     finally:
         # CR-01: ALWAYS dispose the AsyncEngine before this coroutine returns —
         # otherwise aiosqlite worker threads outlive the event loop and the
@@ -210,14 +210,17 @@ async def _run_pipeline_steps(
     settings: TrezarrSettings,
     ledger: LedgerSQLA,
     media_roots: list,
+    session_factory=None,
 ) -> int:
     """Steps 4-8 of _run_once factored out so cli's try/finally around engine
     dispose stays compact and readable.
 
     Args:
-        settings:     Loaded TrezarrSettings.
-        ledger:       LedgerSQLA bound to the live session_factory.
-        media_roots:  Path-traversal guard root list (D-29).
+        settings:        Loaded TrezarrSettings.
+        ledger:          LedgerSQLA bound to the live session_factory.
+        media_roots:     Path-traversal guard root list (D-29).
+        session_factory: Async session factory for Phase-5 Bible-aware translation
+                         (D-48). None for backward compat (mechanical translation only).
 
     Returns:
         int exit code (0 on full success; 1 on any per-item failure /
@@ -291,7 +294,14 @@ async def _run_pipeline_steps(
     for eligible_item in eligible:
         source_sub_path = eligible_item.source_sub_path
         try:
-            result = await translate_file(source_sub_path, settings, llm_client, ledger)
+            result = await translate_file(
+                source_sub_path,
+                settings,
+                llm_client,
+                ledger,
+                eligible_item=eligible_item,
+                session_factory=session_factory,
+            )
 
             if result.status == "done":
                 if result.output_path is None:
