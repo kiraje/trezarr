@@ -29,7 +29,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class SeriesDTO(BaseModel):
@@ -42,12 +42,23 @@ class SeriesDTO(BaseModel):
         arr_series_id:   Integer series ID as returned by pyarr (D-33).
         tvdb_id:         TVDB ID at series creation time (denormalized, nullable, D-33).
         tmdb_id:         TMDB ID at series creation time (denormalized, nullable, D-33).
-        register:        Series tone/register string; None until Phase 5 sets it (D-35).
+        register_value:  Series tone/register string; None until Phase 5 sets it (D-35).
+                         CR-02: the Python attribute is named ``register_value`` because
+                         a field literally named ``register`` shadows Pydantic v2's
+                         deprecated ``BaseModel.register`` classmethod, producing a
+                         UserWarning at every class load that future Pydantic releases
+                         may upgrade to a hard error. The alias keeps the serialized
+                         JSON key and SQLA-bridge column name as ``register`` for
+                         backward compatibility.
         arr_metadata:    JSON snapshot of Phase-3 discovery payload (D-35).
         locked_fields:   JSON list of field names locked by the user (D-34).
     """
 
-    model_config = ConfigDict(from_attributes=True)
+    # CR-02: populate_by_name=True so model_validate(row, from_attributes=True)
+    # can accept either the Python attribute name (``register_value``) OR the
+    # alias (``register``) when loading from the SQLA row — whose attribute is
+    # named ``register``.
+    model_config = ConfigDict(from_attributes=True, populate_by_name=True)
 
     id: int
     arr_kind: str
@@ -55,7 +66,7 @@ class SeriesDTO(BaseModel):
     arr_series_id: int
     tvdb_id: int | None = None
     tmdb_id: int | None = None
-    register: str | None = None
+    register_value: str | None = Field(default=None, alias="register")
     arr_metadata: dict[str, Any] = {}
     locked_fields: list[str] = []
 
@@ -149,20 +160,25 @@ class SeriesBibleDTO(BaseModel):
         arr_kind:        Source *arr service: "sonarr" or "radarr".
         arr_instance:    Instance name (default "default").
         arr_series_id:   Integer series ID as returned by pyarr.
-        register:        Series tone/register; None until Phase 5 sets via merge_inferred.
+        register_value:  Series tone/register; None until Phase 5 sets via merge_inferred.
+                         CR-02: see SeriesDTO.register_value — same shadowing fix
+                         applies here; alias ``register`` keeps JSON / SQLA bridge
+                         backward compatible.
         arr_metadata:    JSON snapshot of Phase-3 discovery payload (D-35).
         characters:      List of CharacterDTOs for this series (eagerly loaded).
         terms:           List of TermDTOs for this series (eagerly loaded).
         locked_fields:   JSON list of field names locked by the user (D-34).
     """
 
-    model_config = ConfigDict(from_attributes=True)
+    # CR-02: populate_by_name=True so explicit-keyword construction
+    # ``SeriesBibleDTO(register_value=..., ...)`` works alongside the alias.
+    model_config = ConfigDict(from_attributes=True, populate_by_name=True)
 
     id: int
     arr_kind: str
     arr_instance: str
     arr_series_id: int
-    register: str | None = None
+    register_value: str | None = Field(default=None, alias="register")
     arr_metadata: dict[str, Any] = {}
     characters: list[CharacterDTO] = []
     terms: list[TermDTO] = []

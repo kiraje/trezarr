@@ -75,9 +75,12 @@ async def test_register_starts_null(session_factory):
 
     bible_dto = await load_series_bible(session_factory, dto.id)
 
-    assert bible_dto.register is None, (
+    # CR-02: the Python attribute on the DTO is ``register_value`` (alias
+    # ``register``) to avoid shadowing Pydantic v2's deprecated
+    # ``BaseModel.register`` classmethod.
+    assert bible_dto.register_value is None, (
         f"register must be None after Phase-4 creation (Phase 5 sets it via merge_inferred). "
-        f"Got: {bible_dto.register!r}"
+        f"Got: {bible_dto.register_value!r}"
     )
 
 

@@ -82,7 +82,10 @@ async def test_series_dto_round_trips_from_sqla_row(session_factory):
     assert dto.tvdb_id == 999
     assert dto.tmdb_id is None
     assert dto.arr_metadata == {"genres": ["drama"], "year": 2021}
-    assert dto.register is None
+    # CR-02: the Python attribute is ``register_value`` (alias ``register``)
+    # so the DTO field does not shadow Pydantic v2's deprecated
+    # ``BaseModel.register`` classmethod.
+    assert dto.register_value is None
     assert dto.locked_fields == []
 
     # Verify the model carries from_attributes=True

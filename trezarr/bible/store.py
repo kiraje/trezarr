@@ -192,12 +192,16 @@ async def load_series_bible(
         )
         row = (await session.execute(stmt)).scalar_one()
 
+        # CR-02: SeriesBibleDTO.register_value carries alias="register"; pass
+        # the SQLA row attribute (still named `register` on the model) under
+        # the Python field name so populate_by_name=True can resolve it without
+        # going through the alias.
         return SeriesBibleDTO(
             id=row.id,
             arr_kind=row.arr_kind,
             arr_instance=row.arr_instance,
             arr_series_id=row.arr_series_id,
-            register=row.register,
+            register_value=row.register,
             arr_metadata=row.arr_metadata if row.arr_metadata is not None else {},
             locked_fields=row.locked_fields if row.locked_fields is not None else [],
             characters=[
@@ -290,15 +294,21 @@ async def _merge_inferred_in_session(
     # row state, never from the caller's potentially-stale DTO.
     fresh_row = await session.get(type(row), row.id)
 
-    # Build a fresh snapshot DTO from the re-read row for compute_field_changes
-    fresh_snapshot = dto_cls.model_validate(fresh_row, from_attributes=True)
-
-    # Derive locked fields and compute changes from the FRESH snapshot
-    locked = get_locked_fields(fresh_snapshot)
-    changes = compute_field_changes(fresh_snapshot, inferred, locked)
+    # CR-02: compute_field_changes runs against the SQLA row itself, not a
+    # Pydantic DTO snapshot. The SQLA model's Python attribute names match
+    # the SQLA column names 1:1 (e.g. ``Series.register``), so the inferred
+    # dict's keys (``{"register": ...}``) resolve under getattr without going
+    # through Pydantic's alias machinery — which is necessary because the
+    # DTO field for ``register`` is now ``register_value`` with
+    # ``alias="register"`` (CR-02 shadowing fix). Using the SQLA row keeps
+    # the merge contract stable and avoids the parent BaseModel.register
+    # method being silently returned by ``getattr(dto, "register", None)``.
+    locked = get_locked_fields(fresh_row)
+    changes = compute_field_changes(fresh_row, inferred, locked)
 
     if not changes:
-        # No-op: return the fresh snapshot with an empty events list
+        # No-op: return a fresh DTO snapshot built from the SQLA row.
+        fresh_snapshot = dto_cls.model_validate(fresh_row, from_attributes=True)
         return fresh_snapshot, []
 
     # Apply changes and construct BibleEvent rows

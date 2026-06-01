@@ -39,7 +39,10 @@ async def test_first_call_inserts_series_row(session_factory):
     assert dto.arr_kind == "sonarr"
     assert dto.arr_instance == "default"
     assert dto.arr_series_id == 42
-    assert dto.register is None, (
+    # CR-02: the Python attribute on the DTO is ``register_value`` (alias
+    # ``register``) to avoid shadowing Pydantic v2's deprecated
+    # ``BaseModel.register`` classmethod.
+    assert dto.register_value is None, (
         "register must be NULL after Phase-4 creation — Phase 5 sets it via merge_inferred"
     )
     assert dto.arr_metadata == {"genres": ["drama"], "year": 2020}
