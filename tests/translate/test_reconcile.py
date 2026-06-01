@@ -552,6 +552,144 @@ async def test_transition_authorizes_terms_change(session_factory):  # formerly 
     )
 
 
+async def test_transition_adopts_attribution_confirmed_terms(session_factory):
+    """CR-02 + WR-03: transition with no suggested terms adopts this episode's confident attribution.
+
+    Arrange: a relationship_event with NO suggested terms + a high-confidence attribution
+             for the pair + an existing address_map entry with confirmed terms.
+    Act: reconcile_attributions.
+    Assert: the pair adopts the existing address_map entry terms (this episode's confident
+            inference), NOT a safe-default — D-54 step 2 of the fallback order.
+    """
+    from trezarr.translate.reconcile import reconcile_attributions
+
+    settings = _make_settings(threshold="medium")
+
+    series_id = await _create_series(session_factory, arr_series_id=304)
+    spk_id, addr_id = await _create_characters(
+        session_factory,
+        series_id,
+        spk_name="TranA",
+        spk_gender="male",
+        addr_name="TranB",
+        addr_gender="female",
+    )
+
+    # A relationship_event with NO suggested terms — forces path 2 (attribution-confirmed)
+    event_no_suggest = _make_relationship_event(
+        id=20,
+        series_id=series_id,
+        char_a_id=spk_id,
+        char_b_id=addr_id,
+        episode_marker="S01E09",
+        suggested_self_term=None,     # no suggested terms
+        suggested_address_term=None,  # no suggested terms
+    )
+
+    # Existing address_map entry with confirmed terms (this episode's confident inference)
+    confirmed_self = "anh"
+    confirmed_addr = "em"
+
+    bible = _make_bible(
+        series_id=series_id,
+        characters=[
+            _make_character(spk_id, "TranA", "male"),
+            _make_character(addr_id, "TranB", "female"),
+        ],
+        address_map=[
+            _make_address_map_entry(20, series_id, spk_id, addr_id, confirmed_self, confirmed_addr),
+        ],
+        relationship_events=[event_no_suggest],
+    )
+
+    # HIGH-confidence attribution — survivors exist for this pair
+    attributions = [_make_attribution("TranA", "TranB", "high")]
+
+    resolved = await reconcile_attributions(
+        flat_attributions=attributions,
+        bible=bible,
+        session_factory=session_factory,
+        series_id=series_id,
+        episode_key="S01E09",
+        settings=settings,
+    )
+
+    pair_result = resolved.get((spk_id, addr_id))
+    assert pair_result is not None, "Expected resolved entry for pair with transition"
+    # Must use confident existing terms (path 2), NOT safe-default
+    assert pair_result == (confirmed_self, confirmed_addr), (
+        f"Transition with no suggested terms + confident attribution must adopt "
+        f"existing terms {(confirmed_self, confirmed_addr)!r}, got {pair_result!r}"
+    )
+
+
+async def test_transition_no_survivors_falls_to_safe_default(session_factory):
+    """CR-02 fallback: transition with no suggested terms + no survivors → safe default.
+
+    Arrange: a relationship_event with NO suggested terms + LOW-confidence attribution
+             (no survivors above threshold) + an existing address_map entry.
+    Act: reconcile_attributions.
+    Assert: the pair falls back to safe default — D-54 step 3.
+    """
+    from trezarr.translate.reconcile import reconcile_attributions, get_safe_default
+
+    # HIGH threshold — "low" attribution won't be a survivor
+    settings = _make_settings(threshold="high")
+
+    series_id = await _create_series(session_factory, arr_series_id=305)
+    spk_id, addr_id = await _create_characters(
+        session_factory,
+        series_id,
+        spk_name="TranC",
+        spk_gender=None,
+        addr_name="TranD",
+        addr_gender=None,
+    )
+
+    # A relationship_event with NO suggested terms
+    event_no_suggest = _make_relationship_event(
+        id=21,
+        series_id=series_id,
+        char_a_id=spk_id,
+        char_b_id=addr_id,
+        episode_marker="S01E10",
+        suggested_self_term=None,
+        suggested_address_term=None,
+    )
+
+    bible = _make_bible(
+        series_id=series_id,
+        characters=[
+            _make_character(spk_id, "TranC", None),
+            _make_character(addr_id, "TranD", None),
+        ],
+        address_map=[
+            _make_address_map_entry(21, series_id, spk_id, addr_id, "anh", "em"),
+        ],
+        relationship_events=[event_no_suggest],
+    )
+
+    # LOW confidence — below "high" threshold → no survivors
+    attributions = [_make_attribution("TranC", "TranD", "low")]
+
+    resolved = await reconcile_attributions(
+        flat_attributions=attributions,
+        bible=bible,
+        session_factory=session_factory,
+        series_id=series_id,
+        episode_key="S01E10",
+        settings=settings,
+    )
+
+    pair_result = resolved.get((spk_id, addr_id))
+    assert pair_result is not None, "Expected a resolved entry (safe default)"
+    expected = get_safe_default(None, settings)
+    assert pair_result == expected, (
+        f"Transition with no suggested terms + no survivors must fall back to safe default "
+        f"{expected!r}, got {pair_result!r}"
+    )
+
+
 async def test_lock_beats_transition(session_factory):  # formerly @pytest.mark.xfail — promoted to passing in Phase 6
     """BIBLE-07-D: reconcile_attributions — lock beats transition (D-34/D-54).
 

@@ -147,18 +147,40 @@ def _find_transition_for_pair(
 
 def _derive_transition_terms(
     transition: "RelationshipEventDTO",
-    resolved_map: dict,
+    survivors: "list",
+    existing: "AddressMapDTO | None",
     addr_id: int,
     id_to_gender: dict,
     settings: "TrezarrSettings",
 ) -> tuple[str, str]:
-    """Derive (self_term, address_term) for a transition (D-54 preferred order):
-      1. LLM-suggested terms from transition (suggested_self_term / suggested_address_term)
-      2. get_safe_default fallback
+    """Derive (self_term, address_term) for a transition (D-54 three-step order, CR-02+WR-03):
+
+    1. LLM-suggested terms from transition (suggested_self_term / suggested_address_term),
+       if BOTH are present — in-memory same-pass suggestion from RelationshipEventInference.
+    2. ELSE if this episode produced high-confidence survivors AND the existing AddressMapDTO
+       has non-None self_term/address_term: use the existing entry's terms — this episode's
+       Pass-1-refreshed confident inference for the ordered pair.
+    3. ELSE get_safe_default — safe fallback when no confident attribution exists.
+
+    Note: WR-03 directional concern is resolved because terms come from the per-(spk_id,
+    addr_id) directional resolution (existing entry or survivors for THIS ordered pair),
+    not from the unordered event's stored suggested terms alone.
+
+    Args:
+        transition:  The RelationshipEventDTO that authorized this change.
+        survivors:   High-confidence LineAttribution objects for this (spk_id, addr_id) pair.
+        existing:    The current AddressMapDTO for this pair (None if no prior entry).
+        addr_id:     Addressee character ID (for gender-based safe default).
+        id_to_gender: char_id → gender lookup.
+        settings:    TrezarrSettings (pronoun_safe_default).
     """
+    # Step 1: LLM-suggested terms from transition (in-memory, same-pass)
     if transition.suggested_self_term and transition.suggested_address_term:
         return (transition.suggested_self_term, transition.suggested_address_term)
-    # Fallback: use get_safe_default
+    # Step 2: This episode's confident attribution for the ordered pair
+    if survivors and existing is not None and existing.self_term and existing.address_term:
+        return (existing.self_term, existing.address_term)
+    # Step 3: Safe default
     addr_gender = id_to_gender.get(addr_id)
     return get_safe_default(addr_gender, settings)
 
@@ -254,6 +276,11 @@ async def reconcile_attributions(
                     resolved_map[pair] = (st, at)
                     continue  # lock wins — skip transition + confidence gate
 
+        # (c) Compute survivors BEFORE transition check so the transition branch can use them.
+        # CR-02/WR-03: _derive_transition_terms (step 2 fallback) needs survivors to determine
+        # whether this episode produced confident attributions for the ordered pair.
+        survivors = [a for a in attributions if _confidence_value(a.confidence) >= threshold_val]
+
         # [Phase 6] TRANSITION CHECK — logged event authorizes term change (D-54).
         # Precedence: human lock > logged transition (this episode) > carried-forward > safe-default.
         if getattr(settings, "enable_relationship_events", True):
@@ -263,7 +290,7 @@ async def reconcile_attributions(
             )
             if transition is not None:
                 new_self, new_addr = _derive_transition_terms(
-                    transition, resolved_map, addr_id, id_to_gender, settings
+                    transition, survivors, existing, addr_id, id_to_gender, settings
                 )
                 resolved_map[pair] = (new_self, new_addr)
                 await upsert_address_pair(
@@ -282,9 +309,6 @@ async def reconcile_attributions(
                     spk_id, addr_id, new_self, new_addr, episode_key,
                 )
                 continue  # transition handled — skip confidence gate
-
-        # (c) Apply threshold gate
-        survivors = [a for a in attributions if _confidence_value(a.confidence) >= threshold_val]
 
         if survivors:
             # Pair is "confirmed" — use existing Address Map entry if available;
