@@ -750,7 +750,7 @@ self_review_max_cues_per_batch: int = 20  # smaller batches for review (fewer to
 
 ---
 
-## Open Questions
+## Open Questions (RESOLVED)
 
 1. **Module placement for `_review_batch`**
    - What we know: `engine.py` already imports from `sentinel.py`, `batching.py`, `validate.py`, `analyze.py`, `reconcile.py`; `parse_numbered_response` lives in `engine.py`.
