@@ -292,3 +292,27 @@ async def test_translate_file_skip_unchanged(settings_factory, tmp_path):
     assert result.status == "skipped", (
         f"Expected TranslationResult.status='skipped' for unchanged source, got {result.status!r}"
     )
+
+
+def test_pronoun_hint_in_prompt():
+    """Pronoun hint injected into [LINES TO TRANSLATE] when pronoun_hints provided (D-46, PRON-02).
+
+    Assert:
+    - build_translate_prompt with pronoun_hints={1: ("anh", "em")} produces a prompt
+      containing "(speaker says: anh; addresses as: em)" for line [1]
+    - Line [2] (no hint) renders as "[2] <text>" without a hint prefix
+    """
+    from trezarr.translate.engine import build_translate_prompt
+
+    prompt = build_translate_prompt(
+        ["Hello", "World"],
+        [],
+        [],
+        pronoun_hints={1: ("anh", "em")},
+    )
+    assert "(speaker says: anh; addresses as: em)" in prompt, (
+        "Expected '(speaker says: anh; addresses as: em)' in prompt for hinted line"
+    )
+    assert "[2] World" in prompt, (
+        "Unhinted line [2] should render without hint prefix"
+    )

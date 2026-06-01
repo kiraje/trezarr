@@ -48,8 +48,49 @@ from trezarr.translate.validate import GateError, validate_subdoc
 
 if TYPE_CHECKING:
     from trezarr.config import TrezarrSettings
+    from trezarr.discover.scan import EligibleItem
+    from sqlalchemy.ext.asyncio import async_sessionmaker, AsyncSession
 
 logger = logging.getLogger(__name__)
+
+
+# ── Episode key derivation ─────────────────────────────────────────────────────
+
+def derive_episode_key(media_item: object, source_sub_path: "str | Path | None" = None) -> str:
+    """Derive a stable episode identifier from a MediaItem and subtitle path (D-49, Pitfall F).
+
+    For episode items: parses SxxExx from the subtitle filename stem.
+    For movie items: slugifies the title into "movie-<slug>".
+
+    CRITICAL (Pitfall F): Do NOT access media_item.episode_number — that field
+    does not exist on MediaItem. Episode number must be parsed from source_sub_path stem.
+
+    Args:
+        media_item:      A MediaItem-like object with source_type, season_number, title.
+        source_sub_path: Path to the source subtitle file (used to parse episode number).
+
+    Returns:
+        A stable string key like "S01E03" or "movie-some-title".
+    """
+    source_type = getattr(media_item, "source_type", "episode")
+
+    if source_type == "episode":
+        # Parse SxxExx from subtitle filename stem (Pitfall F: no episode_number field)
+        if source_sub_path is not None:
+            stem = Path(source_sub_path).stem
+            m = re.search(r'S(\d{2,})E(\d{2,})', stem, re.IGNORECASE)
+            if m:
+                return f"S{m.group(1).upper()}E{m.group(2).upper()}"
+        # Fallback: use season_number if parse fails
+        season = getattr(media_item, "season_number", None) or 0
+        return f"S{season:02d}E00"
+    else:
+        # Movie: slug from title
+        title = getattr(media_item, "title", None) or "movie"
+        slug = title.lower()[:20].replace(" ", "-")
+        # Remove characters unsafe for a filesystem key
+        slug = re.sub(r'[^a-z0-9\-]', '', slug)
+        return f"movie-{slug}"
 
 
 # ── Exception hierarchy ────────────────────────────────────────────────────────
@@ -95,8 +136,9 @@ def build_translate_prompt(
     context_before: list[str],
     context_after: list[str],
     source_lang: str = "English",
+    pronoun_hints: "dict[int, tuple[str, str]] | None" = None,
 ) -> str:
-    """Build the numbered-line translation prompt (D-13, D-15, ENG-03).
+    """Build the numbered-line translation prompt (D-13, D-15, ENG-03, D-46).
 
     Structure:
       - Optional [CONTEXT] block before the lines to translate (context_before)
@@ -108,6 +150,11 @@ def build_translate_prompt(
         context_before:  Read-only context lines preceding this batch.
         context_after:   Read-only context lines following this batch.
         source_lang:     Human-readable source language name (default "English").
+        pronoun_hints:   Optional dict mapping 1-based line index to
+                         (self_term, address_term) pronoun pair (D-46).
+                         When provided, hinted lines render as:
+                         "[N] (speaker says: X; addresses as: Y) <text>"
+                         Unhinted lines render as "[N] <text>" (unchanged).
 
     Returns:
         A prompt string ready to send to LLMClient.call() as a user message.
@@ -129,7 +176,11 @@ def build_translate_prompt(
 
     parts.append("[LINES TO TRANSLATE]")
     for i, text in enumerate(batch_texts, 1):
-        parts.append(f"[{i}] {text.strip()}")
+        if pronoun_hints and i in pronoun_hints:
+            self_t, addr_t = pronoun_hints[i]
+            parts.append(f"[{i}] (speaker says: {self_t}; addresses as: {addr_t}) {text.strip()}")
+        else:
+            parts.append(f"[{i}] {text.strip()}")
 
     if context_after:
         parts.append("")
@@ -223,6 +274,7 @@ def _make_translate_batch_fn(settings: "TrezarrSettings"):
         batch: Batch,
         llm_client: LLMClient,
         _settings: "TrezarrSettings",
+        pronoun_hints: "dict[int, tuple[str, str]] | None" = None,
     ) -> list[str]:
         """Translate a single batch, retrying on BatchValidationError only (D-18).
 
@@ -237,9 +289,10 @@ def _make_translate_batch_fn(settings: "TrezarrSettings"):
         transport-level retries (D-07, Pitfall 5).
 
         Args:
-            batch:      The Batch to translate.
-            llm_client: The LLM client to call.
-            _settings:  Settings (passed through for future use; not used in body).
+            batch:          The Batch to translate.
+            llm_client:     The LLM client to call.
+            _settings:      Settings (passed through for future use; not used in body).
+            pronoun_hints:  Optional {1-based line index → (self_term, address_term)} (D-46).
 
         Returns:
             List of translated text strings (one per cue in batch.cues).
@@ -255,10 +308,13 @@ def _make_translate_batch_fn(settings: "TrezarrSettings"):
             cleaned_texts.append(cleaned)
             sentinel_maps.append(smap)
 
-        # Step 2: Build the numbered-line prompt
+        # Step 2: Build the numbered-line prompt (D-46: forward pronoun_hints)
         context_before_texts = [c.text for c in batch.context_before]
         context_after_texts = [c.text for c in batch.context_after]
-        prompt = build_translate_prompt(cleaned_texts, context_before_texts, context_after_texts)
+        prompt = build_translate_prompt(
+            cleaned_texts, context_before_texts, context_after_texts,
+            pronoun_hints=pronoun_hints,
+        )
 
         # Step 3: Call LLMClient (the sole concurrency gate is inside LLMClient._semaphore)
         raw_response = await llm_client.call([{"role": "user", "content": prompt}])
@@ -289,6 +345,7 @@ async def _translate_batch(
     batch: Batch,
     llm_client: LLMClient,
     settings: "TrezarrSettings",
+    pronoun_hints: "dict[int, tuple[str, str]] | None" = None,
 ) -> list[str]:
     """Public entry point for translating a single batch with retry.
 
@@ -296,9 +353,10 @@ async def _translate_batch(
     calls it.  Exposed as a module-level name for testing (test_engine.py).
 
     Args:
-        batch:      The Batch to translate.
-        llm_client: The LLM client to call.
-        settings:   Settings supplying translate_batch_retry_attempts.
+        batch:          The Batch to translate.
+        llm_client:     The LLM client to call.
+        settings:       Settings supplying translate_batch_retry_attempts.
+        pronoun_hints:  Optional {1-based line index → (self_term, address_term)} (D-46).
 
     Returns:
         List of translated text strings.
@@ -307,7 +365,7 @@ async def _translate_batch(
         BatchValidationError: If all retries are exhausted (reraise=True in decorator).
     """
     fn = _make_translate_batch_fn(settings)
-    return await fn(batch, llm_client, settings)
+    return await fn(batch, llm_client, settings, pronoun_hints)
 
 
 # ── Quarantine artifact write ──────────────────────────────────────────────────
@@ -374,10 +432,18 @@ async def translate_file(
     settings: "TrezarrSettings",
     llm_client: LLMClient,
     ledger: LedgerProtocol,
+    eligible_item: "EligibleItem | None" = None,
+    session_factory: "async_sessionmaker[AsyncSession] | None" = None,
 ) -> TranslationResult:
     """Translate a source SRT file to Vietnamese and write a .vi.srt sidecar.
 
     This is the Phase-3-callable entry point for the translation pipeline.
+    Phase-5 extension (D-48): when eligible_item and session_factory are provided,
+    runs the three-pass pronoun engine:
+      Pass 1 (BARRIER): analyze_file + merge_bible_analysis
+      Pass 2: attribute_batch (gather over batches)
+      Reconcile: reconcile_attributions → resolved_map
+      Pass 3: translate with pronoun hints from resolved_map
 
     Steps:
       1. Resolve path to absolute; read source bytes; compute content hash
@@ -391,7 +457,8 @@ async def translate_file(
       4. Record in_progress in ledger
       5. read_srt() → source SubDoc
       6. batch_subdoc() → list[Batch]
-      7. asyncio.gather() dispatches all batches concurrently
+      4.5 (Phase 5): Pass 1 BARRIER → Pass 2 gather → reconcile → resolved_map
+      7. asyncio.gather() dispatches all batches concurrently (with pronoun hints)
       8. Assemble translated SubDoc (new SubLine objects — never mutate source)
       9. validate_subdoc() document-level gate
       10. write_vi_sidecar() atomic UTF-8 write
@@ -403,11 +470,17 @@ async def translate_file(
       - ledger.record(status="quarantined")
       - Return TranslationResult(status="quarantined")
 
+    Pass 1 BibleAnalysisError → quarantine (never on openai.APIError — Pitfall B).
+
     Args:
-        path:       Path to the source SRT file (str or Path; resolved to absolute).
-        settings:   TrezarrSettings supplying all pipeline configuration.
-        llm_client: LLMClient instance (Phase-1, semaphore-gated).
-        ledger:     Ledger instance for idempotency tracking.
+        path:            Path to the source SRT file (str or Path; resolved to absolute).
+        settings:        TrezarrSettings supplying all pipeline configuration.
+        llm_client:      LLMClient instance (Phase-1, semaphore-gated).
+        ledger:          Ledger instance for idempotency tracking.
+        eligible_item:   EligibleItem from discovery (D-48, Phase 5). When None,
+                         the three-pass Bible logic is bypassed (backward compat).
+        session_factory: Async session factory for Bible DB (D-48, Phase 5). When None,
+                         the three-pass Bible logic is bypassed.
 
     Returns:
         TranslationResult with status "done", "skipped", or "quarantined".
@@ -468,6 +541,108 @@ async def translate_file(
             reason=reason,
         )
 
+    # Step 4.5 (Phase 5, D-48): Three-pass pronoun engine.
+    # Bypassed when eligible_item or session_factory is None (backward compat).
+    # No new asyncio.Semaphore here — all LLM calls go through LLMClient._semaphore (D-06, Pitfall A).
+    resolved_map: dict[tuple[int, int], tuple[str, str]] = {}
+    flat_attributions: list = []
+    bible = None  # populated below when Phase-5 path is active
+
+    if eligible_item is not None and session_factory is not None and settings.enable_pass1_analysis:
+        from trezarr.bible.store import get_or_create_series, load_series_bible
+        from trezarr.bible.analyze import analyze_file, merge_bible_analysis, BibleAnalysisError
+        from trezarr.translate.attribute import attribute_batch
+        from trezarr.translate.reconcile import reconcile_attributions
+
+        media_item = eligible_item.media_item
+        arr_kind = getattr(media_item, "arr_kind", None) or "sonarr"
+        arr_series_id = getattr(media_item, "series_id", None) or 0
+        episode_key = derive_episode_key(media_item, path)
+
+        # Build metadata snapshot (safe subset only — T-05-06-01)
+        _SAFE_META_KEYS = ("title", "genres", "overview", "year", "network", "runtime", "tvdb_id", "tmdb_id")
+        arr_metadata: dict = {k: getattr(media_item, k, None) for k in _SAFE_META_KEYS if getattr(media_item, k, None) is not None}
+
+        series_dto = await get_or_create_series(
+            session_factory,
+            arr_kind=arr_kind,
+            arr_series_id=arr_series_id,
+            arr_metadata_snapshot=arr_metadata,
+            tvdb_id=getattr(media_item, "tvdb_id", None),
+            tmdb_id=getattr(media_item, "tmdb_id", None),
+        )
+
+        bible = await load_series_bible(session_factory, series_dto.id)
+
+        # PASS 1 BARRIER (D-40, ENG-04) — quarantine ONLY on BibleAnalysisError
+        # (logic failure); openai.APIError must propagate (Pitfall B / T-05-06-02)
+        try:
+            analysis = await analyze_file(source_doc, bible, arr_metadata, llm_client, settings, episode_key)
+            await merge_bible_analysis(session_factory, series_dto, analysis, episode_key)
+        except BibleAnalysisError as exc:
+            reason = f"pass1 analysis failure: {exc}"
+            quarantine_path = _write_quarantine(path, reason, [], settings)
+            await ledger.record(LedgerEntry(
+                source_path=str(path),
+                output_path=None,
+                status="quarantined",
+                content_hash=content_hash,
+                quarantine_path=str(quarantine_path),
+            ))
+            return TranslationResult(
+                status="quarantined",
+                quarantine_path=quarantine_path,
+                reason=reason,
+            )
+
+        # Reload Bible so Pass 2/3 see the fresh Address Map (D-48)
+        bible = await load_series_bible(session_factory, series_dto.id)
+
+        # PASS 2 (D-43): concurrent attribution gather (same batches as Pass 3 — Pitfall E)
+        if settings.enable_attribution:
+            attr_per_batch = await asyncio.gather(
+                *[attribute_batch(b, bible, llm_client, settings) for b in batches]
+            )
+            flat_attributions = [a for batch_attrs in attr_per_batch for a in batch_attrs]
+        else:
+            flat_attributions = []
+
+        # RECONCILE (D-44): build resolved_map for Pass 3 pronoun hints
+        resolved_map = await reconcile_attributions(
+            flat_attributions, bible, session_factory, series_dto.id, episode_key, settings
+        )
+
+    # Build pronoun_hints per batch from resolved_map + flat_attributions (D-46, Pitfall E).
+    # name_to_char_id bridges speaker/addressee name strings to character IDs.
+    # Unknown names → no hint → safe default in Pass 3.
+    per_batch_hints: list[dict[int, tuple[str, str]] | None] = [None] * len(batches)
+    if resolved_map and bible is not None:
+        name_to_char_id: dict[str, int] = {
+            c.original_latin_name.strip().lower(): c.id
+            for c in bible.characters
+        }
+        # Build a doc-global index → attribution lookup from flat_attributions
+        # flat_attributions are ordered: batch 0 line 1..N, batch 1 line 1..M, ...
+        # Pitfall E: line_index in each LineAttribution is 1-based WITHIN its batch.
+        doc_offset = 0
+        for b_idx, batch in enumerate(batches):
+            batch_size = len(batch.cues)
+            batch_hints: dict[int, tuple[str, str]] = {}
+
+            # Slice the flat_attributions for this batch
+            batch_attrs = flat_attributions[doc_offset: doc_offset + batch_size]
+
+            for local_i, attr in enumerate(batch_attrs, 1):
+                spk_id = name_to_char_id.get((attr.speaker or "").strip().lower()) if attr.speaker else None
+                addr_id = name_to_char_id.get((attr.addressee or "").strip().lower()) if attr.addressee else None
+                if spk_id is not None and addr_id is not None:
+                    hint = resolved_map.get((spk_id, addr_id))
+                    if hint is not None:
+                        batch_hints[local_i] = hint
+
+            per_batch_hints[b_idx] = batch_hints if batch_hints else None
+            doc_offset += batch_size
+
     # Step 7: Dispatch all batches concurrently via asyncio.gather
     # ONLY catch BatchValidationError (retry-exhausted batch gate failure → quarantine).
     # openai.APIError and any other exception propagate: the file stays out of "done"
@@ -475,7 +650,7 @@ async def translate_file(
     # failures; never permanently quarantine on a transient endpoint error.
     try:
         batch_results = await asyncio.gather(
-            *[_translate_batch(b, llm_client, settings) for b in batches]
+            *[_translate_batch(b, llm_client, settings, per_batch_hints[i]) for i, b in enumerate(batches)]
         )
     except BatchValidationError as exc:
         reason = str(exc)
