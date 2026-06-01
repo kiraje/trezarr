@@ -673,6 +673,10 @@ async def translate_file(
     # and is retried on the next poll cycle.  Pitfall 5 / D-18: SDK handles transport
     # failures; never permanently quarantine on a transient endpoint error.
     # TaskGroup wraps failures in ExceptionGroup — use except* to unwrap (Python 3.11+).
+    # NOTE: `return` is not allowed inside except* (Python 3.11+ restriction), so we
+    # capture the quarantine result and return after the try/except* block.
+    _batch_quarantine: TranslationResult | None = None
+    batch_results: list[list[str]] = []
     try:
         async with asyncio.TaskGroup() as tg:
             translate_tasks = [
@@ -681,20 +685,23 @@ async def translate_file(
             ]
         batch_results = [t.result() for t in translate_tasks]
     except* BatchValidationError as eg:
-        reason = str(eg.exceptions[0])
-        quarantine_path = _write_quarantine(path, reason, [], settings)
+        _reason = str(eg.exceptions[0])
+        _qpath = _write_quarantine(path, _reason, [], settings)
         await ledger.record(LedgerEntry(
             source_path=str(path),
             output_path=None,
             status="quarantined",
             content_hash=content_hash,
-            quarantine_path=str(quarantine_path),
+            quarantine_path=str(_qpath),
         ))
-        return TranslationResult(
+        _batch_quarantine = TranslationResult(
             status="quarantined",
-            quarantine_path=quarantine_path,
-            reason=reason,
+            quarantine_path=_qpath,
+            reason=_reason,
         )
+
+    if _batch_quarantine is not None:
+        return _batch_quarantine
 
     # Step 8: Assemble translated SubDoc (Pitfall 8 — never mutate source SubLines)
     translated_lines: list[SubLine] = []
