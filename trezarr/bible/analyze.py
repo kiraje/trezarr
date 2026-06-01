@@ -322,6 +322,11 @@ async def merge_bible_analysis(
       4. For each address_map entry → resolve speaker+addressee IDs from the name map,
          then upsert_address_pair. Unresolvable names are warned and skipped (never crash).
 
+    WR-06: Per-row store failures are caught so one bad character/term/pair does not
+    abort the merge.  However, if ALL rows fail (likely a systemic DB issue), a
+    BibleAnalysisError is raised so the episode is quarantined rather than silently
+    proceeding to Pass 2/3 with an empty Bible.
+
     Args:
         session_factory: Async session factory (passed through to store functions).
         series_dto:      SeriesDTO for the current series (carries id).
@@ -345,7 +350,9 @@ async def merge_bible_analysis(
             logger.warning("Pass 1: failed to merge register for series %d: %s", series_id, exc)
 
     # Step 2: Upsert characters — build name→id map for address_map resolution
+    # WR-06: count failures; raise BibleAnalysisError on total failure (systemic DB fault).
     name_to_id: dict[str, int] = {}
+    char_fail_count = 0
     for char in analysis.characters:
         try:
             char_dto, _ = await upsert_character(
@@ -366,6 +373,7 @@ async def merge_bible_analysis(
                 series_id,
             )
         except Exception as exc:
+            char_fail_count += 1
             logger.warning(
                 "Pass 1: failed to upsert character %r for series %d: %s",
                 char.original_latin_name,
@@ -373,7 +381,14 @@ async def merge_bible_analysis(
                 exc,
             )
 
+    if analysis.characters and char_fail_count == len(analysis.characters):
+        raise BibleAnalysisError(
+            f"Pass 1 merge: ALL {char_fail_count} character upserts failed for series {series_id} "
+            f"episode {episode_key!r} — likely a systemic DB failure (WR-06)"
+        )
+
     # Step 3: Upsert terms
+    term_fail_count = 0
     for term in analysis.terms:
         try:
             await upsert_term(
@@ -387,6 +402,7 @@ async def merge_bible_analysis(
             )
             logger.debug("Pass 1: upserted term %r for series %d", term.source_term, series_id)
         except Exception as exc:
+            term_fail_count += 1
             logger.warning(
                 "Pass 1: failed to upsert term %r for series %d: %s",
                 term.source_term,
@@ -394,8 +410,16 @@ async def merge_bible_analysis(
                 exc,
             )
 
+    if analysis.terms and term_fail_count == len(analysis.terms):
+        raise BibleAnalysisError(
+            f"Pass 1 merge: ALL {term_fail_count} term upserts failed for series {series_id} "
+            f"episode {episode_key!r} — likely a systemic DB failure (WR-06)"
+        )
+
     # Step 4: Upsert address pairs — resolve names to character IDs
     # Use same case-insensitive normalisation as reconcile.py / engine.py (CR-01)
+    pair_fail_count = 0
+    pair_attempt_count = 0
     for pair in analysis.address_map:
         spk_id = name_to_id.get((pair.speaker_name or "").strip().lower())
         addr_id = name_to_id.get((pair.addressee_name or "").strip().lower())
@@ -422,6 +446,7 @@ async def merge_bible_analysis(
             )
             continue
 
+        pair_attempt_count += 1
         try:
             await upsert_address_pair(
                 session_factory,
@@ -443,6 +468,7 @@ async def merge_bible_analysis(
                 series_id,
             )
         except Exception as exc:
+            pair_fail_count += 1
             logger.warning(
                 "Pass 1: failed to upsert address pair %r→%r for series %d: %s",
                 pair.speaker_name,
@@ -450,3 +476,9 @@ async def merge_bible_analysis(
                 series_id,
                 exc,
             )
+
+    if pair_attempt_count > 0 and pair_fail_count == pair_attempt_count:
+        raise BibleAnalysisError(
+            f"Pass 1 merge: ALL {pair_fail_count} address-pair upserts failed for series {series_id} "
+            f"episode {episode_key!r} — likely a systemic DB failure (WR-06)"
+        )
