@@ -125,6 +125,23 @@ class TrezarrSettings(BaseSettings):
     bible_db_enable_wal: bool = True
     bible_db_enforce_fk: bool = True
 
+    # ── Phase 5: Three-Pass Pronoun Engine (D-40…D-50) ──────────────────────────
+    # Pass 1 — Bible analysis
+    enable_pass1_analysis: bool = True         # D-50: toggle for staged rollout/tests
+    pass1_max_cues_per_chunk: int = 400        # D-50: cues per Pass-1 chunk (0 = no chunk)
+
+    # Pass 2 — Attribution
+    enable_attribution: bool = True            # D-50: toggle; False → all lines get safe default
+    attribute_context_lines_k: int = 8         # D-50: wider context than translate (default 3)
+    attribute_max_cues_per_batch: int = 30     # D-50: attribution batches may be smaller
+
+    # Pass 3 — Pronoun application
+    pronoun_confidence_threshold: str = "medium"    # D-45/D-50: "high"|"medium"|"low"
+    # None → use built-in kinship-table defaults (D-45); tuple → user override
+    # NOTE: tuple[str,str]|None — pydantic-settings handles JSON array env var (A4 from RESEARCH.md)
+    # Use Field(default=None) explicitly to avoid default_factory/mutable default issues
+    pronoun_safe_default: tuple[str, str] | None = Field(default=None)  # D-50
+
     def __init__(self, _yaml_file: str | None = None, **data: Any) -> None:
         """Create settings.
 

@@ -72,8 +72,8 @@ from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import async_sessionmaker, AsyncSession
 
-from trezarr.bible.models import BibleEvent, Series, Character, TermDictionary
-from trezarr.bible.dto import BibleEventDTO, SeriesDTO, SeriesBibleDTO, CharacterDTO, TermDTO
+from trezarr.bible.models import BibleEvent, Series, Character, TermDictionary, AddressMap
+from trezarr.bible.dto import BibleEventDTO, SeriesDTO, SeriesBibleDTO, CharacterDTO, TermDTO, AddressMapDTO
 from trezarr.bible.merge import get_locked_fields, compute_field_changes
 
 logger = logging.getLogger(__name__)
@@ -198,6 +198,7 @@ async def load_series_bible(
             .options(
                 selectinload(Series.characters),
                 selectinload(Series.terms),
+                selectinload(Series.address_maps),
             )
         )
         row = (await session.execute(stmt)).scalar_one()
@@ -222,6 +223,10 @@ async def load_series_bible(
                 TermDTO.model_validate(t, from_attributes=True)
                 for t in row.terms
             ],
+            address_map=[
+                AddressMapDTO.model_validate(a, from_attributes=True)
+                for a in row.address_maps
+            ],
         )
 
 
@@ -239,6 +244,7 @@ MERGEABLE_FIELDS: dict[str, frozenset[str]] = {
     "character": frozenset({"gender", "rough_age", "role"}),
     "term_dictionary": frozenset({"vietnamese_rendering", "category"}),
     "series": frozenset({"register"}),
+    "address_map": frozenset({"self_term", "address_term", "valid_from_episode"}),
 }
 
 
@@ -572,6 +578,125 @@ async def _upsert_term_in_session(
     return existing_row, events
 
 
+async def _upsert_address_pair_in_session(
+    session: AsyncSession,
+    *,
+    series_id: int,
+    speaker_character_id: int,
+    addressee_character_id: int,
+    self_term: str | None,
+    address_term: str | None,
+    valid_from_episode: str | None,
+    episode_key: str | None,
+    source: str,
+) -> tuple[AddressMap, list[BibleEvent]]:
+    """INSERT or merge-update an AddressMap row INSIDE an already-open transaction.
+
+    This helper MUST be called from inside an `async with session.begin():` block.
+    It does NOT open a transaction (HIGH finding: no nested txn).
+
+    Identity key: (series_id, speaker_character_id, addressee_character_id) — one
+    row per directed ordered pair.
+
+    CRITICAL: do NOT delegate to _merge_inferred_in_session for AddressMap — its
+    isinstance chain does not handle AddressMapDTO (Pitfall G / PATTERNS.md).
+    This is a self-contained helper that mirrors _upsert_character_in_session.
+
+    Lock precedence (D-34): for each mergeable field, if the field name appears
+    in the row's locked_fields list, the existing value is preserved. The incoming
+    value is only written if the field is NOT locked.
+
+    Args:
+        session:               Open AsyncSession with active transaction.
+        series_id:             FK to the parent Series row.
+        speaker_character_id:  FK → character.id (the one speaking).
+        addressee_character_id: FK → character.id (the one being addressed).
+        self_term:             Optional Vietnamese self-reference term.
+        address_term:          Optional Vietnamese address term for addressee.
+        valid_from_episode:    Optional episode key from which mapping applies.
+        episode_key:           Optional episode key for bible_event provenance.
+        source:                Provenance string (one of VALID_SOURCES).
+
+    Returns:
+        (AddressMap_row, list_of_BibleEvent_instances)
+    """
+    # SELECT existing row by identity key
+    stmt = select(AddressMap).where(
+        AddressMap.series_id == series_id,
+        AddressMap.speaker_character_id == speaker_character_id,
+        AddressMap.addressee_character_id == addressee_character_id,
+    )
+    existing_row = (await session.execute(stmt)).scalar_one_or_none()
+
+    mergeable_fields = [
+        ("self_term", self_term),
+        ("address_term", address_term),
+        ("valid_from_episode", valid_from_episode),
+    ]
+
+    if existing_row is None:
+        # First insert: construct the row and emit one event per non-None field.
+        # WR-05: locked_fields is intentionally hard-coded to [] here — same constraint
+        # as _upsert_character_in_session. Locks can only be set via the Phase 8
+        # lock-management UI path, not via this function.
+        row = AddressMap(
+            series_id=series_id,
+            speaker_character_id=speaker_character_id,
+            addressee_character_id=addressee_character_id,
+            self_term=self_term,
+            address_term=address_term,
+            valid_from_episode=valid_from_episode,
+            locked_fields=[],
+        )
+        session.add(row)
+        await session.flush()  # populate row.id before constructing events
+
+        events: list[BibleEvent] = []
+        for field, val in mergeable_fields:
+            if val is not None:
+                evt = BibleEvent(
+                    series_id=series_id,
+                    episode_key=episode_key,
+                    entity_type="address_map",
+                    entity_id=row.id,
+                    field=field,
+                    old_value=None,
+                    new_value=val,
+                    source=source,
+                )
+                session.add(evt)
+                events.append(evt)
+        return row, events
+
+    # Existing row: apply non-None incoming fields, respecting locked_fields (D-34).
+    # Read locked_fields off the SQLA row (never off caller's DTO — WR-01 / HIGH finding).
+    locked = set(existing_row.locked_fields or [])
+    events = []
+    for field, new_val in mergeable_fields:
+        if new_val is None:
+            continue  # None means "no update for this field"
+        if field in locked:
+            continue  # D-34: human lock > inference — skip locked fields
+        old_val = getattr(existing_row, field)
+        if old_val == new_val:
+            continue  # no-op: same value, no event
+        setattr(existing_row, field, new_val)
+        evt = BibleEvent(
+            series_id=series_id,
+            episode_key=episode_key,
+            entity_type="address_map",
+            entity_id=existing_row.id,
+            field=field,
+            old_value=old_val,
+            new_value=new_val,
+            source=source,
+        )
+        session.add(evt)
+        events.append(evt)
+
+    return existing_row, events
+
+
 # ---------------------------------------------------------------------------
 # Public API — read functions
 # ---------------------------------------------------------------------------
@@ -740,6 +865,87 @@ async def upsert_term(
             TermDTO.model_validate(row, from_attributes=True),
             [BibleEventDTO.model_validate(e, from_attributes=True) for e in events],
         )
+
+
+async def upsert_address_pair(
+    session_factory: async_sessionmaker[AsyncSession],
+    *,
+    series_id: int,
+    speaker_character_id: int,
+    addressee_character_id: int,
+    self_term: str | None = None,
+    address_term: str | None = None,
+    valid_from_episode: str | None = None,
+    episode_key: str | None = None,
+    source: str = "inference",
+) -> tuple[AddressMapDTO, list[BibleEventDTO]]:
+    """INSERT or merge-update an AddressMap row — the single public transaction owner for address pairs.
+
+    Creates the AddressMap row if it does not exist for the directed
+    (speaker_character_id, addressee_character_id) pair within the series.
+    If the row already exists, applies any non-None field values respecting
+    locked_fields (D-34: human lock > inference).
+
+    CRITICAL: This function NEVER routes AddressMap writes through merge_inferred()
+    — merge_inferred's isinstance chain does not handle AddressMapDTO (Pitfall G).
+    Delegates to the private _upsert_address_pair_in_session helper.
+
+    WR-05 (lock-list constraint): on first INSERT, locked_fields is
+    hard-coded to ``[]`` by ``_upsert_address_pair_in_session``; there is NO
+    parameter to seed a caller-supplied lock list on creation. Phase 8
+    lock-management is the authoritative path for setting locks.
+
+    Args:
+        session_factory:       Async session factory.
+        series_id:             FK to the parent Series row.
+        speaker_character_id:  FK → character.id (the one speaking).
+        addressee_character_id: FK → character.id (the one being addressed).
+        self_term:             Optional Vietnamese self-reference term to merge.
+        address_term:          Optional Vietnamese address term to merge.
+        valid_from_episode:    Optional episode key from which mapping applies.
+        episode_key:           Optional episode key for bible_event provenance.
+        source:                Provenance string, default "inference".
+
+    Returns:
+        (AddressMapDTO, list[BibleEventDTO]) — current state DTO and emitted events.
+    """
+    async with session_factory() as session:
+        async with session.begin():
+            row, events = await _upsert_address_pair_in_session(
+                session,
+                series_id=series_id,
+                speaker_character_id=speaker_character_id,
+                addressee_character_id=addressee_character_id,
+                self_term=self_term,
+                address_term=address_term,
+                valid_from_episode=valid_from_episode,
+                episode_key=episode_key,
+                source=source,
+            )
+        # Transaction committed; expire_on_commit=False ensures attributes are accessible
+        return (
+            AddressMapDTO.model_validate(row, from_attributes=True),
+            [BibleEventDTO.model_validate(e, from_attributes=True) for e in events],
+        )
+
+
+async def load_address_map(
+    session_factory: async_sessionmaker[AsyncSession],
+    series_id: int,
+) -> list[AddressMapDTO]:
+    """Load all AddressMap rows for the given series_id (D-39).
+
+    Args:
+        session_factory: Async session factory from build_session_factory().
+        series_id:       Surrogate PK of the target series row.
+
+    Returns:
+        List of AddressMapDTOs for the series (empty list if none exist yet).
+    """
+    async with session_factory() as session:
+        stmt = select(AddressMap).where(AddressMap.series_id == series_id)
+        rows = (await session.execute(stmt)).scalars().all()
+        return [AddressMapDTO.model_validate(r, from_attributes=True) for r in rows]
 
 
 async def merge_inferred(
