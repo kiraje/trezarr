@@ -11,6 +11,7 @@ Design decisions honoured:
 
 # No asyncio.Semaphore in this module.  LLMClient._semaphore is the sole gate (D-06, Pitfall 1).
 """
+
 from __future__ import annotations
 
 import logging
@@ -32,24 +33,24 @@ logger = logging.getLogger(__name__)
 # Standard Vietnamese kinship pronoun reciprocal pairs — extend as needed for niche terms.
 # (self_term, address_term) → expected reciprocal (self_term, address_term) for B→A
 KINSHIP_RECIPROCAL: dict[tuple[str, str], tuple[str, str]] = {
-    ("anh", "em"):   ("em", "anh"),
-    ("em", "anh"):   ("anh", "em"),
-    ("chị", "em"):   ("em", "chị"),
-    ("em", "chị"):   ("chị", "em"),
-    ("anh", "anh"):  ("anh", "anh"),
-    ("chị", "chị"):  ("chị", "chị"),
+    ("anh", "em"): ("em", "anh"),
+    ("em", "anh"): ("anh", "em"),
+    ("chị", "em"): ("em", "chị"),
+    ("em", "chị"): ("chị", "em"),
+    ("anh", "anh"): ("anh", "anh"),
+    ("chị", "chị"): ("chị", "chị"),
     ("ông", "cháu"): ("cháu", "ông"),
-    ("bà", "cháu"):  ("cháu", "bà"),
-    ("ông", "con"):  ("con", "ông"),
-    ("bà", "con"):   ("con", "bà"),
-    ("bố", "con"):   ("con", "bố"),
-    ("mẹ", "con"):   ("con", "mẹ"),
-    ("cha", "con"):  ("con", "cha"),
-    ("tôi", "bạn"):  ("bạn", "tôi"),
-    ("tôi", "anh"):  ("anh", "tôi"),
-    ("tôi", "chị"):  ("chị", "tôi"),
-    ("tôi", "ông"):  ("ông", "tôi"),
-    ("tôi", "bà"):   ("bà", "tôi"),
+    ("bà", "cháu"): ("cháu", "bà"),
+    ("ông", "con"): ("con", "ông"),
+    ("bà", "con"): ("con", "bà"),
+    ("bố", "con"): ("con", "bố"),
+    ("mẹ", "con"): ("con", "mẹ"),
+    ("cha", "con"): ("con", "cha"),
+    ("tôi", "bạn"): ("bạn", "tôi"),
+    ("tôi", "anh"): ("anh", "tôi"),
+    ("tôi", "chị"): ("chị", "tôi"),
+    ("tôi", "ông"): ("ông", "tôi"),
+    ("tôi", "bà"): ("bà", "tôi"),
 }
 
 # ---------------------------------------------------------------------------
@@ -64,6 +65,7 @@ SAFE_DEFAULT_ADDRESS_NEUTRAL = "bạn"
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
+
 
 def _threshold_value(threshold_str: str) -> int:
     """Map threshold string to a numeric tier (higher = stricter).
@@ -92,6 +94,7 @@ def _confidence_value(confidence: object) -> int:
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
+
 
 def get_safe_default(
     addressee_gender: str | None,
@@ -166,20 +169,16 @@ async def reconcile_attributions(
     Returns:
         dict mapping (speaker_char_id, addressee_char_id) to (self_term, address_term).
     """
-    # (a) Build case-insensitive name→char_id index
+    # (a) Build case- and whitespace-insensitive name→char_id index (CR-01)
     name_to_id: dict[str, int] = {
-        c.original_latin_name.lower(): c.id
-        for c in bible.characters
+        c.original_latin_name.strip().lower(): c.id for c in bible.characters
     }
     # Build char_id→gender for get_safe_default fallback
-    id_to_gender: dict[int, str | None] = {
-        c.id: c.gender for c in bible.characters
-    }
+    id_to_gender: dict[int, str | None] = {c.id: c.gender for c in bible.characters}
 
     # Build existing Address Map index: (spk_id, addr_id) → AddressMapDTO
     existing_map: dict[tuple[int, int], "AddressMapDTO"] = {
-        (a.speaker_character_id, a.addressee_character_id): a
-        for a in bible.address_map
+        (a.speaker_character_id, a.addressee_character_id): a for a in bible.address_map
     }
 
     # (b) Collect attributions per ordered pair (only matched pairs)
@@ -187,8 +186,8 @@ async def reconcile_attributions(
     for attr in flat_attributions:
         if attr.speaker is None or attr.addressee is None:
             continue
-        spk_id = name_to_id.get(attr.speaker.lower())
-        addr_id = name_to_id.get(attr.addressee.lower())
+        spk_id = name_to_id.get(attr.speaker.strip().lower())
+        addr_id = name_to_id.get(attr.addressee.strip().lower())
         if spk_id is None or addr_id is None:
             # Unmatched names → safe default per D-43
             continue
@@ -206,10 +205,7 @@ async def reconcile_attributions(
         attributions = pair_attributions.get(pair, [])
 
         # (c) Apply threshold gate
-        survivors = [
-            a for a in attributions
-            if _confidence_value(a.confidence) >= threshold_val
-        ]
+        survivors = [a for a in attributions if _confidence_value(a.confidence) >= threshold_val]
 
         if survivors:
             # Pair is "confirmed" — use existing Address Map entry if available;
