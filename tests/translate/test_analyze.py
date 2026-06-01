@@ -156,7 +156,6 @@ async def test_pass1_failure_quarantines(session_factory):
       BibleAnalysisError.
     - No DB writes are completed (Bible remains empty after the failed analyze_file call).
     """
-    from trezarr.bible.analyze import merge_bible_analysis
 
     # Create a series in the DB
     series_dto = await get_or_create_series(

@@ -703,7 +703,6 @@ async def test_run_once_constructs_ledger_sqla_not_json_ledger(tmp_path, capsys,
         return ([], MagicMock(scanned=0, no_source=0, foreign_vi=0, already_done=0, error=0))  # WR-08: error=0 required (was missing pre-fix)
 
     # Use a real LedgerSQLA instance from a temp DB to confirm the type
-    from tests.db.conftest import session_factory as _sf_fixture  # use fixture indirectly via MagicMock
     # Mock LedgerSQLA to return a known sentinel so we can test isinstance
     sentinel_ledger = MagicMock(spec=_LedgerSQLA)
 

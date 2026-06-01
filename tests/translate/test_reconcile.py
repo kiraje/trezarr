@@ -14,7 +14,6 @@ re-exports them from tests/db/conftest.py.
 """
 from __future__ import annotations
 
-import pytest
 
 
 # ---------------------------------------------------------------------------
@@ -341,7 +340,7 @@ async def test_below_threshold_ignores_address_map(session_factory):
     An UNLOCKED Address Map entry exists for the pair with ("anh", "em").
     Expected: resolved_map returns safe default — NOT the Address Map pair.
     """
-    from trezarr.translate.reconcile import reconcile_attributions, get_safe_default, SAFE_DEFAULT_SELF, SAFE_DEFAULT_ADDRESS_NEUTRAL
+    from trezarr.translate.reconcile import reconcile_attributions, get_safe_default, SAFE_DEFAULT_SELF
 
     # Threshold is "high", attribution confidence is "medium" → below threshold
     settings = _make_settings(threshold="high")

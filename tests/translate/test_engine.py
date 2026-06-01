@@ -110,10 +110,9 @@ async def test_batch_retry(settings_factory):
     from unittest.mock import patch
 
     _translate_batch = engine_mod._translate_batch
-    BatchValidationError = engine_mod.BatchValidationError
 
     # Minimal batch with 1 cue
-    from trezarr.subtitles.model import SubLine, SubDoc
+    from trezarr.subtitles.model import SubLine
     from trezarr.translate.batching import Batch  # will be skipped if batching not implemented
 
     settings = settings_factory(translate_batch_retry_attempts=2)
@@ -187,9 +186,9 @@ async def test_translate_file_read_failure_quarantines(settings_factory, tmp_pat
     The function contract promises "on any failure → return TranslationResult(status='quarantined')".
     A PermissionError from read_srt must route to quarantine, not leave the ledger at in_progress.
     """
-    engine_mod = pytest.importorskip("trezarr.translate.engine")
+    pytest.importorskip("trezarr.translate.engine")
     from unittest.mock import patch
-    from trezarr.translate.engine import translate_file, TranslationResult
+    from trezarr.translate.engine import translate_file
     from trezarr.output.ledger import Ledger
 
     quarantine_dir = tmp_path / "quarantine"
@@ -227,7 +226,7 @@ async def test_translate_file_non_batch_error_propagates(settings_factory, tmp_p
     both bare RuntimeError (legacy gather path) and ExceptionGroup[RuntimeError] (TaskGroup path)
     so the invariant (error propagates, no quarantine) is asserted regardless of wrapper.
     """
-    engine_mod = pytest.importorskip("trezarr.translate.engine")
+    pytest.importorskip("trezarr.translate.engine")
     from unittest.mock import patch, AsyncMock
     from trezarr.translate.engine import translate_file
     from trezarr.output.ledger import Ledger
@@ -275,8 +274,8 @@ async def test_translate_file_non_batch_error_propagates(settings_factory, tmp_p
 
 async def test_translate_file_skip_unchanged(settings_factory, tmp_path):
     """translate_file returns TranslationResult(status='skipped') when ledger says done + matching hash (ENG-07)."""
-    engine_mod = pytest.importorskip("trezarr.translate.engine")
-    from trezarr.translate.engine import translate_file, TranslationResult
+    pytest.importorskip("trezarr.translate.engine")
+    from trezarr.translate.engine import translate_file
     from trezarr.output.ledger import Ledger, LedgerEntry
 
     settings = settings_factory()
