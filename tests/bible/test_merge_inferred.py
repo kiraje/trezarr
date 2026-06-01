@@ -460,80 +460,99 @@ async def test_stale_dto_old_value_correctness(session_factory):
 # ---------------------------------------------------------------------------
 
 async def test_no_nested_transactions_in_upsert(session_factory):
-    """Public upsert_character must open exactly ONE session.begin() — no nested transactions.
+    """Public upsert_character must open exactly ONE transaction — no nesting.
 
-    Uses a before_begin event listener on the session to count how many times
-    session.begin() is called during a single upsert_character on an EXISTING row.
-    Count must be exactly 1.
+    WR-06: The previous implementation monkey-patched ``session.begin`` on
+    the instance, which had three problems:
+      1. Anything calling ``type(session).begin(session)`` instead of
+         ``session.begin()`` would silently bypass the counter.
+      2. The counter only saw ``session.begin()`` — a ``session.begin_nested()``
+         (SAVEPOINT) call would be invisible and the test would pass on
+         broken code that opened a savepoint.
+      3. Only the merge path was exercised; the CREATE path used the
+         un-patched factory, so the single-transaction invariant for INSERT
+         was not actually verified.
+
+    The new implementation registers an ``after_transaction_create`` listener
+    on the underlying synchronous Session (the one wrapped by AsyncSession),
+    which fires for BOTH top-level transactions and savepoints. To exclude
+    the AUTOBEGIN transaction that SQLAlchemy creates implicitly on first
+    operation, we filter for transactions that have no parent (top-level)
+    and that are not part of the session's connection-init phase.
+
+    Both the CREATE path AND the MERGE path are exercised under the listener
+    so the single-transaction invariant is verified on both branches.
     """
+    from sqlalchemy.orm import Session as SyncSession
+
     series_id = await _create_series(session_factory)
-    # First create the row
-    await upsert_character(
-        session_factory,
-        series_id=series_id,
-        original_latin_name="Mary",
-        role="detective",
-        episode_key="S01E01",
-        source="inference",
-    )
 
-    # Now test the upsert on the existing row: count session.begin() calls
-    begin_count = {"n": 0}
+    # Total non-autobegin transactions observed across all sessions in this
+    # test. ``after_transaction_create`` fires with a SessionTransaction; we
+    # count both regular (.parent is None) and SAVEPOINT (.nested is True)
+    # creations so a hypothetical ``begin_nested()`` regression would also
+    # trip this assertion.
+    txn_count = {"n": 0}
 
-    original_factory = session_factory
+    def _on_txn_create(session: SyncSession, transaction) -> None:  # noqa: ARG001
+        # SQLAlchemy fires ``after_transaction_create`` for every level of
+        # the transaction stack. The hierarchy on the AsyncSession path is:
+        #   - top-level SessionTransaction (parent=None) — what we count
+        #   - a nested marker for the AsyncSession.begin() wrapper
+        #   - possibly more for per-statement subtxns
+        # We only count TOP-LEVEL transactions (parent is None) so we get
+        # exactly one event per ``async with session.begin():`` block. A
+        # second top-level txn within the same session would indicate a
+        # nested explicit begin() — the failure mode the test guards
+        # against. SAVEPOINTs (transaction.nested=True) have parent set, so
+        # they would NOT be top-level — to also catch those (per the
+        # reviewer's WR-06 second point) we count them separately and
+        # assert both totals.
+        if transaction.parent is None:
+            txn_count["n"] += 1
+        elif transaction.nested:
+            # A SAVEPOINT inside our transaction is also a "nested
+            # transaction" the test must refuse. Count under the same key
+            # so the assertion message names the regression.
+            txn_count["n"] += 1
 
-    class _CountingSessionFactory:
-        """Wraps session_factory to count begin() calls on the returned session."""
+    # Register globally on Session so it catches transactions on every
+    # AsyncSession.sync_session created from session_factory().
+    event.listen(SyncSession, "after_transaction_create", _on_txn_create)
+    try:
+        # Reset before the CREATE path so we can assert exactly 1
+        txn_count["n"] = 0
+        await upsert_character(
+            session_factory,
+            series_id=series_id,
+            original_latin_name="Mary",
+            role="detective",
+            episode_key="S01E01",
+            source="inference",
+        )
+        create_txn_count = txn_count["n"]
+        assert create_txn_count == 1, (
+            f"upsert_character (CREATE path) must open exactly 1 transaction, "
+            f"opened {create_txn_count}"
+        )
 
-        def __call__(self):
-            return _CountingContext(original_factory, begin_count)
-
-    class _CountingContext:
-        def __init__(self, factory, counter):
-            self._factory = factory
-            self._counter = counter
-            self._ctx = factory()
-
-        async def __aenter__(self):
-            session = await self._ctx.__aenter__()
-            # Patch session.begin to count calls
-            original_begin = session.begin
-
-            class _CountingBeginCM:
-                def __init__(self, inner_cm, counter):
-                    self._cm = inner_cm
-                    self._counter = counter
-
-                async def __aenter__(self):
-                    self._counter["n"] += 1
-                    return await self._cm.__aenter__()
-
-                async def __aexit__(self, *args):
-                    return await self._cm.__aexit__(*args)
-
-            def _patched_begin():
-                return _CountingBeginCM(original_begin(), begin_count)
-
-            session.begin = _patched_begin
-            self._session = session
-            return session
-
-        async def __aexit__(self, *args):
-            return await self._ctx.__aexit__(*args)
-
-    counting_factory = _CountingSessionFactory()
-    await upsert_character(
-        counting_factory,
-        series_id=series_id,
-        original_latin_name="Mary",
-        role="spy",  # change to trigger merge path
-        episode_key="S02E01",
-        source="inference",
-    )
-
-    assert begin_count["n"] == 1, (
-        f"upsert_character must open exactly 1 transaction, opened {begin_count['n']}"
-    )
+        # Reset before the MERGE path
+        txn_count["n"] = 0
+        await upsert_character(
+            session_factory,
+            series_id=series_id,
+            original_latin_name="Mary",
+            role="spy",  # change to trigger merge path
+            episode_key="S02E01",
+            source="inference",
+        )
+        merge_txn_count = txn_count["n"]
+        assert merge_txn_count == 1, (
+            f"upsert_character (MERGE path) must open exactly 1 transaction, "
+            f"opened {merge_txn_count}"
+        )
+    finally:
+        event.remove(SyncSession, "after_transaction_create", _on_txn_create)
 
 
 # ---------------------------------------------------------------------------
