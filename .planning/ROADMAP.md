@@ -206,7 +206,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-- [ ] 07-02-PLAN.md — Wave 2: Service spine — job/job_log models + Alembic 0002 migration + Phase-7 TrezarrSettings + FastAPI lifespan (CR-01) + worker loop (per-series asyncio.Lock + crash-resume reconcile) + trezarr serve CLI (SVC-01, AUTO-05)
+- [x] 07-02-PLAN.md — Wave 2: Service spine — job/job_log models + Alembic 0002 migration + Phase-7 TrezarrSettings + FastAPI lifespan (CR-01) + worker loop (per-series asyncio.Lock + crash-resume reconcile) + trezarr serve CLI (SVC-01, AUTO-05)
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
@@ -280,7 +280,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 4. Series Bible Store & Schema | 4/4 | Complete   | 2026-06-01 |
 | 5. Three-Pass Pronoun Engine | 6/6 | Complete   | 2026-06-01 |
 | 6. Relationship Evolution + Self-Review | 3/3 | Complete    | 2026-06-01 |
-| 7. Web UI & Service Hardening | 1/6 | In Progress|  |
+| 7. Web UI & Service Hardening | 2/6 | In Progress|  |
 | 8. Editable Series Bible UI | 0/TBD | Not started | - |
 | 9. Multi-Format — ASS/SSA + VTT | 0/TBD | Not started | - |
 | 10. Source Selection & Per-Series Overrides | 0/TBD | Not started | - |

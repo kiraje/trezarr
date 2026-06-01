@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 07-01-PLAN.md
-last_updated: "2026-06-01T22:01:04.188Z"
+stopped_at: Completed 07-02-PLAN.md
+last_updated: "2026-06-01T22:18:12.832Z"
 last_activity: 2026-06-01
 progress:
   total_phases: 10
   completed_phases: 6
   total_plans: 30
-  completed_plans: 25
+  completed_plans: 26
   percent: 60
 ---
 
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-05-31)
 ## Current Position
 
 Phase: 7 (web-ui-service-hardening) — EXECUTING
-Plan: 2 of 6
+Plan: 3 of 6
 Status: Ready to execute
 Last activity: 2026-06-01
 
-Progress: [████████░░] 83%
+Progress: [█████████░] 87%
 
 ## Performance Metrics
 
@@ -74,6 +74,7 @@ Progress: [████████░░] 83%
 | Phase 06 P06-02 | 25 min | 2 tasks | 5 files |
 | Phase 06 P06-03 | 15min | 2 tasks | 4 files |
 | Phase 07-web-ui-service-hardening P01 | 3 minutes | 2 tasks | 9 files |
+| Phase 07 P02 | 13min | 2 tasks | 13 files |
 
 ## Accumulated Context
 
@@ -107,6 +108,10 @@ Recent decisions affecting current work:
 - [Phase ?]: derive_episode_key parses SxxExx from subtitle filename stem not episode_number field (D-49 Pitfall F confirmed)
 - [Phase ?]: xfail(strict=False) with raises=(ImportError, AssertionError, TypeError) for Wave-0 stubs targeting not-yet-created modules
 - [Phase ?]: D-67 ProcessedFile arm uses separate reconcile_in_progress_from_ledger function for independent testability
+- [Phase ?]: D-62 process_one_item shared callable extracted from CLI loop body; ItemResult dataclass; worker._execute_job calls same function
+- [Phase ?]: D-67 two-arm crash-resume: reconcile_in_progress (Job rows) + reconcile_in_progress_from_ledger (ProcessedFile rows with no matching Job) as separate functions
+- [Phase ?]: D-68 per-series asyncio.Lock (not Semaphore) serializes same-series episodes; distinct series run concurrently; zero asyncio.Semaphore in worker.py
+- [Phase ?]: Starlette ASGITransport passes inner Router app to lifespan not outer FastAPI instance; engine stored in mutable cell closure for test accessibility
 
 ### Pending Todos
 
@@ -133,6 +138,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-06-01T22:01:04.180Z
-Stopped at: Completed 07-01-PLAN.md
+Last session: 2026-06-01T22:18:12.825Z
+Stopped at: Completed 07-02-PLAN.md
 Resume file: None
