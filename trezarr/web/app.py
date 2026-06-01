@@ -155,11 +155,19 @@ async def _lifespan(app, settings: TrezarrSettings | None = None, engine_cell: l
         llm_client = LLMClient(_settings)
         ledger = LedgerSQLA(session_factory)
 
+        # Expose ledger, media_roots, and llm_client on app.state for route handlers
+        # (webhook handler reads these via request.app.state)
+        app.state.ledger = ledger
+        app.state.media_roots = media_roots
+        app.state.llm_client = llm_client
+
         # Step 8 — APScheduler (MUST start INSIDE lifespan — Pitfall B)
         scheduler = AsyncIOScheduler()
-        # Poll job will be wired in Plan 07-03 (monitoring); placeholder here.
+        # Wire the poll job (Plan 07-03 monitoring, D-65/D-66)
+        from trezarr.web.scheduler import setup_scheduler  # noqa: PLC0415
+        setup_scheduler(scheduler, session_factory, _settings, ledger, media_roots, llm_client)
         scheduler.start()
-        logger.info("lifespan: APScheduler started")
+        logger.info("lifespan: APScheduler started with main_poll job")
 
         # Step 9 — start the worker loop as an asyncio.Task
         worker_task = asyncio.create_task(
@@ -254,6 +262,11 @@ def create_app(settings: TrezarrSettings | None = None) -> FastAPI:
     async def health() -> JSONResponse:
         """Docker HEALTHCHECK endpoint — always returns 200 OK (no auth needed)."""
         return JSONResponse({"status": "ok"})
+
+    # POST /webhook — Sonarr/Radarr/Bazarr inbound webhooks (AUTO-02, D-66)
+    # Registered BEFORE StaticFiles (Pitfall E: StaticFiles matches all remaining paths)
+    from trezarr.web.routes.webhook import router as webhook_router  # noqa: PLC0415
+    app.include_router(webhook_router)  # no prefix — /webhook is top-level (not /api/webhook)
 
     # ── SPA static file mount — LAST (Pitfall E: StaticFiles must be after routes) ─
     _static_dir = os.path.join(os.path.dirname(__file__), "static")
