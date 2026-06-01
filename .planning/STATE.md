@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Phase 5 context gathered
-last_updated: "2026-06-01T13:49:14.954Z"
-last_activity: 2026-06-01 -- Phase 05 planning complete
+stopped_at: Completed 05-01-PLAN.md (Wave-0 xfail stubs)
+last_updated: "2026-06-01T13:58:19.255Z"
+last_activity: 2026-06-01
 progress:
   total_phases: 10
   completed_phases: 4
   total_plans: 21
-  completed_plans: 15
+  completed_plans: 16
   percent: 40
 ---
 
@@ -21,16 +21,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-05-31)
 
 **Core value:** Vietnamese subtitles that stay consistent and relationally correct (right pronoun pair, stable names/terms) across an entire series — produced automatically.
-**Current focus:** Phase 5 — three pass pronoun engine
+**Current focus:** Phase 05 — three-pass-pronoun-engine
 
 ## Current Position
 
-Phase: 5
-Plan: Not started
+Phase: 05 (three-pass-pronoun-engine) — EXECUTING
+Plan: 2 of 6
 Status: Ready to execute
-Last activity: 2026-06-01 -- Phase 05 planning complete
+Last activity: 2026-06-01
 
-Progress: [██████████] 100% (Phase 3 plans complete)
+Progress: [████████░░] 76%
 
 ## Performance Metrics
 
@@ -64,6 +64,7 @@ Progress: [██████████] 100% (Phase 3 plans complete)
 | Phase 03 P03 | 20min | 2 tasks | 4 files |
 | Phase 3 P04 | 35min | 2 tasks | 4 files |
 | Phase 3 P05 | 50min | 2 tasks | 5 files |
+| Phase 05-three-pass-pronoun-engine P01 | 2min | 2 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -91,6 +92,7 @@ Recent decisions affecting current work:
 - [Phase 03-05]: Rule 2 deviation — `all_arr_failed` (enabled_arr > 0 AND len(discovery_failures) == enabled_arr) added to the exit-1 disjunction. Without this, the "both *arrs raised DiscoveryError → 0 items → exit 0" path violated the plan's stated success criterion.
 - [Phase 03-05]: Rule 3 deviation — Added `[tool.uv] package = true` + `[build-system] hatchling` + `[tool.hatch.build.targets.wheel] packages = ["trezarr"]` so `uv sync` actually installs `[project.scripts] trezarr = "trezarr.cli:main"`. Without `package = true`, uv silently skips the entry point and `uv run trezarr` does not resolve.
 - [Phase 03-05]: Soft observation — `trezarr.cli.MediaItem` and `trezarr.arr.sonarr.MediaItem` are two separate dataclasses. cli.MediaItem carries source_sub_path (post-scan); arr.sonarr.MediaItem carries raw discovery payload. Intentional per Plan-03-01 test contract; future-cleanup candidate (consolidate to EligibleItem) but not a Phase-3 blocker.
+- [Phase ?]: xfail raises=(ImportError, AssertionError, TypeError) for stubs in existing modules — trezarr.translate.engine exists from Phase 3, so raises=ImportError alone would cause FAILED not XFAIL for test_pronoun_engine.py stubs
 
 ### Pending Todos
 
@@ -111,6 +113,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-06-01T05:34:16.798Z
-Stopped at: Phase 5 context gathered
-Resume file: .planning/phases/05-three-pass-pronoun-engine/05-CONTEXT.md
+Last session: 2026-06-01T13:58:19.248Z
+Stopped at: Completed 05-01-PLAN.md (Wave-0 xfail stubs)
+Resume file: None

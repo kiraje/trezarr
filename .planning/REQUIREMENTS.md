@@ -35,7 +35,7 @@ Requirements for initial release. Each maps to roadmap phases.
 - [x] **ENG-01**: User can configure a user-provided OpenAI-SDK-compatible endpoint (base URL, model, API key) that powers all translation
 - [x] **ENG-02**: Trezarr batches/chunks long subtitle files within token limits without splitting a sentence or scene across batch boundaries
 - [x] **ENG-03**: Each batch is translated with a surrounding-line context window (read-only lines before/after) for conversational coherence
-- [ ] **ENG-04**: Trezarr runs a two-pass pipeline — Pass 1 analyzes the full file + media metadata to build/update the Series Bible before Pass 2 translates any line
+- [x] **ENG-04**: Trezarr runs a two-pass pipeline — Pass 1 analyzes the full file + media metadata to build/update the Series Bible before Pass 2 translates any line
 - [ ] **ENG-05**: Trezarr runs an LLM self-review pass over translated output, checking Series Bible adherence (pronouns/terms/register) and correcting violations before finalizing
 - [x] **ENG-06**: A hard pre-write validation gate verifies cue-count match, no untranslated lines, monotonic timestamps, and format integrity — failing files are quarantined, never written
 - [x] **ENG-07**: A failed or rejected translation can be retried/re-run idempotently, reusing existing Series Bible state
@@ -44,7 +44,7 @@ Requirements for initial release. Each maps to roadmap phases.
 
 - [ ] **BIBLE-01**: Trezarr maintains a persistent per-series Series Bible that is loaded as context for every episode and updated after each
 - [ ] **BIBLE-02**: The Bible records Characters (name in original Latin form, gender, rough age, role)
-- [ ] **BIBLE-03**: The Bible records a directed Address Map — for each ordered character pair, the self-term and address-term (e.g. `John→Mary: self=anh, address=em`), supporting asymmetric pairs
+- [x] **BIBLE-03**: The Bible records a directed Address Map — for each ordered character pair, the self-term and address-term (e.g. `John→Mary: self=anh, address=em`), supporting asymmetric pairs
 - [ ] **BIBLE-04**: The Bible records a Term Dictionary mapping recurring proper nouns, titles, places, and jargon to fixed Vietnamese renderings (incl. character-name romanization policy)
 - [ ] **BIBLE-05**: The Bible records a Register/tone per series, grounded in media metadata (genre/plot/era from Sonarr/Radarr/TMDB)
 - [ ] **BIBLE-06**: The Bible is carried forward across episodes so a character is addressed consistently from S01E01 to the finale
@@ -54,9 +54,9 @@ Requirements for initial release. Each maps to roadmap phases.
 
 ### Pronoun Attribution
 
-- [ ] **PRON-01**: Trezarr infers the speaker and addressee for each line from dialogue content, turn-taking, and vocatives (subtitles carry no speaker labels)
-- [ ] **PRON-02**: Trezarr applies the correct Vietnamese pronoun pair from the Address Map based on the inferred speaker→addressee relationship
-- [ ] **PRON-03**: When attribution is low-confidence, Trezarr falls back to a safe register rather than risk a wrong intimate pronoun
+- [x] **PRON-01**: Trezarr infers the speaker and addressee for each line from dialogue content, turn-taking, and vocatives (subtitles carry no speaker labels)
+- [x] **PRON-02**: Trezarr applies the correct Vietnamese pronoun pair from the Address Map based on the inferred speaker→addressee relationship
+- [x] **PRON-03**: When attribution is low-confidence, Trezarr falls back to a safe register rather than risk a wrong intimate pronoun
 
 ### Source Selection
 
@@ -124,22 +124,22 @@ Which phases cover which requirements. Populated during roadmap creation.
 | ENG-01 | Phase 1 | Complete |
 | ENG-02 | Phase 2 | Complete |
 | ENG-03 | Phase 2 | Complete |
-| ENG-04 | Phase 5 | Pending |
+| ENG-04 | Phase 5 | Complete |
 | ENG-05 | Phase 6 | Pending |
 | ENG-06 | Phase 2 | Complete |
 | ENG-07 | Phase 2 | Complete |
 | BIBLE-01 | Phase 4 | Pending |
 | BIBLE-02 | Phase 4 | Pending |
-| BIBLE-03 | Phase 5 | Pending |
+| BIBLE-03 | Phase 5 | Complete |
 | BIBLE-04 | Phase 4 | Pending |
 | BIBLE-05 | Phase 4 | Pending |
 | BIBLE-06 | Phase 4 | Pending |
 | BIBLE-07 | Phase 6 | Pending |
 | BIBLE-08 | Phase 8 | Pending |
 | BIBLE-09 | Phase 8 | Pending |
-| PRON-01 | Phase 5 | Pending |
-| PRON-02 | Phase 5 | Pending |
-| PRON-03 | Phase 5 | Pending |
+| PRON-01 | Phase 5 | Complete |
+| PRON-02 | Phase 5 | Complete |
+| PRON-03 | Phase 5 | Complete |
 | SRC-01 | Phase 10 | Pending |
 | SRC-02 | Phase 10 | Pending |
 | SVC-01 | Phase 7 | Pending |
