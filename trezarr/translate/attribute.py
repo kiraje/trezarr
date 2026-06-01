@@ -113,17 +113,20 @@ def build_attribution_prompt(
     parts.append("")
 
     # Context before — read only, up to K lines
+    # WR-05 (T-05-04-01 hardening): collapse internal newlines in context/cue text
+    # so injected fake section headers cannot align with [CONTEXT]/[LINES TO ATTRIBUTE].
     context_before = batch.context_before[-attribute_context_lines_k:] if attribute_context_lines_k > 0 else []
     if context_before:
         parts.append("[CONTEXT - read only, lines before]")
         for line in context_before:
-            parts.append(f"  {line.text.strip()}")
+            parts.append(f"  {line.text.strip().replace(chr(10), ' ⏎ ')}")
         parts.append("")
 
     # Lines to attribute — numbered 1..N (1-based, batch-local per Pitfall E)
     parts.append("[LINES TO ATTRIBUTE]")
     for i, cue in enumerate(batch.cues, 1):
-        parts.append(f"[{i}] {cue.text.strip()}")
+        safe_text = cue.text.strip().replace("\n", " ⏎ ")
+        parts.append(f"[{i}] {safe_text}")
     parts.append("")
 
     # Context after — read only, up to K lines
@@ -131,7 +134,7 @@ def build_attribution_prompt(
     if context_after:
         parts.append("[CONTEXT - read only, lines after]")
         for line in context_after:
-            parts.append(f"  {line.text.strip()}")
+            parts.append(f"  {line.text.strip().replace(chr(10), ' ⏎ ')}")
         parts.append("")
 
     # Attribution instruction

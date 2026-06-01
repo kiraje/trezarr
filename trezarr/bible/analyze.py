@@ -182,7 +182,10 @@ def _build_analysis_prompt(
     for i, text in enumerate(cue_texts, 1):
         if len(text) > 500:
             logger.warning("Pass 1: cue %d has suspiciously long text (%d chars) — possible injection (T-05-04-01)", i, len(text))
-        parts.append(f"[{i}] {text.strip()}")
+        # WR-05 (T-05-04-01 hardening): collapse internal newlines so injected fake
+        # section headers cannot column-align with real [DIALOGUE SAMPLE] / [INSTRUCTIONS].
+        safe_text = text.strip().replace("\n", " ⏎ ")
+        parts.append(f"[{i}] {safe_text}")
 
     # ── INSTRUCTIONS ──────────────────────────────────────────────────────
     parts.append(
