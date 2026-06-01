@@ -161,6 +161,15 @@ def discover_radarr_items(settings: "TrezarrSettings") -> list[MediaItem]:
                     source_type="movie",
                     series_id=movie["id"],
                     season_number=None,
+                    # ── Phase 4: arr_metadata snapshot fields (D-33, D-35) ──
+                    arr_kind="radarr",
+                    tmdb_id=movie.get("tmdbId"),         # camelCase JSON key from Radarr API
+                    tvdb_id=movie.get("tvdbId"),          # defensive; Radarr movies may carry it
+                    genres=movie.get("genres"),
+                    overview=movie.get("overview"),
+                    year=movie.get("year"),
+                    runtime=movie.get("runtime"),         # movies use "runtime" (minutes)
+                    # network intentionally omitted for Radarr movies (defaults to None — D-35)
                 )
             )
         return items

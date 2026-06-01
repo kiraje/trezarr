@@ -9,6 +9,9 @@ Design decisions honoured:
   D-30  Per-service resilience: pyarr's PyarrError family is caught at the discovery
         boundary and re-raised as DiscoveryError with host/port context so cli.py can
         choose to continue with the other *arr service.
+  D-35  arr_metadata snapshot fields appended to MediaItem (genres, overview, year,
+        network, runtime, arr_kind, tvdb_id, tmdb_id) — captured at discovery so
+        Phase 5 never re-fetches arr APIs.
 
 Notable pyarr 6.x specifics:
   - `api_ver="v3"` is passed explicitly to skip pyarr's auto-detect `GET /api` round trip.
@@ -55,14 +58,28 @@ class MediaItem:
     ``series_title`` would be misleading for the Radarr movie case.
 
     Attributes:
-        local_path: The resolved local filesystem path to the video file
-                    (after apply_path_mapping). NOT the directory.
-        title:      Display title for logging (series title for episodes,
-                    movie title for movies).
-        source_type: "episode" or "movie" — the *arr that produced this item.
-        series_id:   The *arr internal ID of the parent series (Sonarr) or the
-                     movie itself (Radarr). Useful for downstream lookups.
+        local_path:    The resolved local filesystem path to the video file
+                       (after apply_path_mapping). NOT the directory.
+        title:         Display title for logging (series title for episodes,
+                       movie title for movies).
+        source_type:   "episode" or "movie" — the *arr that produced this item.
+        series_id:     The *arr internal ID of the parent series (Sonarr) or the
+                       movie itself (Radarr). Useful for downstream lookups.
         season_number: Sonarr season number; None for Radarr movies.
+
+        # ── Phase 4: arr_metadata snapshot fields (D-33, D-35) ──
+        arr_kind:  Source *arr service: "sonarr" or "radarr" (D-33). None if
+                   the item was not produced by a Phase-4 discovery call.
+        tvdb_id:   TVDB ID captured at discovery time (D-33, denormalized).
+                   Sonarr provides tvdbId; some Radarr movies also carry it.
+                   None for Radarr movies that don't expose tvdbId.
+        tmdb_id:   TMDB ID captured at discovery time (D-33, denormalized).
+                   Radarr provides tmdbId; Sonarr does not. None for Sonarr items.
+        genres:    List of genre strings from the *arr payload, or None if absent.
+        overview:  Series/movie overview text from the *arr payload, or None.
+        year:      Premiere/release year from the *arr payload, or None.
+        network:   Broadcast network from the Sonarr payload, or None for movies.
+        runtime:   Episode/movie runtime in minutes from the *arr payload, or None.
     """
 
     local_path: Path
@@ -70,6 +87,16 @@ class MediaItem:
     source_type: str
     series_id: int | None = None
     season_number: int | None = None
+
+    # ── Phase 4: arr_metadata snapshot fields (D-33, D-35) ──
+    arr_kind: str | None = None        # "sonarr" | "radarr"
+    tvdb_id: int | None = None         # D-33: denormalized; captured at series creation
+    tmdb_id: int | None = None         # D-33: denormalized; Radarr only
+    genres: list[str] | None = None    # D-35: genre list from arr payload
+    overview: str | None = None        # D-35: series/movie overview text
+    year: int | None = None            # D-35: premiere/release year
+    network: str | None = None         # D-35: broadcast network (Sonarr only)
+    runtime: int | None = None         # D-35: runtime in minutes
 
 
 def build_sonarr_client(settings: "TrezarrSettings") -> Sonarr:
@@ -163,6 +190,15 @@ def discover_sonarr_items(settings: "TrezarrSettings") -> list[MediaItem]:
                         source_type="episode",
                         series_id=series["id"],
                         season_number=ep_file.get("seasonNumber"),
+                        # ── Phase 4: arr_metadata snapshot fields (D-33, D-35) ──
+                        arr_kind="sonarr",
+                        tvdb_id=series.get("tvdbId"),    # camelCase JSON key from Sonarr API
+                        genres=series.get("genres"),
+                        overview=series.get("overview"),
+                        year=series.get("year"),
+                        network=series.get("network"),
+                        runtime=series.get("runtime"),
+                        # tmdb_id intentionally omitted for Sonarr (defaults to None — D-33)
                     )
                 )
         return items
