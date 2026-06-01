@@ -57,7 +57,12 @@ def _db_patches():
         List of patch context managers suitable for use with contextlib.ExitStack.
     """
     return [
-        patch("trezarr.cli.build_engine", return_value=MagicMock()),
+        # CR-01: the engine returned by build_engine must have an awaitable
+        # `dispose()` because _run_once now wraps the pipeline in
+        # `try: ... finally: await engine.dispose()`. A bare MagicMock would
+        # return a non-awaitable MagicMock from `engine.dispose()`, which the
+        # `await` then chokes on. AsyncMock matches the real AsyncEngine.dispose.
+        patch("trezarr.cli.build_engine", return_value=MagicMock(dispose=AsyncMock())),
         patch("trezarr.cli.run_migrations_to_head", new=AsyncMock()),
         patch("trezarr.cli.build_session_factory", return_value=MagicMock()),
         patch("trezarr.cli.migrate_json_ledger_if_needed", new=AsyncMock()),
@@ -618,7 +623,8 @@ async def test_run_once_builds_engine_and_runs_migrations_before_discovery(tmp_p
 
     def _record_build_engine(*_a, **_kw):
         call_order.append("build_engine")
-        return MagicMock()
+        # CR-01: engine.dispose() is awaited in _run_once's finally block.
+        return MagicMock(dispose=AsyncMock())
 
     async def _record_run_migrations(*_a, **_kw):
         call_order.append("run_migrations_to_head")
@@ -702,7 +708,8 @@ async def test_run_once_constructs_ledger_sqla_not_json_ledger(tmp_path, capsys,
     sentinel_ledger = MagicMock(spec=_LedgerSQLA)
 
     with contextlib.ExitStack() as stack:
-        stack.enter_context(patch("trezarr.cli.build_engine", return_value=MagicMock()))
+        # CR-01: engine mock needs an awaitable dispose for the finally block.
+        stack.enter_context(patch("trezarr.cli.build_engine", return_value=MagicMock(dispose=AsyncMock())))
         stack.enter_context(patch("trezarr.cli.run_migrations_to_head", new=AsyncMock()))
         stack.enter_context(patch("trezarr.cli.build_session_factory", return_value=MagicMock()))
         stack.enter_context(patch("trezarr.cli.migrate_json_ledger_if_needed", new=AsyncMock()))
@@ -738,7 +745,8 @@ async def test_run_once_exits_nonzero_on_migration_failure(tmp_path, caplog, set
 
     with contextlib.ExitStack() as stack:
         stack.enter_context(patch("trezarr.cli.TrezarrSettings", return_value=settings))
-        stack.enter_context(patch("trezarr.cli.build_engine", return_value=MagicMock()))
+        # CR-01: engine mock needs an awaitable dispose for the finally block.
+        stack.enter_context(patch("trezarr.cli.build_engine", return_value=MagicMock(dispose=AsyncMock())))
         stack.enter_context(patch(
             "trezarr.cli.run_migrations_to_head",
             new=AsyncMock(side_effect=RuntimeError("Alembic migration failed: DB locked")),
@@ -775,7 +783,8 @@ async def test_run_once_logs_but_continues_on_ledger_migration_failure(tmp_path,
 
     with contextlib.ExitStack() as stack:
         stack.enter_context(patch("trezarr.cli.TrezarrSettings", return_value=settings))
-        stack.enter_context(patch("trezarr.cli.build_engine", return_value=MagicMock()))
+        # CR-01: engine mock needs an awaitable dispose for the finally block.
+        stack.enter_context(patch("trezarr.cli.build_engine", return_value=MagicMock(dispose=AsyncMock())))
         stack.enter_context(patch("trezarr.cli.run_migrations_to_head", new=AsyncMock()))
         stack.enter_context(patch("trezarr.cli.build_session_factory", return_value=MagicMock()))
         stack.enter_context(patch(
@@ -883,15 +892,20 @@ async def test_run_once_end_to_end_smoke_with_temp_sqlite(tmp_path, settings_fac
     from trezarr.db.engine import build_engine as _build_engine
     from trezarr.db.migration_runner import run_migrations_to_head as _run_migrations
     verify_engine = _build_engine(settings)
-    await _run_migrations(verify_engine)
-    verify_factory = _async_sessionmaker(verify_engine, expire_on_commit=False)
-    async with verify_factory() as session:
-        result = await session.execute(
-            text("SELECT status, source_path FROM processed_file WHERE source_path = :p"),
-            {"p": str(src)},
-        )
-        row = result.fetchone()
-    await verify_engine.dispose()
+    # CR-01: wrap verify_engine in try/finally so dispose() runs on EVERY exit
+    # path — assertion failure inside the async-with block previously skipped
+    # dispose and left aiosqlite worker threads bound to the closed event loop.
+    try:
+        await _run_migrations(verify_engine)
+        verify_factory = _async_sessionmaker(verify_engine, expire_on_commit=False)
+        async with verify_factory() as session:
+            result = await session.execute(
+                text("SELECT status, source_path FROM processed_file WHERE source_path = :p"),
+                {"p": str(src)},
+            )
+            row = result.fetchone()
+    finally:
+        await verify_engine.dispose()
 
     assert row is not None, f"processed_file must have a row for {src} after a successful run"
     assert row[0] == "done", f"processed_file row for {src} must have status='done', got {row[0]!r}"

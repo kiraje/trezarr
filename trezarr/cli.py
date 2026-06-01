@@ -149,11 +149,16 @@ async def _run_once(config_path: str | None) -> int:
     # Step 3.5a — DB engine + Alembic migrations (hard-fatal on failure).
     # Schema must be ready before any translate work; mirrors probe_media_roots
     # fail-fast severity — per RESEARCH §Open Question 3.
+    #
+    # CR-01: the AsyncEngine holds aiosqlite worker threads that schedule
+    # coroutines onto this event loop. If the engine is not disposed before
+    # asyncio.run() tears down the loop, the worker thread later tries to
+    # schedule onto a closed loop and raises `RuntimeError: Event loop is
+    # closed`. The engine is created BEFORE the outer try so its existence
+    # is unambiguous on every dispose path; on build_engine failure we never
+    # reach the try/finally.
     try:
         engine = build_engine(settings)
-        await run_migrations_to_head(engine)
-        session_factory = build_session_factory(engine)
-        ledger: LedgerSQLA = LedgerSQLA(session_factory)
     except Exception as exc:
         logger.error(
             "DB startup failed — cannot continue. "
@@ -163,20 +168,61 @@ async def _run_once(config_path: str | None) -> int:
         )
         return 1
 
-    # Step 3.5b — JSON ledger one-shot migration (best-effort per D-37 forgiveness).
-    # A failure here starts SQLite with an empty ledger but does NOT abort the run.
-    # Asymmetric vs. Step 3.5a: the translate loop can still run without the old JSON data.
+    # CR-01: every code path below MUST go through the finally block so the
+    # AsyncEngine is disposed before asyncio.run() tears down the event loop.
     try:
-        await migrate_json_ledger_if_needed(session_factory, settings)
-    except Exception as exc:
-        logger.error(
-            "DB startup failed — JSON ledger migration failed (%s). "
-            "Continuing with an empty SQLite ledger (D-37 forgiveness). "
-            "Prior processed_files.json entries will NOT be migrated on this run.",
-            exc,
-            exc_info=True,
-        )
+        try:
+            await run_migrations_to_head(engine)
+            session_factory = build_session_factory(engine)
+            ledger: LedgerSQLA = LedgerSQLA(session_factory)
+        except Exception as exc:
+            logger.error(
+                "DB startup failed — cannot continue. "
+                "Check your bible_db_url setting and disk permissions. Error: %s",
+                exc,
+                exc_info=True,
+            )
+            return 1
 
+        # Step 3.5b — JSON ledger one-shot migration (best-effort per D-37 forgiveness).
+        # A failure here starts SQLite with an empty ledger but does NOT abort the run.
+        # Asymmetric vs. Step 3.5a: the translate loop can still run without the old JSON data.
+        try:
+            await migrate_json_ledger_if_needed(session_factory, settings)
+        except Exception as exc:
+            logger.error(
+                "DB startup failed — JSON ledger migration failed (%s). "
+                "Continuing with an empty SQLite ledger (D-37 forgiveness). "
+                "Prior processed_files.json entries will NOT be migrated on this run.",
+                exc,
+                exc_info=True,
+            )
+
+        return await _run_pipeline_steps(settings, ledger, media_roots)
+    finally:
+        # CR-01: ALWAYS dispose the AsyncEngine before this coroutine returns —
+        # otherwise aiosqlite worker threads outlive the event loop and the
+        # next finalization attempt raises `RuntimeError: Event loop is closed`.
+        await engine.dispose()
+
+
+async def _run_pipeline_steps(
+    settings: TrezarrSettings,
+    ledger: LedgerSQLA,
+    media_roots: list,
+) -> int:
+    """Steps 4-8 of _run_once factored out so cli's try/finally around engine
+    dispose stays compact and readable.
+
+    Args:
+        settings:     Loaded TrezarrSettings.
+        ledger:       LedgerSQLA bound to the live session_factory.
+        media_roots:  Path-traversal guard root list (D-29).
+
+    Returns:
+        int exit code (0 on full success; 1 on any per-item failure /
+        quarantine / all-discovery-failed condition).
+    """
     # Step 4 — Discovery with per-service resilience (MEDIUM #10).
     # One *arr down does NOT abort the run if the other is healthy.
     all_items: list = []
