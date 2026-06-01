@@ -111,6 +111,12 @@ None yet.
 - Phase 5 (Three-Pass Pronoun Engine) is the novel core and flagged for deeper research during planning: prompt design, Bible merge/lock semantics, speaker-inference reliability, Vietnamese pronoun-pair rules, and a cross-episode consistency harness.
 - Phase 9 (ASS/SSA) and Phase 10 (source selection) are also research-flagged (intricate ASS tag grammar; novel relational-fidelity ranking heuristic).
 
+### Quick Tasks Completed
+
+| # | Description | Date | Commit | Directory |
+|---|-------------|------|--------|-----------|
+| 260602-3zg | Fix Phase-5 review findings B1 (reconcile.py name match missing .strip) and M1 (character identity key normalization) | 2026-06-01 | 754292f | [260602-3zg-fix-phase-5-review-findings-b1-reconcile](./quick/260602-3zg-fix-phase-5-review-findings-b1-reconcile/) |
+
 ## Deferred Items
 
 Items acknowledged and carried forward from previous milestone close:
