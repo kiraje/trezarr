@@ -336,16 +336,19 @@ async def merge_bible_analysis(
     series_id = series_dto.id
 
     # Step 1: Update series register if inferred
-    if analysis.register_value is not None:
+    # WR-07: guard against empty/whitespace register_value — "" is not None but must
+    # not overwrite a good prior register with an empty string.
+    reg = (analysis.register_value or "").strip()
+    if reg:
         try:
             await merge_inferred(
                 session_factory,
                 series_dto,
-                {"register": analysis.register_value},
+                {"register": reg},
                 episode_key,
                 source="inference",
             )
-            logger.debug("Pass 1: merged register=%r for series %d", analysis.register_value, series_id)
+            logger.debug("Pass 1: merged register=%r for series %d", reg, series_id)
         except Exception as exc:
             logger.warning("Pass 1: failed to merge register for series %d: %s", series_id, exc)
 
