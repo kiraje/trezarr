@@ -7,6 +7,9 @@ Tests skip cleanly via pytest.importorskip when the module is absent (Wave 0 / W
 Mix of synchronous and async tests. Uses tmp_path pytest fixture for file I/O.
 Async test functions use async def without @pytest.mark.asyncio (asyncio_mode="auto").
 
+BREAKING INTERNAL API CHANGE (Phase 4): Ledger.check and Ledger.record are now
+async. All call sites use ``await ledger.check(...)`` and ``await ledger.record(...)``.
+
 Covers:
   ENG-07 — Skip when status="done" + content_hash matches
   ENG-07 — Regenerate when source hash changed (hash mismatch)
@@ -18,7 +21,7 @@ Covers:
 import pytest
 
 
-def test_skip_unchanged(tmp_path):
+async def test_skip_unchanged(tmp_path):
     """Ledger.check() returns the entry; matching hash → 'skipped' outcome (ENG-07)."""
     ledger_mod = pytest.importorskip("trezarr.output.ledger")
     Ledger = ledger_mod.Ledger
@@ -40,11 +43,11 @@ def test_skip_unchanged(tmp_path):
         status="done",
         content_hash=content_hash,
     )
-    ledger.record(entry)
+    await ledger.record(entry)
 
     # Reload from disk and check
     ledger2 = Ledger(ledger_path)
-    found = ledger2.check(str(src))
+    found = await ledger2.check(str(src))
 
     assert found is not None, "Expected ledger entry to be found after record()"
     assert found.status == "done"
@@ -57,7 +60,7 @@ def test_skip_unchanged(tmp_path):
     )
 
 
-def test_regenerate_on_hash_change(tmp_path):
+async def test_regenerate_on_hash_change(tmp_path):
     """Ledger status="done" but stored hash != current hash → should regenerate (ENG-07)."""
     ledger_mod = pytest.importorskip("trezarr.output.ledger")
     Ledger = ledger_mod.Ledger
@@ -77,9 +80,9 @@ def test_regenerate_on_hash_change(tmp_path):
         status="done",
         content_hash=stale_hash,
     )
-    ledger.record(entry)
+    await ledger.record(entry)
 
-    found = ledger.check(str(src))
+    found = await ledger.check(str(src))
     current_hash = Ledger.content_hash(src.read_bytes())
 
     assert found is not None
@@ -90,7 +93,7 @@ def test_regenerate_on_hash_change(tmp_path):
     )
 
 
-def test_foreign_srt_not_clobbered(tmp_path):
+async def test_foreign_srt_not_clobbered(tmp_path):
     """Dest .vi.srt exists but source_path not in ledger → skip + don't translate (ENG-07, D-20)."""
     ledger_mod = pytest.importorskip("trezarr.output.ledger")
     Ledger = ledger_mod.Ledger
@@ -106,7 +109,7 @@ def test_foreign_srt_not_clobbered(tmp_path):
     dest.write_text("1\n00:00:01,000 --> 00:00:03,000\nXin chào\n", encoding="utf-8")
 
     # Key contract: source_path not in ledger → it's a foreign file
-    found = ledger.check(str(src))
+    found = await ledger.check(str(src))
     assert found is None, (
         "Expected check() to return None for source_path not in ledger (foreign .vi.srt)"
     )
@@ -118,7 +121,7 @@ def test_foreign_srt_not_clobbered(tmp_path):
     assert dest.read_text(encoding="utf-8") == original_content, "Foreign .vi.srt should be unchanged"
 
 
-def test_quarantine_retry(tmp_path):
+async def test_quarantine_retry(tmp_path):
     """Ledger entry with status='quarantined' → should proceed to translation (ENG-07, D-20)."""
     ledger_mod = pytest.importorskip("trezarr.output.ledger")
     Ledger = ledger_mod.Ledger
@@ -138,9 +141,9 @@ def test_quarantine_retry(tmp_path):
         content_hash=content_hash,
         quarantine_path=str(tmp_path / "quarantine" / "Show.S01E04.json"),
     )
-    ledger.record(entry)
+    await ledger.record(entry)
 
-    found = ledger.check(str(src))
+    found = await ledger.check(str(src))
 
     assert found is not None
     assert found.status == "quarantined", f"Expected status='quarantined', got {found.status!r}"
@@ -150,7 +153,7 @@ def test_quarantine_retry(tmp_path):
     assert not should_skip, "Quarantined entry should not be skipped — it should be retried"
 
 
-def test_ledger_persists_atomically(tmp_path):
+async def test_ledger_persists_atomically(tmp_path):
     """After Ledger.record(), the JSON file on disk contains the entry and is valid JSON (ENG-07)."""
     ledger_mod = pytest.importorskip("trezarr.output.ledger")
     Ledger = ledger_mod.Ledger
@@ -168,7 +171,7 @@ def test_ledger_persists_atomically(tmp_path):
         status="done",
         content_hash="abcd1234abcd1234",
     )
-    ledger.record(entry)
+    await ledger.record(entry)
 
     assert ledger_path.exists(), "Ledger file should exist after record()"
 
@@ -188,12 +191,15 @@ def test_ledger_schema_drift_skips_bad_entry_keeps_good(tmp_path):
 
     A forward-compat schema drift (unknown key in one entry) must not wipe the entire ledger.
     Only the bad entry is skipped; the rest load normally.
+
+    Note: This test exercises _load() only (sync constructor + sync _data access).
+    check() is async but _data dict access is sync internally; we test via the
+    sync internal _data attribute here to keep the schema-drift test self-contained.
     """
     import json
 
     ledger_mod = pytest.importorskip("trezarr.output.ledger")
     Ledger = ledger_mod.Ledger
-    LedgerEntry = ledger_mod.LedgerEntry
 
     ledger_path = tmp_path / "processed_files.json"
 
@@ -222,13 +228,13 @@ def test_ledger_schema_drift_skips_bad_entry_keeps_good(tmp_path):
 
     ledger = Ledger(ledger_path)
 
-    # Good entry must survive
-    good = ledger.check(good_path)
+    # Good entry must survive — check via internal _data (sync; avoids async complexity)
+    good = ledger._data.get(good_path)
     assert good is not None, "Good entry must be loaded even when another entry is malformed"
     assert good.status == "done"
 
     # Bad entry is simply absent (not an exception)
-    bad = ledger.check(bad_path)
+    bad = ledger._data.get(bad_path)
     assert bad is None, "Malformed entry must be skipped (not cause total ledger loss)"
 
 
@@ -269,7 +275,8 @@ def test_ledger_load_with_non_object_top_level(tmp_path):
 
     ledger = Ledger(ledger_path)  # must not raise
     assert ledger._data == {}, f"Expected empty ledger on non-object top-level, got {ledger._data!r}"
-    assert ledger.check("anything") is None
+    # check() is async; for this sync-only test we verify via _data
+    assert ledger._data.get("anything") is None
 
 
 def test_ledger_load_with_non_object_entry(tmp_path):
@@ -289,6 +296,7 @@ def test_ledger_load_with_non_object_entry(tmp_path):
     )
 
     ledger = Ledger(ledger_path)  # must not raise
-    assert ledger.check("a/b/c.srt") is None
-    assert ledger.check("x/y/z.srt") is None
-    assert ledger.check("p/q/r.srt") is None
+    # check() is async; verify via internal _data for these constructor-only tests
+    assert ledger._data.get("a/b/c.srt") is None
+    assert ledger._data.get("x/y/z.srt") is None
+    assert ledger._data.get("p/q/r.srt") is None

@@ -10,6 +10,11 @@ Status after Plan 03-05 (Wave 4 — GREEN):
     ``tests/_helpers/cli_media_item.py`` per 03-REVIEW WR-06 (it was dead
     code in the production import graph).
 
+BREAKING INTERNAL API CHANGE (Phase 4): is_eligible() and scan_for_eligible_items()
+are now async. All test calls use ``await``. _make_minimal_ledger() is also async
+because ledger.record() is now async (Ledger.check/record became async as part of
+the LedgerSQLA backend swap — Option C lock-in per 04-PATTERNS.md §Pattern 5).
+
 Covers:
   AUTO-01  find_source_sub(): highest-priority language wins, None when absent,
            deterministic on collision (03-REVIEWS.md MEDIUM #12)
@@ -29,18 +34,20 @@ import pytest
 # ──────────────────────────────────────────────────────────────────────────────
 
 
-def _make_minimal_ledger(tmp_path, entries=None):
+async def _make_minimal_ledger(tmp_path, entries=None):
     """Build a Ledger from tmp_path/processed_files.json with optional pre-populated entries.
 
     Mirrors the _make_minimal_doc helper pattern from tests/output/test_write.py.
     Caller passes a list of LedgerEntry-shape dicts (or None for an empty ledger).
+
+    BREAKING INTERNAL API CHANGE (Phase 4): async because ledger.record() is now async.
     """
     from trezarr.output.ledger import Ledger, LedgerEntry
 
     ledger_path = tmp_path / "processed_files.json"
     ledger = Ledger(ledger_path)
     for entry_data in (entries or []):
-        ledger.record(LedgerEntry(**entry_data))
+        await ledger.record(LedgerEntry(**entry_data))
     return ledger
 
 
@@ -153,10 +160,13 @@ def test_find_source_sub_deterministic_on_collision(tmp_path):
 #
 # Per 03-REVIEWS.md HIGH #4: is_eligible takes (source_sub_path, ledger) — NO
 # media_path parameter (the vi sidecar path is derived from the source sub).
+#
+# BREAKING INTERNAL API CHANGE (Phase 4): is_eligible is now async.
+# All tests must use ``await is_eligible(...)`` and be ``async def``.
 # ──────────────────────────────────────────────────────────────────────────────
 
 
-def test_gap_detection_no_source(tmp_path):
+async def test_gap_detection_no_source(tmp_path):
     """is_eligible called on a non-existent / missing source sub returns (False, reason).
 
     This stub exists so the contract is explicit even though the call site in
@@ -169,39 +179,39 @@ def test_gap_detection_no_source(tmp_path):
         "trezarr.discover.gap"
     ).is_eligible
 
-    ledger = _make_minimal_ledger(tmp_path)
+    ledger = await _make_minimal_ledger(tmp_path)
 
     nonexistent = tmp_path / "DoesNotExist.S01E01.en.srt"
     # The contract: a missing source file is not eligible
-    eligible, _reason = is_eligible(nonexistent, ledger)
+    eligible, _reason = await is_eligible(nonexistent, ledger)
     assert eligible is False, "Missing source sub must not be eligible"
 
 
-def test_gap_detection_eligible_new(tmp_path):
+async def test_gap_detection_eligible_new(tmp_path):
     """A new source sub with no vi sidecar and no ledger entry is eligible (D-26)."""
     scan_mod = pytest.importorskip("trezarr.discover.scan")
     is_eligible = getattr(scan_mod, "is_eligible", None) or pytest.importorskip(
         "trezarr.discover.gap"
     ).is_eligible
 
-    ledger = _make_minimal_ledger(tmp_path)
+    ledger = await _make_minimal_ledger(tmp_path)
 
     src = tmp_path / "Show.S01E04.en.srt"
     src.write_text("1\n00:00:01,000 --> 00:00:03,000\nHello\n", encoding="utf-8")
     # No vi sidecar exists; no ledger entry — definitely eligible
 
-    eligible, _reason = is_eligible(src, ledger)
+    eligible, _reason = await is_eligible(src, ledger)
     assert eligible is True, "New source sub with no vi sidecar and no ledger entry must be eligible"
 
 
-def test_gap_detection_foreign_vi_skip(tmp_path):
+async def test_gap_detection_foreign_vi_skip(tmp_path):
     """A foreign vi sidecar (present, not in ledger) is skipped — never clobbered (D-26, AUTO-04)."""
     scan_mod = pytest.importorskip("trezarr.discover.scan")
     is_eligible = getattr(scan_mod, "is_eligible", None) or pytest.importorskip(
         "trezarr.discover.gap"
     ).is_eligible
 
-    ledger = _make_minimal_ledger(tmp_path)
+    ledger = await _make_minimal_ledger(tmp_path)
 
     src = tmp_path / "Show.S01E05.en.srt"
     src.write_text("1\n00:00:01,000 --> 00:00:03,000\nHello\n", encoding="utf-8")
@@ -209,14 +219,14 @@ def test_gap_detection_foreign_vi_skip(tmp_path):
     foreign_vi = tmp_path / "Show.S01E05.vi.srt"
     foreign_vi.write_text("foreign", encoding="utf-8")
 
-    eligible, reason = is_eligible(src, ledger)
+    eligible, reason = await is_eligible(src, ledger)
     assert eligible is False, "Foreign vi sidecar must not be clobbered (D-26)"
     assert "foreign" in reason.lower() or "vi" in reason.lower(), (
         f"Expected a foreign/vi reason, got: {reason!r}"
     )
 
 
-def test_idempotency_skip_unchanged(tmp_path):
+async def test_idempotency_skip_unchanged(tmp_path):
     """Ledger says done + source hash unchanged → skip (AUTO-03 / D-27)."""
     from trezarr.output.ledger import Ledger
 
@@ -231,7 +241,7 @@ def test_idempotency_skip_unchanged(tmp_path):
     vi_path.write_text("1\n00:00:01,000 --> 00:00:03,000\nXin chào\n", encoding="utf-8")
     source_hash = Ledger.content_hash(src.read_bytes())
 
-    ledger = _make_minimal_ledger(
+    ledger = await _make_minimal_ledger(
         tmp_path,
         entries=[
             dict(
@@ -243,11 +253,11 @@ def test_idempotency_skip_unchanged(tmp_path):
         ],
     )
 
-    eligible, _reason = is_eligible(src, ledger)
+    eligible, _reason = await is_eligible(src, ledger)
     assert eligible is False, "Unchanged source + status=done must skip (AUTO-03)"
 
 
-def test_idempotency_retranslate_on_change(tmp_path):
+async def test_idempotency_retranslate_on_change(tmp_path):
     """Ledger says done but stored hash != current hash → re-translate (AUTO-03 / D-27)."""
     scan_mod = pytest.importorskip("trezarr.discover.scan")
     is_eligible = getattr(scan_mod, "is_eligible", None) or pytest.importorskip(
@@ -262,7 +272,7 @@ def test_idempotency_retranslate_on_change(tmp_path):
     # Ledger holds a STALE hash (different from current src bytes)
     stale_hash = "stale0000hash0000"
 
-    ledger = _make_minimal_ledger(
+    ledger = await _make_minimal_ledger(
         tmp_path,
         entries=[
             dict(
@@ -274,11 +284,11 @@ def test_idempotency_retranslate_on_change(tmp_path):
         ],
     )
 
-    eligible, reason = is_eligible(src, ledger)
+    eligible, reason = await is_eligible(src, ledger)
     assert eligible is True, f"Changed source must trigger re-translate (got reason: {reason!r})"
 
 
-def test_is_eligible_retries_quarantined(tmp_path):
+async def test_is_eligible_retries_quarantined(tmp_path):
     """A ledger entry with status='quarantined' makes the source eligible for retry (WR-08, D-30 Case 3).
 
     D-30 promises that a previously-quarantined item retries on every subsequent
@@ -293,7 +303,7 @@ def test_is_eligible_retries_quarantined(tmp_path):
     src = tmp_path / "Show.S01E14.en.srt"
     src.write_text("1\n00:00:01,000 --> 00:00:03,000\nHello\n", encoding="utf-8")
 
-    ledger = _make_minimal_ledger(
+    ledger = await _make_minimal_ledger(
         tmp_path,
         entries=[
             dict(
@@ -306,7 +316,7 @@ def test_is_eligible_retries_quarantined(tmp_path):
         ],
     )
 
-    eligible, reason = is_eligible(src, ledger)
+    eligible, reason = await is_eligible(src, ledger)
     assert eligible is True, (
         f"Quarantined item must be eligible for retry (D-30, WR-08); got reason={reason!r}"
     )
@@ -315,7 +325,7 @@ def test_is_eligible_retries_quarantined(tmp_path):
     )
 
 
-def test_is_eligible_resumes_in_progress(tmp_path):
+async def test_is_eligible_resumes_in_progress(tmp_path):
     """A ledger entry with status='in_progress' makes the source eligible for resume (WR-08, Case 4).
 
     A run that crashed mid-translate leaves the ledger record at
@@ -331,7 +341,7 @@ def test_is_eligible_resumes_in_progress(tmp_path):
     src = tmp_path / "Show.S01E15.en.srt"
     src.write_text("1\n00:00:01,000 --> 00:00:03,000\nHello\n", encoding="utf-8")
 
-    ledger = _make_minimal_ledger(
+    ledger = await _make_minimal_ledger(
         tmp_path,
         entries=[
             dict(
@@ -343,7 +353,7 @@ def test_is_eligible_resumes_in_progress(tmp_path):
         ],
     )
 
-    eligible, reason = is_eligible(src, ledger)
+    eligible, reason = await is_eligible(src, ledger)
     assert eligible is True, (
         f"in_progress item must be eligible for resume (WR-08); got reason={reason!r}"
     )
@@ -352,7 +362,7 @@ def test_is_eligible_resumes_in_progress(tmp_path):
     )
 
 
-def test_foreign_vi(tmp_path):
+async def test_foreign_vi(tmp_path):
     """AUTO-04: never re-process our own output. A ledger entry must keep the vi sidecar 'ours'.
 
     This is the AUTO-04 invariant: even if the source sub and a vi sidecar exist,
@@ -372,7 +382,7 @@ def test_foreign_vi(tmp_path):
     vi_path.write_text("1\n00:00:01,000 --> 00:00:03,000\nXin chào\n", encoding="utf-8")
     source_hash = Ledger.content_hash(src.read_bytes())
 
-    ledger = _make_minimal_ledger(
+    ledger = await _make_minimal_ledger(
         tmp_path,
         entries=[
             dict(
@@ -384,17 +394,20 @@ def test_foreign_vi(tmp_path):
         ],
     )
 
-    eligible, _reason = is_eligible(src, ledger)
+    eligible, _reason = await is_eligible(src, ledger)
     assert eligible is False, "Our own vi.srt (matching ledger entry) must NOT be re-processed (AUTO-04)"
 
 
 # ──────────────────────────────────────────────────────────────────────────────
 # scan_for_eligible_items — returns (list[EligibleItem], ScanStats)
 # (03-REVIEWS.md HIGH #5 + MEDIUM #14)
+#
+# BREAKING INTERNAL API CHANGE (Phase 4): scan_for_eligible_items is now async.
+# All tests must use ``await scan_for_eligible_items(...)`` and be ``async def``.
 # ──────────────────────────────────────────────────────────────────────────────
 
 
-def test_scan_returns_eligible_item_and_scan_stats(tmp_path):
+async def test_scan_returns_eligible_item_and_scan_stats(tmp_path):
     """scan_for_eligible_items returns a 2-tuple (list[EligibleItem], ScanStats).
 
     Per 03-REVIEWS.md HIGH #5: promote the bare tuple to a typed EligibleItem
@@ -426,9 +439,9 @@ def test_scan_returns_eligible_item_and_scan_stats(tmp_path):
         source_lang=None,
     )
 
-    ledger = _make_minimal_ledger(tmp_path)
+    ledger = await _make_minimal_ledger(tmp_path)
 
-    result = scan_for_eligible_items([item], ledger=ledger, lang_priority=["en"])
+    result = await scan_for_eligible_items([item], ledger=ledger, lang_priority=["en"])
 
     assert isinstance(result, tuple) and len(result) == 2, (
         f"Expected (list[EligibleItem], ScanStats) tuple, got {type(result).__name__}"
@@ -466,7 +479,7 @@ def test_scan_returns_eligible_item_and_scan_stats(tmp_path):
 # ──────────────────────────────────────────────────────────────────────────────
 
 
-def test_scan_counts_unreadable_source_into_error_bucket(tmp_path, monkeypatch):
+async def test_scan_counts_unreadable_source_into_error_bucket(tmp_path, monkeypatch):
     """A source-unreadable reason from is_eligible increments ScanStats.error, NOT no_source (WR-03)."""
     import trezarr.discover.scan as scan_mod
 
@@ -483,21 +496,23 @@ def test_scan_counts_unreadable_source_into_error_bucket(tmp_path, monkeypatch):
     # Patch the lazily-imported gap.is_eligible inside scan's namespace via the
     # actual gap module — scan does `from trezarr.discover.gap import is_eligible`
     # at call time, so we patch the source.
+    # BREAKING INTERNAL API CHANGE (Phase 4): is_eligible is now async — the
+    # monkeypatch replacement must also be async.
     import trezarr.discover.gap as gap_mod
 
-    def _fake_is_eligible(source_sub_path, ledger):
+    async def _fake_is_eligible(source_sub_path, ledger):
         return (False, f"source subtitle unreadable: simulated EIO at {source_sub_path}")
 
     monkeypatch.setattr(gap_mod, "is_eligible", _fake_is_eligible)
 
-    ledger = _make_minimal_ledger(tmp_path)
-    _, stats = scan_mod.scan_for_eligible_items([item], ledger=ledger, lang_priority=["en"])
+    ledger = await _make_minimal_ledger(tmp_path)
+    _, stats = await scan_mod.scan_for_eligible_items([item], ledger=ledger, lang_priority=["en"])
 
     assert stats.error == 1, f"Expected stats.error == 1 for unreadable source, got {stats.error}"
     assert stats.no_source == 0, "Unreadable source must NOT be counted as no_source (WR-03)"
 
 
-def test_scan_counts_toctou_no_source_into_no_source_bucket(tmp_path, monkeypatch):
+async def test_scan_counts_toctou_no_source_into_no_source_bucket(tmp_path, monkeypatch):
     """A 'no source subtitle at ...' is_eligible reason increments ScanStats.no_source (WR-03)."""
     import trezarr.discover.scan as scan_mod
 
@@ -512,14 +527,15 @@ def test_scan_counts_toctou_no_source_into_no_source_bucket(tmp_path, monkeypatc
 
     import trezarr.discover.gap as gap_mod
 
-    def _fake_is_eligible(source_sub_path, ledger):
+    # BREAKING INTERNAL API CHANGE (Phase 4): is_eligible is now async.
+    async def _fake_is_eligible(source_sub_path, ledger):
         # Simulate TOCTOU: the source file vanished between find_source_sub and is_eligible.
         return (False, f"no source subtitle at {source_sub_path}")
 
     monkeypatch.setattr(gap_mod, "is_eligible", _fake_is_eligible)
 
-    ledger = _make_minimal_ledger(tmp_path)
-    _, stats = scan_mod.scan_for_eligible_items([item], ledger=ledger, lang_priority=["en"])
+    ledger = await _make_minimal_ledger(tmp_path)
+    _, stats = await scan_mod.scan_for_eligible_items([item], ledger=ledger, lang_priority=["en"])
 
     assert stats.no_source == 1, (
         f"Expected stats.no_source == 1 (TOCTOU between find_source_sub and is_eligible), got {stats.no_source}"

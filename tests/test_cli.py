@@ -7,6 +7,14 @@ via pytest.importorskip when the module is absent (Wave 0 / Wave 1).
 Status after Plan 03-05 (Wave 4 — GREEN): all 7 stubs are now plain GREEN; the
 xfail markers have been removed per 03-REVIEWS.md HIGH #3 (xfail-removal policy).
 
+Status after Plan 04-04 (Phase 4 — Ledger backend swap):
+  - All tests updated to patch the new Step 3.5 DB-startup sequence:
+    build_engine, run_migrations_to_head, migrate_json_ledger_if_needed, LedgerSQLA.
+  - scan_for_eligible_items is now async (Phase 4) — patches changed from
+    ``return_value=X`` to ``new=AsyncMock(return_value=X)``.
+  - Use ``_db_startup_patches()`` context manager helper to avoid repeating
+    the 4 new Step 3.5 patches in every test block.
+
 Convention: _run_once() is async (the underlying translate_file() pipeline is
 async), but it returns an `int` exit code rather than calling sys.exit() — per
 03-REVIEWS.md HIGH #6. Tests assert the returned int directly, NOT pytest.raises(SystemExit).
@@ -24,10 +32,36 @@ Covers:
 """
 from __future__ import annotations
 
+import contextlib
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+
+
+def _db_patches():
+    """Return a list of patch objects for the Step 3.5 DB-startup sequence (Plan 04-04).
+
+    These patches suppress the engine + migration + LedgerSQLA construction so
+    CLI unit tests do not need a real database.
+
+    Usage::
+
+        with contextlib.ExitStack() as stack:
+            for p in _db_patches():
+                stack.enter_context(p)
+            stack.enter_context(patch("trezarr.cli.TrezarrSettings", ...))
+            ...
+
+    Returns:
+        List of patch context managers suitable for use with contextlib.ExitStack.
+    """
+    return [
+        patch("trezarr.cli.build_engine", return_value=MagicMock()),
+        patch("trezarr.cli.run_migrations_to_head", new=AsyncMock()),
+        patch("trezarr.cli.migrate_json_ledger_if_needed", new=AsyncMock()),
+        patch("trezarr.cli.LedgerSQLA", return_value=MagicMock()),
+    ]
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -78,20 +112,21 @@ async def test_batch_run_continues_past_failure(tmp_path, settings_factory):
             raise RuntimeError("simulated translate failure for this one item")
         return TranslationResult(status="done", output_path=Path(str(path).replace(".en.srt", ".vi.srt")))
 
-    with (
-        patch("trezarr.cli.TrezarrSettings", return_value=settings),
-        patch("trezarr.cli.discover_sonarr_items", return_value=[]),
-        patch("trezarr.cli.discover_radarr_items", return_value=[]),
-        patch(
+    with contextlib.ExitStack() as stack:
+        for p in _db_patches():
+            stack.enter_context(p)
+        stack.enter_context(patch("trezarr.cli.TrezarrSettings", return_value=settings))
+        stack.enter_context(patch("trezarr.cli.discover_sonarr_items", return_value=[]))
+        stack.enter_context(patch("trezarr.cli.discover_radarr_items", return_value=[]))
+        stack.enter_context(patch(
             "trezarr.cli.scan_for_eligible_items",
-            return_value=([item_ok, item_bad, item_ok_2], MagicMock(scanned=3, no_source=0, foreign_vi=0, already_done=0)),
-        ),
-        patch("trezarr.cli.translate_file", new=AsyncMock(side_effect=_flaky_translate)),
-        patch("trezarr.cli.apply_permissions"),
-        patch("trezarr.cli.probe_media_roots"),
-        patch("trezarr.cli.assert_media_roots_configured"),
-        patch("trezarr.cli.LLMClient"),
-    ):
+            new=AsyncMock(return_value=([item_ok, item_bad, item_ok_2], MagicMock(scanned=3, no_source=0, foreign_vi=0, already_done=0))),
+        ))
+        stack.enter_context(patch("trezarr.cli.translate_file", new=AsyncMock(side_effect=_flaky_translate)))
+        stack.enter_context(patch("trezarr.cli.apply_permissions"))
+        stack.enter_context(patch("trezarr.cli.probe_media_roots"))
+        stack.enter_context(patch("trezarr.cli.assert_media_roots_configured"))
+        stack.enter_context(patch("trezarr.cli.LLMClient"))
         exit_code = await _run_once(None)
 
     # Exit code is non-zero because one item failed
@@ -115,20 +150,21 @@ async def test_run_once_returns_int_zero_on_all_success(tmp_path, settings_facto
         from trezarr.translate.engine import TranslationResult
         return TranslationResult(status="done", output_path=Path(str(path).replace(".en.srt", ".vi.srt")))
 
-    with (
-        patch("trezarr.cli.TrezarrSettings", return_value=settings),
-        patch("trezarr.cli.discover_sonarr_items", return_value=[]),
-        patch("trezarr.cli.discover_radarr_items", return_value=[]),
-        patch(
+    with contextlib.ExitStack() as stack:
+        for p in _db_patches():
+            stack.enter_context(p)
+        stack.enter_context(patch("trezarr.cli.TrezarrSettings", return_value=settings))
+        stack.enter_context(patch("trezarr.cli.discover_sonarr_items", return_value=[]))
+        stack.enter_context(patch("trezarr.cli.discover_radarr_items", return_value=[]))
+        stack.enter_context(patch(
             "trezarr.cli.scan_for_eligible_items",
-            return_value=([item], MagicMock(scanned=1, no_source=0, foreign_vi=0, already_done=0)),
-        ),
-        patch("trezarr.cli.translate_file", new=AsyncMock(side_effect=_ok_translate)),
-        patch("trezarr.cli.apply_permissions"),
-        patch("trezarr.cli.probe_media_roots"),
-        patch("trezarr.cli.assert_media_roots_configured"),
-        patch("trezarr.cli.LLMClient"),
-    ):
+            new=AsyncMock(return_value=([item], MagicMock(scanned=1, no_source=0, foreign_vi=0, already_done=0))),
+        ))
+        stack.enter_context(patch("trezarr.cli.translate_file", new=AsyncMock(side_effect=_ok_translate)))
+        stack.enter_context(patch("trezarr.cli.apply_permissions"))
+        stack.enter_context(patch("trezarr.cli.probe_media_roots"))
+        stack.enter_context(patch("trezarr.cli.assert_media_roots_configured"))
+        stack.enter_context(patch("trezarr.cli.LLMClient"))
         exit_code = await _run_once(None)
 
     assert exit_code == 0, f"Expected exit_code == 0 on all-success, got {exit_code!r}"
@@ -146,20 +182,21 @@ async def test_run_once_returns_int_nonzero_on_any_failure(tmp_path, settings_fa
     async def _failing_translate(path, *_args, **_kwargs):
         raise RuntimeError("simulated translate failure")
 
-    with (
-        patch("trezarr.cli.TrezarrSettings", return_value=settings),
-        patch("trezarr.cli.discover_sonarr_items", return_value=[]),
-        patch("trezarr.cli.discover_radarr_items", return_value=[]),
-        patch(
+    with contextlib.ExitStack() as stack:
+        for p in _db_patches():
+            stack.enter_context(p)
+        stack.enter_context(patch("trezarr.cli.TrezarrSettings", return_value=settings))
+        stack.enter_context(patch("trezarr.cli.discover_sonarr_items", return_value=[]))
+        stack.enter_context(patch("trezarr.cli.discover_radarr_items", return_value=[]))
+        stack.enter_context(patch(
             "trezarr.cli.scan_for_eligible_items",
-            return_value=([item], MagicMock(scanned=1, no_source=0, foreign_vi=0, already_done=0)),
-        ),
-        patch("trezarr.cli.translate_file", new=AsyncMock(side_effect=_failing_translate)),
-        patch("trezarr.cli.apply_permissions"),
-        patch("trezarr.cli.probe_media_roots"),
-        patch("trezarr.cli.assert_media_roots_configured"),
-        patch("trezarr.cli.LLMClient"),
-    ):
+            new=AsyncMock(return_value=([item], MagicMock(scanned=1, no_source=0, foreign_vi=0, already_done=0))),
+        ))
+        stack.enter_context(patch("trezarr.cli.translate_file", new=AsyncMock(side_effect=_failing_translate)))
+        stack.enter_context(patch("trezarr.cli.apply_permissions"))
+        stack.enter_context(patch("trezarr.cli.probe_media_roots"))
+        stack.enter_context(patch("trezarr.cli.assert_media_roots_configured"))
+        stack.enter_context(patch("trezarr.cli.LLMClient"))
         exit_code = await _run_once(None)
 
     assert exit_code == 1, f"Expected exit_code == 1 on any failure, got {exit_code!r}"
@@ -188,20 +225,21 @@ async def test_batch_summary_printed_with_widened_fields(tmp_path, capsys, setti
         from trezarr.translate.engine import TranslationResult
         return TranslationResult(status="done", output_path=Path(str(path).replace(".en.srt", ".vi.srt")))
 
-    with (
-        patch("trezarr.cli.TrezarrSettings", return_value=settings),
-        patch("trezarr.cli.discover_sonarr_items", return_value=[]),
-        patch("trezarr.cli.discover_radarr_items", return_value=[]),
-        patch(
+    with contextlib.ExitStack() as stack:
+        for p in _db_patches():
+            stack.enter_context(p)
+        stack.enter_context(patch("trezarr.cli.TrezarrSettings", return_value=settings))
+        stack.enter_context(patch("trezarr.cli.discover_sonarr_items", return_value=[]))
+        stack.enter_context(patch("trezarr.cli.discover_radarr_items", return_value=[]))
+        stack.enter_context(patch(
             "trezarr.cli.scan_for_eligible_items",
-            return_value=([item], MagicMock(scanned=5, no_source=2, foreign_vi=1, already_done=1)),
-        ),
-        patch("trezarr.cli.translate_file", new=AsyncMock(side_effect=_ok_translate)),
-        patch("trezarr.cli.apply_permissions"),
-        patch("trezarr.cli.probe_media_roots"),
-        patch("trezarr.cli.assert_media_roots_configured"),
-        patch("trezarr.cli.LLMClient"),
-    ):
+            new=AsyncMock(return_value=([item], MagicMock(scanned=5, no_source=2, foreign_vi=1, already_done=1))),
+        ))
+        stack.enter_context(patch("trezarr.cli.translate_file", new=AsyncMock(side_effect=_ok_translate)))
+        stack.enter_context(patch("trezarr.cli.apply_permissions"))
+        stack.enter_context(patch("trezarr.cli.probe_media_roots"))
+        stack.enter_context(patch("trezarr.cli.assert_media_roots_configured"))
+        stack.enter_context(patch("trezarr.cli.LLMClient"))
         await _run_once(None)
 
     captured = capsys.readouterr().out
@@ -235,20 +273,21 @@ async def test_llm_client_not_constructed_when_no_eligible(tmp_path, settings_fa
 
     settings = settings_factory(sonarr_enabled=False, radarr_enabled=False)
 
-    with (
-        patch("trezarr.cli.TrezarrSettings", return_value=settings),
-        patch("trezarr.cli.discover_sonarr_items", return_value=[]),
-        patch("trezarr.cli.discover_radarr_items", return_value=[]),
-        patch(
+    with contextlib.ExitStack() as stack:
+        for p in _db_patches():
+            stack.enter_context(p)
+        stack.enter_context(patch("trezarr.cli.TrezarrSettings", return_value=settings))
+        stack.enter_context(patch("trezarr.cli.discover_sonarr_items", return_value=[]))
+        stack.enter_context(patch("trezarr.cli.discover_radarr_items", return_value=[]))
+        stack.enter_context(patch(
             "trezarr.cli.scan_for_eligible_items",
-            return_value=([], MagicMock(scanned=0, no_source=0, foreign_vi=0, already_done=0)),
-        ),
-        patch("trezarr.cli.translate_file", new=AsyncMock()),
-        patch("trezarr.cli.apply_permissions"),
-        patch("trezarr.cli.probe_media_roots"),
-        patch("trezarr.cli.assert_media_roots_configured"),
-        patch("trezarr.cli.LLMClient") as mock_llm,
-    ):
+            new=AsyncMock(return_value=([], MagicMock(scanned=0, no_source=0, foreign_vi=0, already_done=0))),
+        ))
+        stack.enter_context(patch("trezarr.cli.translate_file", new=AsyncMock()))
+        stack.enter_context(patch("trezarr.cli.apply_permissions"))
+        stack.enter_context(patch("trezarr.cli.probe_media_roots"))
+        stack.enter_context(patch("trezarr.cli.assert_media_roots_configured"))
+        mock_llm = stack.enter_context(patch("trezarr.cli.LLMClient"))
         await _run_once(None)
 
     assert mock_llm.call_count == 0, (
@@ -282,21 +321,22 @@ async def test_all_arr_failure_distinct_notice_and_label(tmp_path, capsys, caplo
 
     settings = settings_factory(sonarr_enabled=True, radarr_enabled=True)
 
-    with (
-        patch("trezarr.cli.TrezarrSettings", return_value=settings),
-        patch("trezarr.cli.discover_sonarr_items", side_effect=DiscoveryError("sonarr down")),
-        patch("trezarr.cli.discover_radarr_items", side_effect=DiscoveryError("radarr down")),
-        patch(
+    with contextlib.ExitStack() as stack:
+        for p in _db_patches():
+            stack.enter_context(p)
+        stack.enter_context(patch("trezarr.cli.TrezarrSettings", return_value=settings))
+        stack.enter_context(patch("trezarr.cli.discover_sonarr_items", side_effect=DiscoveryError("sonarr down")))
+        stack.enter_context(patch("trezarr.cli.discover_radarr_items", side_effect=DiscoveryError("radarr down")))
+        stack.enter_context(patch(
             "trezarr.cli.scan_for_eligible_items",
-            return_value=([], MagicMock(scanned=0, no_source=0, foreign_vi=0, already_done=0, error=0)),
-        ),
-        patch("trezarr.cli.translate_file", new=AsyncMock()),
-        patch("trezarr.cli.apply_permissions"),
-        patch("trezarr.cli.probe_media_roots"),
-        patch("trezarr.cli.assert_media_roots_configured"),
-        patch("trezarr.cli.LLMClient"),
-        caplog.at_level(logging.ERROR),
-    ):
+            new=AsyncMock(return_value=([], MagicMock(scanned=0, no_source=0, foreign_vi=0, already_done=0, error=0))),
+        ))
+        stack.enter_context(patch("trezarr.cli.translate_file", new=AsyncMock()))
+        stack.enter_context(patch("trezarr.cli.apply_permissions"))
+        stack.enter_context(patch("trezarr.cli.probe_media_roots"))
+        stack.enter_context(patch("trezarr.cli.assert_media_roots_configured"))
+        stack.enter_context(patch("trezarr.cli.LLMClient"))
+        stack.enter_context(caplog.at_level(logging.ERROR))
         exit_code = await _run_once(None)
 
     captured = capsys.readouterr().out
@@ -331,21 +371,22 @@ async def test_one_arr_failure_does_not_kill_other_arr(tmp_path, settings_factor
 
     radarr_item = _make_media_item(tmp_path, "Movie.en.srt")
 
-    with (
-        patch("trezarr.cli.TrezarrSettings", return_value=settings),
-        patch("trezarr.cli.discover_sonarr_items", side_effect=DiscoveryError("Sonarr unreachable")),
-        patch("trezarr.cli.discover_radarr_items", return_value=[radarr_item]),
-        patch(
+    with contextlib.ExitStack() as stack:
+        for p in _db_patches():
+            stack.enter_context(p)
+        stack.enter_context(patch("trezarr.cli.TrezarrSettings", return_value=settings))
+        stack.enter_context(patch("trezarr.cli.discover_sonarr_items", side_effect=DiscoveryError("Sonarr unreachable")))
+        stack.enter_context(patch("trezarr.cli.discover_radarr_items", return_value=[radarr_item]))
+        stack.enter_context(patch(
             "trezarr.cli.scan_for_eligible_items",
             # Radarr's one item is already-done so no eligible
-            return_value=([], MagicMock(scanned=1, no_source=0, foreign_vi=0, already_done=1)),
-        ),
-        patch("trezarr.cli.translate_file", new=AsyncMock()),
-        patch("trezarr.cli.apply_permissions"),
-        patch("trezarr.cli.probe_media_roots"),
-        patch("trezarr.cli.assert_media_roots_configured"),
-        patch("trezarr.cli.LLMClient"),
-    ):
+            new=AsyncMock(return_value=([], MagicMock(scanned=1, no_source=0, foreign_vi=0, already_done=1))),
+        ))
+        stack.enter_context(patch("trezarr.cli.translate_file", new=AsyncMock()))
+        stack.enter_context(patch("trezarr.cli.apply_permissions"))
+        stack.enter_context(patch("trezarr.cli.probe_media_roots"))
+        stack.enter_context(patch("trezarr.cli.assert_media_roots_configured"))
+        stack.enter_context(patch("trezarr.cli.LLMClient"))
         exit_code = await _run_once(None)
 
     # Sonarr discovery failure logged; Radarr healthy; no items eligible → 0
@@ -406,23 +447,24 @@ async def test_run_once_path_guard_passes_inside_media_roots(tmp_path, capsys, s
         from trezarr.translate.engine import TranslationResult
         return TranslationResult(status="done", output_path=inside_output)
 
-    with (
-        patch("trezarr.cli.TrezarrSettings", return_value=settings),
-        patch("trezarr.cli.discover_sonarr_items", return_value=[]),
-        patch("trezarr.cli.discover_radarr_items", return_value=[]),
-        patch(
+    with contextlib.ExitStack() as stack:
+        for p in _db_patches():
+            stack.enter_context(p)
+        stack.enter_context(patch("trezarr.cli.TrezarrSettings", return_value=settings))
+        stack.enter_context(patch("trezarr.cli.discover_sonarr_items", return_value=[]))
+        stack.enter_context(patch("trezarr.cli.discover_radarr_items", return_value=[]))
+        stack.enter_context(patch(
             "trezarr.cli.scan_for_eligible_items",
-            return_value=([item], MagicMock(scanned=1, no_source=0, foreign_vi=0, already_done=0, error=0)),
-        ),
-        patch("trezarr.cli.translate_file", new=AsyncMock(side_effect=_ok_translate)),
-        patch("trezarr.cli.apply_permissions"),       # still mocked — we don't care about chmod here
+            new=AsyncMock(return_value=([item], MagicMock(scanned=1, no_source=0, foreign_vi=0, already_done=0, error=0))),
+        ))
+        stack.enter_context(patch("trezarr.cli.translate_file", new=AsyncMock(side_effect=_ok_translate)))
+        stack.enter_context(patch("trezarr.cli.apply_permissions"))       # still mocked — we don't care about chmod here
         # NOTE: assert_within_media_roots is NOT mocked — it's the system-under-test (WR-07).
-        patch("trezarr.cli.probe_media_roots"),       # bypass the FS probe
+        stack.enter_context(patch("trezarr.cli.probe_media_roots"))       # bypass the FS probe
         # build_media_roots is NOT mocked — it must return [media_root] from path_mappings.
         # assert_media_roots_configured passes silently when *arr is disabled, so we can mock it.
-        patch("trezarr.cli.assert_media_roots_configured"),
-        patch("trezarr.cli.LLMClient"),
-    ):
+        stack.enter_context(patch("trezarr.cli.assert_media_roots_configured"))
+        stack.enter_context(patch("trezarr.cli.LLMClient"))
         exit_code = await _run_once(None)
 
     summary = capsys.readouterr().out
@@ -477,22 +519,23 @@ async def test_run_once_path_guard_rejects_outside_media_roots(tmp_path, capsys,
         from trezarr.translate.engine import TranslationResult
         return TranslationResult(status="done", output_path=bad_output)
 
-    with (
-        patch("trezarr.cli.TrezarrSettings", return_value=settings),
-        patch("trezarr.cli.discover_sonarr_items", return_value=[]),
-        patch("trezarr.cli.discover_radarr_items", return_value=[]),
-        patch(
+    with contextlib.ExitStack() as stack:
+        for p in _db_patches():
+            stack.enter_context(p)
+        stack.enter_context(patch("trezarr.cli.TrezarrSettings", return_value=settings))
+        stack.enter_context(patch("trezarr.cli.discover_sonarr_items", return_value=[]))
+        stack.enter_context(patch("trezarr.cli.discover_radarr_items", return_value=[]))
+        stack.enter_context(patch(
             "trezarr.cli.scan_for_eligible_items",
-            return_value=([item], MagicMock(scanned=1, no_source=0, foreign_vi=0, already_done=0, error=0)),
-        ),
-        patch("trezarr.cli.translate_file", new=AsyncMock(side_effect=_bad_output_translate)),
-        patch("trezarr.cli.apply_permissions") as mock_chmod,  # MUST NOT be called when guard rejects
+            new=AsyncMock(return_value=([item], MagicMock(scanned=1, no_source=0, foreign_vi=0, already_done=0, error=0))),
+        ))
+        stack.enter_context(patch("trezarr.cli.translate_file", new=AsyncMock(side_effect=_bad_output_translate)))
+        mock_chmod = stack.enter_context(patch("trezarr.cli.apply_permissions"))  # MUST NOT be called when guard rejects
         # assert_within_media_roots is NOT mocked — the rejection is the SUT.
-        patch("trezarr.cli.probe_media_roots"),
-        patch("trezarr.cli.assert_media_roots_configured"),
-        patch("trezarr.cli.LLMClient"),
-        caplog.at_level(logging.ERROR),
-    ):
+        stack.enter_context(patch("trezarr.cli.probe_media_roots"))
+        stack.enter_context(patch("trezarr.cli.assert_media_roots_configured"))
+        stack.enter_context(patch("trezarr.cli.LLMClient"))
+        stack.enter_context(caplog.at_level(logging.ERROR))
         exit_code = await _run_once(None)
 
     summary = capsys.readouterr().out
@@ -534,20 +577,21 @@ async def test_chmod_error_quarantines_item(tmp_path, settings_factory):
         from trezarr.translate.engine import TranslationResult
         return TranslationResult(status="done", output_path=Path(str(path).replace(".en.srt", ".vi.srt")))
 
-    with (
-        patch("trezarr.cli.TrezarrSettings", return_value=settings),
-        patch("trezarr.cli.discover_sonarr_items", return_value=[]),
-        patch("trezarr.cli.discover_radarr_items", return_value=[]),
-        patch(
+    with contextlib.ExitStack() as stack:
+        for p in _db_patches():
+            stack.enter_context(p)
+        stack.enter_context(patch("trezarr.cli.TrezarrSettings", return_value=settings))
+        stack.enter_context(patch("trezarr.cli.discover_sonarr_items", return_value=[]))
+        stack.enter_context(patch("trezarr.cli.discover_radarr_items", return_value=[]))
+        stack.enter_context(patch(
             "trezarr.cli.scan_for_eligible_items",
-            return_value=([item], MagicMock(scanned=1, no_source=0, foreign_vi=0, already_done=0)),
-        ),
-        patch("trezarr.cli.translate_file", new=AsyncMock(side_effect=_ok_translate)),
-        patch("trezarr.cli.apply_permissions", side_effect=PermissionApplyError("chmod failed")),
-        patch("trezarr.cli.probe_media_roots"),
-        patch("trezarr.cli.assert_media_roots_configured"),
-        patch("trezarr.cli.LLMClient"),
-    ):
+            new=AsyncMock(return_value=([item], MagicMock(scanned=1, no_source=0, foreign_vi=0, already_done=0))),
+        ))
+        stack.enter_context(patch("trezarr.cli.translate_file", new=AsyncMock(side_effect=_ok_translate)))
+        stack.enter_context(patch("trezarr.cli.apply_permissions", side_effect=PermissionApplyError("chmod failed")))
+        stack.enter_context(patch("trezarr.cli.probe_media_roots"))
+        stack.enter_context(patch("trezarr.cli.assert_media_roots_configured"))
+        stack.enter_context(patch("trezarr.cli.LLMClient"))
         exit_code = await _run_once(None)
 
     assert exit_code == 1, (

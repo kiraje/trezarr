@@ -38,16 +38,28 @@ async def test_read_batch_failure_quarantine_records_via_await(tmp_path):
     # Write garbage that will cause read_srt to fail
     src.write_bytes(b"\xff\xfe\x00\x00garbage bytes")  # invalid UTF-8 for SRT parser
 
-    # Spy ledger: check returns None (no prior entry), record is an AsyncMock
+    # Spy ledger: check returns None (no prior entry), record is an AsyncMock,
+    # content_hash returns a real string (staticmethod on the real Ledger class).
+    from trezarr.output.ledger import Ledger as _Ledger
     spy_ledger = MagicMock()
     spy_ledger.check = AsyncMock(return_value=None)
     spy_ledger.record = AsyncMock()
+    spy_ledger.content_hash = _Ledger.content_hash  # keep staticmethod behaviour
 
     settings_mod = pytest.importorskip("trezarr.config")
-    settings = settings_mod.TrezarrSettings(llm_api_key="test-key")
+    settings = settings_mod.TrezarrSettings(
+        llm_api_key="test-key",
+        translate_quarantine_dir=str(tmp_path / "quarantine"),  # avoid writing to /config in tests
+    )
 
-    # LLM client is not needed for a read failure
+    # LLM client raises BatchValidationError after retry exhaustion to trigger the
+    # quarantine path inside translate_file. We import BatchValidationError from
+    # the engine and raise it directly (it is the only exception the engine
+    # quarantines on from the batch-dispatch step; generic exceptions propagate).
+    engine_mod2 = pytest.importorskip("trezarr.translate.engine")
+    BatchValidationError = engine_mod2.BatchValidationError
     mock_llm = MagicMock()
+    mock_llm.call = AsyncMock(side_effect=BatchValidationError("simulated retry-exhausted batch failure"))
 
     # Patch derive_vi_sidecar_path to return a path that doesn't exist
     vi_path = tmp_path / "Show.S01E01.vi.srt"

@@ -193,7 +193,7 @@ def find_source_sub(media_path: Path, lang_priority: Sequence[str]) -> tuple[Pat
     return None
 
 
-def scan_for_eligible_items(
+async def scan_for_eligible_items(
     items: Sequence[Any],
     ledger: "Ledger",
     lang_priority: Sequence[str],
@@ -267,7 +267,7 @@ def scan_for_eligible_items(
             continue
 
         source_sub_path, source_lang = src
-        ok, reason = is_eligible(source_sub_path, ledger)
+        ok, reason = await is_eligible(source_sub_path, ledger)
 
         if not ok:
             # WR-03: explicitly classify each is_eligible False reason so a

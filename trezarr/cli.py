@@ -46,9 +46,11 @@ from trezarr.arr import DiscoveryError
 from trezarr.arr.radarr import discover_radarr_items
 from trezarr.arr.sonarr import discover_sonarr_items
 from trezarr.config import TrezarrSettings
+from trezarr.db.engine import build_engine
+from trezarr.db.migration_runner import migrate_json_ledger_if_needed, run_migrations_to_head
 from trezarr.discover.scan import scan_for_eligible_items
 from trezarr.llm.client import LLMClient
-from trezarr.output.ledger import Ledger
+from trezarr.output.ledger_sqla import LedgerSQLA
 from trezarr.output.write import PermissionApplyError, apply_permissions
 from trezarr.paths import (
     assert_media_roots_configured,
@@ -107,13 +109,15 @@ async def _run_once(config_path: str | None) -> int:
     main() wraps the int in raise SystemExit(...). This keeps _run_once
     directly testable as a normal coroutine (no pytest.raises(SystemExit)).
 
-    Step sequence (per 03-04 SUMMARY Next Plan Readiness section):
+    Step sequence (per 03-04 SUMMARY Next Plan Readiness section + 04-04 wiring):
 
       1. Load settings (+ basicConfig logging)
       2. assert_media_roots_configured(settings)               ← HIGH #2, runs FIRST
       3. build_media_roots(settings) → probe_media_roots(roots) ← D-24
+      3.5 DB startup: build_engine → run_migrations_to_head → migrate_json_ledger_if_needed
+          → LedgerSQLA construction                           ← 04-04 / D-37 / D-38
       4. Per-service discover (Sonarr, Radarr) with except DiscoveryError ← MEDIUM #10
-      5. Ledger init + scan_for_eligible_items                  ← D-25/D-26/D-27/D-28
+      5. LedgerSQLA + scan_for_eligible_items                  ← D-25/D-26/D-27/D-28
       6. LLMClient(settings) ONLY if eligible is non-empty      ← HIGH #7
       7. Sequential translate loop with per-item quarantine    ← D-30
       8. Widened summary + return int exit code                ← MEDIUM #14
@@ -140,6 +144,26 @@ async def _run_once(config_path: str | None) -> int:
     # R_OK|X_OK checks call sys.exit on failure; non-W_OK is a soft warning.
     media_roots = build_media_roots(settings)
     probe_media_roots(media_roots)
+
+    # Step 3.5 — DB startup: engine + Alembic migrations + JSON ledger migration
+    # + LedgerSQLA construction (D-37, D-38, 04-04).
+    # Failure here exits non-zero with an actionable message (fail-fast, same
+    # severity as probe_media_roots) — per RESEARCH §Open Question 3.
+    try:
+        from sqlalchemy.ext.asyncio import async_sessionmaker as _async_sessionmaker
+        engine = build_engine(settings)
+        await run_migrations_to_head(engine)
+        _session_factory = _async_sessionmaker(engine, expire_on_commit=False)
+        await migrate_json_ledger_if_needed(_session_factory, settings)
+        ledger: LedgerSQLA = LedgerSQLA(_session_factory)
+    except Exception as exc:
+        logger.error(
+            "DB startup failed — cannot continue. "
+            "Check your bible_db_url setting and disk permissions. Error: %s",
+            exc,
+            exc_info=True,
+        )
+        return 1
 
     # Step 4 — Discovery with per-service resilience (MEDIUM #10).
     # One *arr down does NOT abort the run if the other is healthy.
@@ -186,9 +210,9 @@ async def _run_once(config_path: str | None) -> int:
     n_discovered = len(all_items)
     logger.info("Discovered %d total media items", n_discovered)
 
-    # Step 5 — Ledger + scan for eligible items (D-25/D-26/D-27/D-28).
-    ledger = Ledger(settings.translate_ledger_path)
-    eligible, scan_stats = scan_for_eligible_items(
+    # Step 5 — Scan for eligible items using LedgerSQLA (D-25/D-26/D-27/D-28).
+    # scan_for_eligible_items is async (Phase 4 — is_eligible and ledger.check are async).
+    eligible, scan_stats = await scan_for_eligible_items(
         all_items, ledger, settings.source_lang_priority,
     )
     n_eligible = len(eligible)

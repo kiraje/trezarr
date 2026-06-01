@@ -8,9 +8,23 @@ Design decisions honoured:
         regenerate; foreign .vi.srt (not in ledger as ours) → skip + log;
         previously quarantined → retry.
 
+BREAKING INTERNAL API CHANGE (Phase 4):
+  Ledger.check and Ledger.record are NOW ASYNC (async def). Rationale: CLAUDE.md
+  mandates 'Async everywhere — no sync sqlite3 calls in the FastAPI/async event
+  loop'. This is an INTERNAL change only — the Ledger is not a public/external API.
+  No external contract is broken.
+  Scope of change:
+    - check() and record() are now coroutine functions (async def).
+    - All call sites in trezarr/translate/engine.py and trezarr/discover/gap.py
+      MUST use `await ledger.check(...)` and `await ledger.record(...)`.
+    - A repo-wide grep gate in tests/integration/test_translate_engine_async_ledger.py
+      (test_repo_wide_ledger_await_gate) enforces this at test time.
+    - LedgerProtocol (trezarr/output/_ledger_protocol.py) declares the async contract.
+
 Phase-4 migration path:
-  The Ledger class exposes a minimal interface (check/record) that Phase 4 will
-  swap for a SQLAlchemy async_sessionmaker backend without changing call sites.
+  The Ledger class exposes a minimal interface (check/record) that Phase 4 has
+  swapped for a SQLAlchemy async_sessionmaker backend (LedgerSQLA). Both
+  implementations implement LedgerProtocol structurally (@runtime_checkable).
   The JSON field names map 1-to-1 to processed_file table columns.
 
 Atomic write:
@@ -29,6 +43,8 @@ import tempfile
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Literal
+
+from trezarr.output._ledger_protocol import LedgerProtocol  # noqa: F401
 
 logger = logging.getLogger(__name__)
 
@@ -147,8 +163,11 @@ class Ledger:
                 logger.warning("Ledger entry %r is malformed — skipping that entry", k)
         return out
 
-    def check(self, source_path: str | Path) -> LedgerEntry | None:
+    async def check(self, source_path: str | Path) -> LedgerEntry | None:
         """Return the ledger entry for source_path, or None if not recorded.
+
+        BREAKING INTERNAL API CHANGE (Phase 4): this method is now async.
+        All call sites MUST use `await ledger.check(...)`.
 
         Args:
             source_path: Absolute path to the source subtitle file (str or Path).
@@ -158,8 +177,11 @@ class Ledger:
         """
         return self._data.get(str(source_path))
 
-    def record(self, entry: LedgerEntry) -> None:
+    async def record(self, entry: LedgerEntry) -> None:
         """Record (insert or update) an entry in the ledger and persist to disk.
+
+        BREAKING INTERNAL API CHANGE (Phase 4): this method is now async.
+        All call sites MUST use `await ledger.record(...)`.
 
         Uses the same NamedTemporaryFile + os.replace atomic write pattern as write.py
         so a crash during write never leaves a partial/corrupt ledger file.

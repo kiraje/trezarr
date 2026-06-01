@@ -10,7 +10,10 @@ Design decisions honoured:
   D-18  Bounded per-batch retry via tenacity on BatchValidationError ONLY.
         openai.APIError is NOT caught by tenacity (SDK handles transport failures).
   D-19  Atomic UTF-8 sidecar write via write_vi_sidecar().
-  D-20  Idempotency: ledger.check() at entry; ledger.record() after write/quarantine.
+  D-20  Idempotency: await ledger.check() at entry; await ledger.record() after write/quarantine.
+  D-37  ledger.check/record are async (Phase 4 — BREAKING INTERNAL API CHANGE, see
+        _ledger_protocol.py); type-annotated as LedgerProtocol; all call sites in this
+        file await the calls (enforced by test_repo_wide_ledger_await_gate).
 
 Critical constraints:
   - No asyncio.Semaphore in this module.  LLMClient._semaphore is the sole gate (Pitfall 1).
@@ -34,7 +37,8 @@ from typing import TYPE_CHECKING
 from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
 
 from trezarr.llm.client import LLMClient
-from trezarr.output.ledger import Ledger, LedgerEntry
+from trezarr.output._ledger_protocol import LedgerProtocol
+from trezarr.output.ledger import LedgerEntry
 from trezarr.output.write import derive_vi_sidecar_path, write_vi_sidecar
 from trezarr.subtitles.model import SubDoc, SubLine
 from trezarr.subtitles.srt import read_srt
@@ -369,7 +373,7 @@ async def translate_file(
     path: str | Path,
     settings: "TrezarrSettings",
     llm_client: LLMClient,
-    ledger: Ledger,
+    ledger: LedgerProtocol,
 ) -> TranslationResult:
     """Translate a source SRT file to Vietnamese and write a .vi.srt sidecar.
 
@@ -411,14 +415,14 @@ async def translate_file(
     # Step 1: Resolve path and compute content hash
     path = Path(path).resolve()
     source_bytes = path.read_bytes()
-    content_hash = Ledger.content_hash(source_bytes)
+    content_hash = ledger.content_hash(source_bytes)
 
     # Step 2: Derive destination path via the shared helper so engine and writer
     # can never diverge on naming (WR-06).
     dest = derive_vi_sidecar_path(path)
 
     # Step 3: Ledger check (D-20 behavior table)
-    entry = ledger.check(str(path))
+    entry = await ledger.check(str(path))
 
     # Foreign file: dest exists but source_path not in ledger → skip + log (T-02-03-04)
     if entry is None and dest.exists():
@@ -435,7 +439,7 @@ async def translate_file(
         return TranslationResult(status="skipped")
 
     # Step 4: Record in_progress (in case this run crashes mid-flight)
-    ledger.record(LedgerEntry(
+    await ledger.record(LedgerEntry(
         source_path=str(path),
         output_path=str(dest),
         status="in_progress",
@@ -451,7 +455,7 @@ async def translate_file(
     except Exception as exc:
         reason = f"read/batch failure: {exc}"
         quarantine_path = _write_quarantine(path, reason, [], settings)
-        ledger.record(LedgerEntry(
+        await ledger.record(LedgerEntry(
             source_path=str(path),
             output_path=None,
             status="quarantined",
@@ -476,7 +480,7 @@ async def translate_file(
     except BatchValidationError as exc:
         reason = str(exc)
         quarantine_path = _write_quarantine(path, reason, [], settings)
-        ledger.record(LedgerEntry(
+        await ledger.record(LedgerEntry(
             source_path=str(path),
             output_path=None,
             status="quarantined",
@@ -517,7 +521,7 @@ async def translate_file(
         reason = str(exc)
         failing_indices = exc.failure.failing_indices or []
         quarantine_path = _write_quarantine(path, reason, failing_indices, settings)
-        ledger.record(LedgerEntry(
+        await ledger.record(LedgerEntry(
             source_path=str(path),
             output_path=None,
             status="quarantined",
@@ -534,7 +538,7 @@ async def translate_file(
     output_path = write_vi_sidecar(translated_doc, path)
 
     # Step 11: Record completion in ledger
-    ledger.record(LedgerEntry(
+    await ledger.record(LedgerEntry(
         source_path=str(path),
         output_path=str(output_path),
         status="done",

@@ -210,7 +210,7 @@ async def test_translate_file_read_failure_quarantines(settings_factory, tmp_pat
     assert result.status == "quarantined", (
         f"Expected status='quarantined' when read_srt raises, got {result.status!r}"
     )
-    entry = ledger.check(str(src))
+    entry = await ledger.check(str(src))
     assert entry is not None and entry.status == "quarantined", (
         "Ledger must not be left at in_progress when read_srt fails (WR-04)"
     )
@@ -248,7 +248,7 @@ async def test_translate_file_non_batch_error_propagates(settings_factory, tmp_p
             await translate_file(src, settings, client, ledger)
 
     # No quarantine entry must have been recorded — the error must have propagated
-    entry = ledger.check(str(src))
+    entry = await ledger.check(str(src))
     assert entry is None or entry.status != "quarantined", (
         "Non-BatchValidationError must NOT produce a quarantine ledger entry (CR-01 / Pitfall 5)"
     )
@@ -277,7 +277,7 @@ async def test_translate_file_skip_unchanged(settings_factory, tmp_path):
     # Pre-populate ledger with matching hash and status="done"
     ledger_path = tmp_path / "ledger.json"
     ledger = Ledger(ledger_path)
-    ledger.record(LedgerEntry(
+    await ledger.record(LedgerEntry(
         source_path=str(src),
         output_path=str(dest),
         status="done",

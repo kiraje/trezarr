@@ -30,13 +30,14 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
+from trezarr.output._ledger_protocol import LedgerProtocol
 from trezarr.output.ledger import Ledger
 from trezarr.output.write import derive_vi_sidecar_path
 
 logger = logging.getLogger(__name__)
 
 
-def is_eligible(source_sub_path: Path, ledger: Ledger) -> tuple[bool, str]:
+async def is_eligible(source_sub_path: Path, ledger: LedgerProtocol) -> tuple[bool, str]:
     """Decide whether a source-subtitle file is eligible for (re-)translation.
 
     Per 03-REVIEWS.md HIGH #4: signature is ``(source_sub_path, ledger)`` —
@@ -99,7 +100,7 @@ def is_eligible(source_sub_path: Path, ledger: Ledger) -> tuple[bool, str]:
         return (False, f"no source subtitle at {source_sub_path}")
 
     vi_path = derive_vi_sidecar_path(source_sub_path)  # Pitfall 5 — source_sub_path, not video
-    entry = ledger.check(str(source_sub_path))
+    entry = await ledger.check(str(source_sub_path))
 
     # Case 1 — foreign vi sidecar (D-26): vi present, ledger has no record.
     # We did NOT write this; never clobber.
