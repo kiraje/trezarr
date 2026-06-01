@@ -28,6 +28,12 @@ this consistency must work.
 - [x] Share the same filesystem and write Vietnamese subtitles as sidecar files next to the media (auto-detected by Plex/Jellyfin/Emby) — Validated in Phase 3 (INTG-04: PUID/PGID/UMASK applied in-process; chmod failure quarantines; container↔host path mapping with traversal guard, INTG-03).
 - [x] Detect media that has a source subtitle but no good Vietnamese subtitle and queue it — Validated in Phase 3 (AUTO-01 gap detection, AUTO-03 source-sub-hash idempotency, AUTO-04 self-output exclusion via ledger provenance). Continuous monitoring (poll + watchfiles + webhook) deferred to Phase 7.
 
+**Vietnamese consistency engine — Series Bible (partial — Phase 4):**
+- [x] Maintain a persistent, per-series Series Bible that is carried forward across all episodes — Validated in Phase 4 (BIBLE-01 SQLite-backed schema + LedgerSQLA, BIBLE-06 carry-forward via `merge_inferred` with lock-precedence; auto-population by LLM is Phase 5).
+- [x] Bible tracks Characters (name kept in original Latin form, gender, rough age, role) — Validated in Phase 4 (BIBLE-02 `character` table + `upsert_character`).
+- [x] Bible tracks a Term Dictionary — recurring proper nouns, titles, places, domain/fantasy/sci-fi jargon → fixed Vietnamese rendering — Validated in Phase 4 (BIBLE-02 `term_dictionary` table + `upsert_term`).
+- [x] The Series Bible is auto-built but **editable** — corrections lock and propagate forward — Validated in Phase 4 (BIBLE-04 per-field `locked_fields` JSON enforced by `merge_inferred`; "human lock > prior value > new inference" verified). Editor UI deferred to a later phase.
+
 ### Active
 
 <!-- Current scope. Building toward these. Hypotheses until shipped. -->
@@ -42,14 +48,10 @@ this consistency must work.
 - [ ] LLM self-review pass — model critiques and corrects its own translation for consistency before the file is finalized
 - [ ] Translation context includes: surrounding subtitle lines, full-file glossary, media metadata (plot/cast/genre from Sonarr/Radarr/TMDB), and the prior-episode Series Bible
 
-**Vietnamese consistency engine — the "Series Bible":**
-- [ ] Maintain a persistent, per-series Series Bible that is carried forward across all episodes
-- [ ] Bible tracks Characters (name kept in original Latin form, gender, rough age, role)
-- [ ] Bible tracks a directed Address Map — for each ordered character pair, the self-term and address-term (the pronoun engine, e.g. `John→Mary: self=anh, address=em`)
-- [ ] Bible tracks a Term Dictionary — recurring proper nouns, titles, places, domain/fantasy/sci-fi jargon → fixed Vietnamese rendering
-- [ ] Bible tracks Register/tone (formal historical vs casual sitcom), grounded by media metadata
-- [ ] The Series Bible is auto-built but **editable** — the user can open and correct it; corrections lock and propagate forward (this is the human override valve)
-- [ ] Track relationship **evolution** across episodes (enemies→lovers, strangers→friends) with episode markers so pronoun choices change correctly over the series
+**Vietnamese consistency engine — the "Series Bible" (Phase 4 ships persistence/lock substrate; LLM auto-population is Phase 5):**
+- [ ] Bible tracks a directed Address Map — for each ordered character pair, the self-term and address-term (the pronoun engine, e.g. `John→Mary: self=anh, address=em`) — Phase 5 (BIBLE-03)
+- [ ] Bible tracks Register/tone (formal historical vs casual sitcom), grounded by media metadata — schema exists in Phase 4; LLM-driven inference ships in Phase 5 (BIBLE-05)
+- [ ] Track relationship **evolution** across episodes (enemies→lovers, strangers→friends) with episode markers so pronoun choices change correctly over the series — Phase 6
 
 **Smart attribution & source selection:**
 - [ ] Infer speaker and addressee per line from dialogue context + the Series Bible (subtitles rarely carry speaker labels), and apply the correct pronoun pair
@@ -119,6 +121,8 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-06-01 after Phase 3 (\*arr Integration + First Vertical Slice) — the first end-to-end slice ships: `trezarr run --once` discovers media via Sonarr/Radarr (pyarr 6.x, X-Api-Key, no disk scan), resolves API paths to local filesystem via configurable remote→local path mapping with a fail-fast startup readability probe, scans for source-language sidecars with deterministic priority + foreign-vi-never-clobber safety, hands eligible items to the Phase-2 translate engine, applies PUID/PGID/UMASK in-process (chown soft-warn, chmod escalates to quarantine), and emits a widened summary with non-zero exit on any failure. Per-service DiscoveryError isolation means one bad *arr doesn't kill the run. 113→127 tests GREEN after the post-execution code-review pass fixed 3 Critical + 8 Warning findings (path-prefix shadowing, glob-meta-char escaping, ledger AttributeError; +traceback logging, userinfo redaction, scan-stats classification, all-arr-failed exit path). INTG-01/03/04 + AUTO-01/03/04 verified 6/6.*
+*Last updated: 2026-06-01 after Phase 4 (Series Bible Store & Schema) — see Phase 4 entry below for what shipped.
 
 *Phase 2 (Mechanical Translation Core + Validation Gate, 2026-05-31): `translate_file()` batches a parsed source (scene-gap/token-aware), translates via a single LLM pass with surrounding-line context, enforces a hard 7-check pre-write validation gate (failing files quarantined, never written), and writes an atomic UTF-8 `Show.S01E01.vi.srt` sidecar with idempotent re-run via a content-hash ledger (ENG-02, ENG-03, ENG-06, ENG-07, FMT-05 — verified 4/4).*
+
+*Phase 4 (Series Bible Store & Schema, 2026-06-01): SQLite-backed Series Bible substrate ships — SQLAlchemy 2.0 async + aiosqlite + Alembic baseline migration creating 7 tables (series, character, term_dictionary, address_map, bible_event, relationship_event, processed_file). `get_or_create_series` lazily persists per-series rows with an arr_metadata snapshot from Sonarr/Radarr. `merge_inferred` enforces `human lock > prior value > new inference` and writes the row UPDATE + `bible_event` audit row in a single transaction (D-32). Per-field locks via `locked_fields` JSON survive merges. The Phase-2 JSON ledger is retired in favor of `LedgerSQLA` with a commit-first/rename-second one-shot JSON→SQLite migration. 208 tests GREEN. Register stays NULL by design — LLM populates it in Phase 5. Known advisory issues: CR-01 missing `await engine.dispose()` in `_run_once`, CR-02 Pydantic `register` field shadows BaseModel.register (rename + alias needed). 2 human UAT items pending in `04-HUMAN-UAT.md` (live *arr smoke, asyncio teardown). BIBLE-01/02/04/05/06 verified 5/5.*
