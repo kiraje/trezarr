@@ -259,7 +259,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 3. \*arr Integration + First Vertical Slice | 5/5 | Awaiting Verification |  |
 | 4. Series Bible Store & Schema | 4/4 | Complete   | 2026-06-01 |
 | 5. Three-Pass Pronoun Engine | 6/6 | Complete   | 2026-06-01 |
-| 6. Relationship Evolution + Self-Review | 3/3 | Complete   | 2026-06-01 |
+| 6. Relationship Evolution + Self-Review | 3/3 | Complete    | 2026-06-01 |
 | 7. Web UI & Service Hardening | 0/TBD | Not started | - |
 | 8. Editable Series Bible UI | 0/TBD | Not started | - |
 | 9. Multi-Format — ASS/SSA + VTT | 0/TBD | Not started | - |
