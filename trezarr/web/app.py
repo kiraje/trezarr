@@ -100,6 +100,7 @@ async def _lifespan(app, settings: TrezarrSettings | None = None, engine_cell: l
         probe_media_roots,
     )
     from trezarr.web.worker import (  # noqa: PLC0415
+        _background_tasks as _worker_background_tasks,
         reconcile_in_progress,
         reconcile_in_progress_from_ledger,
         worker_loop,
@@ -187,6 +188,18 @@ async def _lifespan(app, settings: TrezarrSettings | None = None, engine_cell: l
                 await worker_task
             except asyncio.CancelledError:
                 pass
+
+        # WR-01: cancel in-flight _execute_job tasks before engine.dispose() to
+        # avoid DB operations against a closed engine. Cancelling worker_task above
+        # stops NEW dispatches; these cancel the already-dispatched tasks.
+        if _worker_background_tasks:
+            logger.info(
+                "lifespan: cancelling %d in-flight job tasks before engine dispose",
+                len(_worker_background_tasks),
+            )
+            for t in list(_worker_background_tasks):
+                t.cancel()
+            await asyncio.gather(*list(_worker_background_tasks), return_exceptions=True)
 
         if scheduler is not None:
             scheduler.shutdown(wait=False)
