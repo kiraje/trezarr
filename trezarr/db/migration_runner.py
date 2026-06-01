@@ -173,17 +173,38 @@ async def migrate_json_ledger_if_needed(
     import dataclasses
 
     valid_keys = {f.name for f in dataclasses.fields(LedgerEntry)}
+    # WR-03: validate the status enum BEFORE opening the transaction so a
+    # single bad row (e.g. status="weird-status" introduced by a hand-edit or
+    # an upstream schema-drift bug) cannot roll back ALL the good rows that
+    # were already inserted earlier in the loop. SQLite enforces this CHECK
+    # constraint at INSERT time; once a single INSERT raises IntegrityError
+    # inside a non-savepointed transaction, the only recovery is rollback of
+    # the whole txn — and the `inserted` counter would lie about what made
+    # it into the DB. Validating up front guarantees the txn either commits
+    # cleanly or never enters the loop.
+    VALID_STATUSES = {"done", "quarantined", "in_progress"}
     entries: list[LedgerEntry] = []
+    pre_skipped = 0
     for k, v in raw.items():
         if not isinstance(v, dict):
             logger.warning("JSON ledger entry %r is not an object — skipping", k)
+            pre_skipped += 1
             continue
         try:
-            entries.append(
-                LedgerEntry(**{kk: vv for kk, vv in v.items() if kk in valid_keys})
-            )
+            entry = LedgerEntry(**{kk: vv for kk, vv in v.items() if kk in valid_keys})
         except (TypeError, KeyError, AttributeError, ValueError):
             logger.warning("JSON ledger entry %r is malformed — skipping", k)
+            pre_skipped += 1
+            continue
+        # WR-03 defensive enum gate — keeps the transaction guaranteed-safe.
+        if entry.status not in VALID_STATUSES:
+            logger.warning(
+                "JSON ledger entry %r has invalid status %r — skipping (must be one of %s)",
+                k, entry.status, sorted(VALID_STATUSES),
+            )
+            pre_skipped += 1
+            continue
+        entries.append(entry)
 
     if not entries:
         logger.info(
@@ -194,7 +215,10 @@ async def migrate_json_ledger_if_needed(
         return
 
     # COMMIT FIRST (Pitfall 5): insert all rows in a single transaction.
-    skipped = 0
+    # WR-03: pre-validated entries above guarantee no row inside this loop can
+    # raise IntegrityError on the status CHECK; the only legitimate skip path
+    # is the collision check (DB-already-has-this-source_path).
+    skipped = pre_skipped
     inserted = 0
     async with session_factory() as session:
         async with session.begin():
