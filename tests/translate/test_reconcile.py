@@ -87,7 +87,7 @@ def _make_attribution(speaker: str, addressee: str, confidence_value: str, line_
     )
 
 
-def _make_bible(series_id: int, characters: list, address_map: list):
+def _make_bible(series_id: int, characters: list, address_map: list, relationship_events: list | None = None):
     """Construct a minimal SeriesBibleDTO-like object for tests."""
     from types import SimpleNamespace
     return SimpleNamespace(
@@ -99,6 +99,7 @@ def _make_bible(series_id: int, characters: list, address_map: list):
         terms=[],
         address_map=address_map,
         locked_fields=[],
+        relationship_events=relationship_events or [],  # [Phase 6 ADDITIVE — safe default []]
     )
 
 
@@ -143,6 +144,34 @@ def _make_settings(threshold: str = "medium", safe_default=None):
     return SimpleNamespace(
         pronoun_confidence_threshold=threshold,
         pronoun_safe_default=safe_default,
+    )
+
+
+def _make_relationship_event(
+    id: int,
+    series_id: int,
+    char_a_id: int,
+    char_b_id: int,
+    episode_marker: str,
+    suggested_self_term: str | None = None,
+    suggested_address_term: str | None = None,
+):
+    """Construct a minimal RelationshipEventDTO-like object for tests.
+
+    Uses SimpleNamespace to avoid importing RelationshipEventDTO (which does
+    not yet exist in Phase 6 Wave 0).
+    """
+    from types import SimpleNamespace
+    return SimpleNamespace(
+        id=id,
+        series_id=series_id,
+        character_a_id=char_a_id,
+        character_b_id=char_b_id,
+        episode_marker=episode_marker,
+        description=None,
+        created_at=None,
+        suggested_self_term=suggested_self_term,
+        suggested_address_term=suggested_address_term,
     )
 
 
@@ -396,3 +425,207 @@ async def test_below_threshold_ignores_address_map(session_factory):
         f"Expected safe default {expected!r} for below-threshold pair, got {pair_result!r}"
     )
     assert self_t == SAFE_DEFAULT_SELF, f"Expected self_term '{SAFE_DEFAULT_SELF}', got '{self_t}'"
+
+
+# ---------------------------------------------------------------------------
+# Phase 6 Wave-0 RED stubs — BIBLE-07-C, D, E
+# ---------------------------------------------------------------------------
+
+import pytest  # noqa: E402 — pytest imported here to not perturb module-level import order above
+
+
+@pytest.mark.xfail(strict=False, raises=(ImportError, AssertionError, TypeError))
+async def test_transition_authorizes_terms_change(session_factory):
+    """BIBLE-07-C: reconcile_attributions — transition authorizes terms change.
+
+    Arrange: bible with a relationship_event for pair (A, B) at the current episode
+             whose suggested_self_term / suggested_address_term differ from the
+             existing address_map entry.
+    Act: call reconcile_attributions.
+    Assert: the pair in resolved_map uses the suggested transition terms,
+            NOT the prior address_map entry terms.
+    """
+    from trezarr.translate.reconcile import reconcile_attributions
+
+    settings = _make_settings(threshold="medium")
+
+    series_id = await _create_series(session_factory, arr_series_id=301)
+    spk_id, addr_id = await _create_characters(
+        session_factory, series_id,
+        spk_name="CharA", spk_gender="male",
+        addr_name="CharB", addr_gender="female",
+    )
+
+    # Existing address_map entry with old (pre-transition) terms
+    old_self_term = "tôi"
+    old_addr_term = "bạn"
+    new_self_term = "anh"
+    new_addr_term = "em"
+
+    # A relationship_event at the current episode with suggested new terms
+    event = _make_relationship_event(
+        id=1,
+        series_id=series_id,
+        char_a_id=spk_id,
+        char_b_id=addr_id,
+        episode_marker="S01E05",
+        suggested_self_term=new_self_term,
+        suggested_address_term=new_addr_term,
+    )
+
+    bible = _make_bible(
+        series_id=series_id,
+        characters=[
+            _make_character(spk_id, "CharA", "male"),
+            _make_character(addr_id, "CharB", "female"),
+        ],
+        address_map=[
+            _make_address_map_entry(1, series_id, spk_id, addr_id, old_self_term, old_addr_term),
+        ],
+        relationship_events=[event],
+    )
+
+    # HIGH-confidence attribution so the pair is considered
+    attributions = [_make_attribution("CharA", "CharB", "high")]
+
+    resolved = await reconcile_attributions(
+        flat_attributions=attributions,
+        bible=bible,
+        session_factory=session_factory,
+        series_id=series_id,
+        episode_key="S01E05",
+        settings=settings,
+    )
+
+    pair_result = resolved.get((spk_id, addr_id))
+    assert pair_result is not None, "Expected resolved entry for transitioning pair"
+    assert pair_result == (new_self_term, new_addr_term), (
+        f"Transition should authorize new terms {(new_self_term, new_addr_term)!r}, "
+        f"got {pair_result!r}"
+    )
+
+
+@pytest.mark.xfail(strict=False, raises=(ImportError, AssertionError, TypeError))
+async def test_lock_beats_transition(session_factory):
+    """BIBLE-07-D: reconcile_attributions — lock beats transition (D-34/D-54).
+
+    Arrange: bible with a LOCKED address_map entry AND a relationship_event for
+             the same pair at the current episode.
+    Act: call reconcile_attributions.
+    Assert: the locked terms win — NOT the transition's suggested terms.
+    """
+    from trezarr.translate.reconcile import reconcile_attributions
+
+    settings = _make_settings(threshold="medium")
+
+    series_id = await _create_series(session_factory, arr_series_id=302)
+    spk_id, addr_id = await _create_characters(
+        session_factory, series_id,
+        spk_name="LockedSpeaker", spk_gender="male",
+        addr_name="LockedAddressee", addr_gender="female",
+    )
+
+    # Locked address_map entry — human override
+    locked_self_term = "anh"
+    locked_addr_term = "em"
+
+    # Relationship event trying to change to different terms
+    event = _make_relationship_event(
+        id=2,
+        series_id=series_id,
+        char_a_id=spk_id,
+        char_b_id=addr_id,
+        episode_marker="S01E06",
+        suggested_self_term="chị",
+        suggested_address_term="bạn",
+    )
+
+    bible = _make_bible(
+        series_id=series_id,
+        characters=[
+            _make_character(spk_id, "LockedSpeaker", "male"),
+            _make_character(addr_id, "LockedAddressee", "female"),
+        ],
+        address_map=[
+            _make_address_map_entry(
+                2, series_id, spk_id, addr_id, locked_self_term, locked_addr_term,
+                locked_fields=["self_term", "address_term"],  # LOCKED
+            ),
+        ],
+        relationship_events=[event],
+    )
+
+    attributions = [_make_attribution("LockedSpeaker", "LockedAddressee", "high")]
+
+    resolved = await reconcile_attributions(
+        flat_attributions=attributions,
+        bible=bible,
+        session_factory=session_factory,
+        series_id=series_id,
+        episode_key="S01E06",
+        settings=settings,
+    )
+
+    pair_result = resolved.get((spk_id, addr_id))
+    assert pair_result is not None, "Expected resolved entry for locked pair"
+    assert pair_result == (locked_self_term, locked_addr_term), (
+        f"Lock must beat transition: expected locked terms {(locked_self_term, locked_addr_term)!r}, "
+        f"got {pair_result!r}"
+    )
+
+
+@pytest.mark.xfail(strict=False, raises=(ImportError, AssertionError, TypeError))
+async def test_no_transition_no_survivors_safe_default(session_factory):
+    """BIBLE-07-E: no transition + no high-confidence survivors → safe default (Phase-5 Success #4 preserved).
+
+    Arrange: bible with NO relationship_event and NO high-confidence attribution for the pair.
+    Act: call reconcile_attributions.
+    Assert: the pair falls back to the safe default pair (tôi + anh/chị/bạn),
+            preserving the Phase-5 guarantee that no wrong intimate pronoun is ever used.
+    """
+    from trezarr.translate.reconcile import reconcile_attributions, get_safe_default, SAFE_DEFAULT_SELF
+
+    # Threshold "high" — attribution is "low" → below threshold → no survivors
+    settings = _make_settings(threshold="high")
+
+    series_id = await _create_series(session_factory, arr_series_id=303)
+    spk_id, addr_id = await _create_characters(
+        session_factory, series_id,
+        spk_name="SpeakerNoTrans", spk_gender=None,
+        addr_name="AddresseeNoTrans", addr_gender=None,
+    )
+
+    # NO relationship_events in the bible
+    bible = _make_bible(
+        series_id=series_id,
+        characters=[
+            _make_character(spk_id, "SpeakerNoTrans", None),
+            _make_character(addr_id, "AddresseeNoTrans", None),
+        ],
+        address_map=[],
+        relationship_events=[],  # empty — no transition
+    )
+
+    # LOW confidence — below "high" threshold → no survivors
+    attributions = [_make_attribution("SpeakerNoTrans", "AddresseeNoTrans", "low")]
+
+    resolved = await reconcile_attributions(
+        flat_attributions=attributions,
+        bible=bible,
+        session_factory=session_factory,
+        series_id=series_id,
+        episode_key="S01E07",
+        settings=settings,
+    )
+
+    pair_result = resolved.get((spk_id, addr_id))
+    assert pair_result is not None, "Expected a safe default entry for the pair"
+    self_t, addr_t = pair_result
+
+    expected = get_safe_default(None, settings)
+    assert pair_result == expected, (
+        f"No transition + no survivors must yield safe default {expected!r}, got {pair_result!r}"
+    )
+    assert self_t == SAFE_DEFAULT_SELF, (
+        f"Phase-5 Success #4 preserved: self_term must be {SAFE_DEFAULT_SELF!r}, got {self_t!r}"
+    )
