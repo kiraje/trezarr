@@ -1,4 +1,4 @@
-"""One-shot CLI entry point: `trezarr run --once`.
+"""One-shot CLI entry point: `trezarr run --once`; long-running daemon: `trezarr serve`.
 
 Design decisions honoured:
   D-21  One-shot CLI. No daemon, scheduler, webhook, or watcher — Phase 7.
@@ -10,6 +10,9 @@ Design decisions honoured:
         path before apply_permissions; apply_permissions enforces PUID/PGID/UMASK.
   D-30  Per-item quarantine on failure; run continues; end-of-run summary; non-zero
         exit on any failure.
+  D-62  process_one_item: shared async callable extracted from the per-item loop body
+        of _run_pipeline_steps. Both the CLI loop and the worker's _execute_job call
+        this function — no logic duplication. trezarr run --once behavior UNCHANGED.
 
 Codex review fixes (03-REVIEWS.md):
   HIGH #2   assert_media_roots_configured before probe (refuse empty path_mappings
@@ -41,6 +44,8 @@ from __future__ import annotations
 import argparse
 import asyncio
 import logging
+from dataclasses import dataclass
+from typing import Literal
 
 from trezarr.arr import DiscoveryError
 from trezarr.arr.radarr import discover_radarr_items
@@ -64,14 +69,144 @@ from trezarr.translate.engine import translate_file
 logger = logging.getLogger(__name__)
 
 
+# ── Shared per-item result type (D-62) ─────────────────────────────────────────
+
+
+@dataclass
+class ItemResult:
+    """Outcome of processing one eligible subtitle item (D-62).
+
+    Returned by process_one_item and consumed by both the CLI loop
+    (_run_pipeline_steps) and the worker (_execute_job in trezarr/web/worker.py).
+    """
+
+    status: Literal["done", "skipped", "quarantined", "error"]
+    output_path: str | None = None
+    error: Exception | None = None
+    reason: str | None = None
+
+
+# ── Shared per-item callable (D-62) ────────────────────────────────────────────
+
+
+async def process_one_item(
+    eligible_item,
+    settings: TrezarrSettings,
+    llm_client: LLMClient | None,
+    ledger: LedgerSQLA,
+    media_roots: list,
+    session_factory=None,
+) -> ItemResult:
+    """Translate one eligible subtitle item and apply PUID/PGID permissions.
+
+    This is the shared callable that both the CLI loop (via _run_pipeline_steps)
+    and the queue worker (via trezarr.web.worker._execute_job) invoke. Extracting
+    it eliminates logic duplication (D-62) and ensures the daemon worker reuses
+    the exact same production path as `trezarr run --once`.
+
+    Steps performed (mirrors the original _run_pipeline_steps per-item body):
+      1. translate_file — runs the full 3-pass + self-review pipeline.
+      2. Path-traversal guard (assert_within_media_roots) if media_roots is non-empty.
+      3. apply_permissions — enforces PUID/PGID/umask on the output file.
+      4. PermissionApplyError → quarantine (INTG-04, MEDIUM #13).
+
+    The caller (CLI loop or worker) is responsible for catching any unhandled
+    Exception at the batch boundary (D-30 batch resilience).
+
+    Args:
+        eligible_item: EligibleItem produced by scan_for_eligible_items.
+        settings:      Loaded TrezarrSettings.
+        llm_client:    LLMClient instance (or None for passthrough mode).
+        ledger:        LedgerSQLA bound to the live session factory.
+        media_roots:   Path-traversal guard root list (D-29). Empty list = passthrough.
+        session_factory: Async session factory for Bible-aware translation (D-48).
+
+    Returns:
+        ItemResult with status ∈ {done, skipped, quarantined, error}.
+    """
+    source_sub_path = eligible_item.source_sub_path
+    result = await translate_file(
+        source_sub_path,
+        settings,
+        llm_client,
+        ledger,
+        eligible_item=eligible_item,
+        session_factory=session_factory,
+    )
+
+    if result.status == "done":
+        if result.output_path is None:
+            # Defensive: status="done" must always carry an output_path.
+            logger.error(
+                "translate_file returned status='done' but output_path is None for %s",
+                source_sub_path,
+            )
+            return ItemResult(status="error")
+
+        # Path-traversal guard before write-permission application (D-29).
+        # Only fire when media_roots is non-empty.
+        if media_roots:
+            try:
+                assert_within_media_roots(result.output_path, media_roots)
+            except ValueError as exc:
+                logger.error(
+                    "path-traversal guard rejected output_path=%s: %s",
+                    result.output_path, exc,
+                )
+                return ItemResult(status="error", output_path=result.output_path, error=exc)
+
+        try:
+            apply_permissions(
+                result.output_path,
+                settings.puid,
+                settings.pgid,
+                settings.umask,
+            )
+            return ItemResult(status="done", output_path=result.output_path)
+        except PermissionApplyError as perm_exc:
+            # chmod failure → INTG-04 readability at risk. Quarantine the item
+            # so exit code surfaces the broken contract (MEDIUM #13).
+            logger.warning(
+                "item quarantined due to chmod failure on %s: %s",
+                result.output_path, perm_exc,
+            )
+            return ItemResult(
+                status="quarantined",
+                output_path=result.output_path,
+                error=perm_exc,
+                reason=str(perm_exc),
+            )
+
+    elif result.status == "skipped":
+        return ItemResult(status="skipped")
+
+    elif result.status == "quarantined":
+        logger.warning(
+            "item quarantined by translate_file: %s (reason=%s)",
+            source_sub_path, result.reason,
+        )
+        return ItemResult(
+            status="quarantined",
+            reason=getattr(result, "reason", None),
+        )
+
+    else:
+        # Defensive: unrecognised status is a contract violation.
+        logger.error(
+            "translate_file returned unknown status %r for %s",
+            result.status, source_sub_path,
+        )
+        return ItemResult(status="error")
+
+
 # ── Main entry point ───────────────────────────────────────────────────────────
 
 
-def main() -> None:
-    """Console-scripts entry point: `trezarr run --once`.
+def _build_parser() -> argparse.ArgumentParser:
+    """Build and return the argument parser (exposed for testing).
 
-    Per 03-REVIEWS.md HIGH #6: the only sys.exit / SystemExit translation point
-    is here. _run_once() returns an int; main() wraps it in raise SystemExit(...).
+    Separating parser construction from main() lets tests call _build_parser()
+    to probe the subcommand tree without executing any dispatch logic.
     """
     parser = argparse.ArgumentParser(
         prog="trezarr",
@@ -95,12 +230,38 @@ def main() -> None:
         help="Optional path to a YAML config file (overrides /config/config.yaml default).",
     )
 
+    serve_parser = subparsers.add_parser(
+        "serve",
+        help="Start the long-running daemon service (D-61, SVC-01).",
+    )
+    serve_parser.add_argument(
+        "--config",
+        default=None,
+        help="Optional path to a YAML config file (overrides /config/config.yaml default).",
+    )
+
+    return parser
+
+
+def main() -> None:
+    """Console-scripts entry point: `trezarr run --once` or `trezarr serve`.
+
+    Per 03-REVIEWS.md HIGH #6: the only sys.exit / SystemExit translation point
+    is here. _run_once() returns an int; main() wraps it in raise SystemExit(...).
+    D-62: `trezarr serve` dispatches to trezarr.web.app.run_serve — the daemon
+    entry point. `trezarr run --once` behavior is unchanged.
+    """
+    parser = _build_parser()
     args = parser.parse_args()
 
     if args.command == "run" and args.once:
         # HIGH #6: wrap the async int return in SystemExit at the ONLY translation
         # point. _run_once never calls sys.exit() itself.
         raise SystemExit(asyncio.run(_run_once(args.config)))
+
+    elif args.command == "serve":
+        from trezarr.web.app import run_serve  # noqa: PLC0415 — lazy import avoids circular dep
+        run_serve(args.config)
 
 
 async def _run_once(config_path: str | None) -> int:
@@ -286,6 +447,8 @@ async def _run_pipeline_steps(
         llm_client = LLMClient(settings)
 
     # Step 7 — Sequential translate loop with per-item quarantine (D-30).
+    # Uses process_one_item (D-62 shared callable) so the CLI and the daemon
+    # worker execute identical per-item logic.
     n_done = 0
     n_translate_skipped = 0
     n_quar = 0
@@ -294,76 +457,21 @@ async def _run_pipeline_steps(
     for eligible_item in eligible:
         source_sub_path = eligible_item.source_sub_path
         try:
-            result = await translate_file(
-                source_sub_path,
+            item_result = await process_one_item(
+                eligible_item,
                 settings,
                 llm_client,
                 ledger,
-                eligible_item=eligible_item,
+                media_roots,
                 session_factory=session_factory,
             )
-
-            if result.status == "done":
-                if result.output_path is None:
-                    # Defensive: status="done" must always carry an output_path.
-                    logger.error(
-                        "translate_file returned status='done' but output_path is None for %s",
-                        source_sub_path,
-                    )
-                    n_fail += 1
-                    continue
-
-                # Path-traversal guard before write-permission application (D-29).
-                # Only fire when media_roots is non-empty — the all-*arr-disabled
-                # passthrough mode (assert_media_roots_configured passed silently)
-                # is intentionally unconstrained. When *arr discovery is enabled,
-                # assert_media_roots_configured has already enforced a non-empty
-                # media_roots above, so this branch is reached only in passthrough.
-                if media_roots:
-                    try:
-                        assert_within_media_roots(result.output_path, media_roots)
-                    except ValueError as exc:
-                        logger.error(
-                            "path-traversal guard rejected output_path=%s: %s",
-                            result.output_path, exc,
-                        )
-                        n_fail += 1
-                        continue
-
-                try:
-                    apply_permissions(
-                        result.output_path,
-                        settings.puid,
-                        settings.pgid,
-                        settings.umask,
-                    )
-                    n_done += 1
-                except PermissionApplyError as perm_exc:
-                    # chmod failure → INTG-04 readability at risk. Quarantine
-                    # the item so cli's exit code surfaces the broken contract
-                    # (MEDIUM #13).
-                    logger.warning(
-                        "item quarantined due to chmod failure on %s: %s",
-                        result.output_path, perm_exc,
-                    )
-                    n_quar += 1
-
-            elif result.status == "skipped":
+            if item_result.status == "done":
+                n_done += 1
+            elif item_result.status == "skipped":
                 n_translate_skipped += 1
-
-            elif result.status == "quarantined":
+            elif item_result.status == "quarantined":
                 n_quar += 1
-                logger.warning(
-                    "item quarantined by translate_file: %s (reason=%s)",
-                    source_sub_path, result.reason,
-                )
-
-            else:
-                # Defensive: an unrecognised status is a contract violation.
-                logger.error(
-                    "translate_file returned unknown status %r for %s",
-                    result.status, source_sub_path,
-                )
+            else:  # "error"
                 n_fail += 1
 
         except Exception:
