@@ -134,5 +134,12 @@ None — no external service configuration required.
 - Plans 05-02 through 05-06 can now implement production code to turn stubs GREEN sequentially
 
 ---
+## Self-Check: PASSED
+
+- All 5 new test files exist on disk
+- Commits 9098d30 and f74ac10 verified in git log
+- Full suite: 208 passed, 1 skipped, 13 xfailed
+
+---
 *Phase: 05-three-pass-pronoun-engine*
 *Completed: 2026-06-01*
