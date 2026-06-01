@@ -117,6 +117,35 @@ class TermDTO(BaseModel):
     locked_fields: list[str] = []
 
 
+class AddressMapDTO(BaseModel):
+    """Directed speaker→addressee pronoun-pair entry DTO (BIBLE-03).
+
+    model_config mirrors CharacterDTO: from_attributes=True only (no populate_by_name
+    needed — no alias required, column names match Python field names 1:1).
+
+    Attributes:
+        id:                    Surrogate integer primary key.
+        series_id:             FK → series.id.
+        speaker_character_id:  FK → character.id (the one speaking).
+        addressee_character_id: FK → character.id (the one being addressed).
+        self_term:             Vietnamese self-reference term used by speaker.
+        address_term:          Vietnamese address term for the addressee.
+        valid_from_episode:    Optional episode key from which this mapping applies.
+        locked_fields:         JSON list of locked field names (D-34).
+    """
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    series_id: int
+    speaker_character_id: int
+    addressee_character_id: int
+    self_term: str | None = None
+    address_term: str | None = None
+    valid_from_episode: str | None = None
+    locked_fields: list[str] = []   # D-34: mutable default safe in Pydantic v2 (see dto.py:14)
+
+
 class BibleEventDTO(BaseModel):
     """Append-only audit log entry DTO — D-32 provenance schema.
 
@@ -182,4 +211,5 @@ class SeriesBibleDTO(BaseModel):
     arr_metadata: dict[str, Any] = {}
     characters: list[CharacterDTO] = []
     terms: list[TermDTO] = []
+    address_map: list[AddressMapDTO] = []   # Eagerly loaded by load_series_bible Phase 5+
     locked_fields: list[str] = []

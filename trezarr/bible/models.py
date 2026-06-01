@@ -90,6 +90,9 @@ class Series(Base):
     terms: Mapped[list["TermDictionary"]] = relationship(
         back_populates="series", cascade="all, delete-orphan"
     )
+    address_maps: Mapped[list["AddressMap"]] = relationship(
+        back_populates="series", cascade="all, delete-orphan"
+    )
 
 
 class Character(Base):
@@ -177,6 +180,8 @@ class AddressMap(Base):
     address_term: Mapped[str | None] = mapped_column(String, default=None)
     valid_from_episode: Mapped[str | None] = mapped_column(String, default=None)
     locked_fields: Mapped[list[str]] = mapped_column(JSON, default=list)  # D-34
+
+    series: Mapped["Series"] = relationship(back_populates="address_maps")
 
 
 class RelationshipEvent(Base):
