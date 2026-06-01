@@ -222,6 +222,10 @@ async def test_translate_file_non_batch_error_propagates(settings_factory, tmp_p
     D-18 / Pitfall 5: only BatchValidationError (retry-exhausted gate failure) should produce a
     quarantine artifact.  A transport error or programming error must propagate so the file is
     retried on the next poll and no permanent quarantine record is created.
+
+    WR-04 note: asyncio.TaskGroup wraps the exception in an ExceptionGroup.  The test accepts
+    both bare RuntimeError (legacy gather path) and ExceptionGroup[RuntimeError] (TaskGroup path)
+    so the invariant (error propagates, no quarantine) is asserted regardless of wrapper.
     """
     engine_mod = pytest.importorskip("trezarr.translate.engine")
     from unittest.mock import patch, AsyncMock
@@ -242,10 +246,25 @@ async def test_translate_file_non_batch_error_propagates(settings_factory, tmp_p
     # Simulate an openai-style transport error (RuntimeError stands in for openai.APIError)
     transport_error = RuntimeError("simulated transport error")
 
-    # Patch _translate_batch to raise the transport error directly
-    with patch("trezarr.translate.engine._translate_batch", new=AsyncMock(side_effect=transport_error)):
-        with pytest.raises(RuntimeError, match="simulated transport error"):
+    # Patch _translate_batch to raise the transport error directly.
+    # asyncio.TaskGroup (WR-04) wraps the error in an ExceptionGroup.
+    # Catch ExceptionGroup and verify the inner exception is the expected RuntimeError.
+    raised_exc: BaseException | None = None
+    try:
+        with patch("trezarr.translate.engine._translate_batch", new=AsyncMock(side_effect=transport_error)):
             await translate_file(src, settings, client, ledger)
+    except BaseException as exc:
+        raised_exc = exc
+
+    assert raised_exc is not None, "Non-BatchValidationError must propagate out of translate_file (Pitfall 5)"
+    # Unwrap ExceptionGroup if present (TaskGroup path); accept bare exception too
+    if isinstance(raised_exc, ExceptionGroup):
+        inner_exceptions = list(raised_exc.exceptions)
+    else:
+        inner_exceptions = [raised_exc]
+    assert any("simulated transport error" in str(e) for e in inner_exceptions), (
+        f"Expected transport error message in propagated exception(s): {inner_exceptions!r}"
+    )
 
     # No quarantine entry must have been recorded — the error must have propagated
     entry = await ledger.check(str(src))
