@@ -25,9 +25,13 @@ Design decisions honoured:
         merge_inferred performs current-row UPDATE + bible_event INSERT(s) in ONE txn.
   D-33  UNIQUE(arr_kind, arr_instance, arr_series_id) identity key; tvdb_id/tmdb_id
         denormalized at creation but NOT used for lookup in v1.
-  D-34  human lock > prior > new inference. _merge_inferred_in_session re-reads the
-        DB row INSIDE the transaction to get the freshest locked_fields and old_value
-        state — never relies on the caller's potentially-stale DTO (HIGH finding fix).
+  D-34  human lock > prior > new inference. _merge_inferred_in_session reads
+        locked_fields and old_value OFF THE SQLA ROW inside the transaction —
+        never relies on the caller's potentially-stale DTO (HIGH finding fix).
+        WR-01: this is not a "fresh re-read" in the identity-map sense; within
+        the same AsyncSession session.get returns the SAME Python object as
+        the caller passed in. The stale-DTO defence is that we never read
+        through the DTO at all; the SQLA row is canonical for this transaction.
   D-35  arr_metadata is a JSON snapshot captured at series-row creation; register
         stays NULL (Phase 5 sets it via merge_inferred like any other Bible field).
   D-36  Lazy series-row creation on first translate — no startup enumeration.
@@ -38,9 +42,15 @@ Design decisions honoured:
              convert to DTO via model_validate(row, from_attributes=True) after flush.
   Pitfall 9  merge_inferred does NOT call out to an LLM from inside the transaction.
              Transactions are kept short (UPDATE + INSERT only — no I/O).
-  HIGH   _merge_inferred_in_session re-reads the row inside the transaction. This
-         guarantees old_value in bible_event reflects actual pre-write DB state even
-         if a concurrent update changed the row after the caller loaded their DTO.
+  HIGH   _merge_inferred_in_session reads locked + old_value off the SQLA row
+         inside the transaction (NOT off the caller's DTO). The SQLA row's
+         attribute values reflect the in-session pre-write state; the caller's
+         DTO may carry pre-write state from a prior session. WR-01: within the
+         same AsyncSession session.get(model, pk) returns the same identity-
+         map handle the caller already holds — so this does not bypass any
+         cache. The real guarantee is that we never trust the DTO; we read the
+         row.
+
   HIGH   No nested session.begin() blocks: public upsert_* and merge_inferred are the
          ONLY transaction owners. Private helpers run inside the caller's transaction.
 
@@ -250,22 +260,32 @@ async def _merge_inferred_in_session(
     This helper MUST be called from inside an `async with session.begin():` block.
     It does NOT open a transaction itself (HIGH finding: no nested txn).
 
-    HIGH finding fix: re-reads the row from the DB inside the open session to get
-    the freshest locked_fields and field values. This guarantees old_value in the
-    bible_event reflects actual pre-write DB state — never the caller's stale DTO.
+    HIGH finding fix (WR-01 clarification): the stale-DTO defence is that
+    locked_fields and field values are read off the SQLA row inside the open
+    transaction — never off the caller's external DTO. The caller's DTO may
+    have been built in a prior session and could carry pre-write state; the
+    SQLA row's current attribute values are what this session has actually
+    materialised. Note: ``session.get(type(row), row.id)`` inside the SAME
+    session returns the identical Python object via SQLAlchemy's identity map,
+    so it is not a "fresh re-read" in the sense of bypassing in-memory cache —
+    it's just the canonical handle for the row this session is operating on.
+    The real guarantee is that *we never go through the caller's DTO*; we read
+    locked + old_value off the SQLA row (whose attribute values reflect this
+    session's view of the row). If a TRUE post-commit re-read is needed (e.g.
+    to defeat the identity map after a concurrent commit), use
+    ``session.get(..., populate_existing=True)`` or ``session.refresh(row)``.
 
     Steps:
       1. Validate inferred fields against MERGEABLE_FIELDS whitelist.
-      2. Re-read the row from the DB inside the session (fresh state).
-      3. Build a fresh DTO snapshot from the re-read row.
-      4. Derive locked and changes from the fresh snapshot.
-      5. For each genuine change: setattr on the row + construct BibleEvent.
-      6. session.add(evt) for each event.
-      7. Return (fresh_row_or_snapshot, events_list).
+      2. Resolve the canonical SQLA row handle inside the session.
+      3. Read locked and compute changes off the SQLA row (not the caller's DTO).
+      4. For each genuine change: setattr on the row + construct BibleEvent.
+      5. session.add(evt) for each event.
+      6. Return (fresh_row_or_snapshot, events_list).
 
     Args:
         session:     Open AsyncSession (transaction must already be active).
-        row:         The SQLA model row (used for type(row) to re-read from DB).
+        row:         The SQLA model row (used for type(row) to look up via id).
         entity_type: "character" | "term_dictionary" | "series".
         dto_cls:     The Pydantic DTO class for model_validate.
         inferred:    Dict of {field: new_value} to attempt to merge.
@@ -273,8 +293,8 @@ async def _merge_inferred_in_session(
         source:      Provenance string (one of VALID_SOURCES).
 
     Returns:
-        (fresh_row, list_of_BibleEvent_instances) — the fresh SQLA row with
-        any changes applied, and the BibleEvent instances added to the session.
+        (fresh_row, list_of_BibleEvent_instances) — the SQLA row with any
+        changes applied, and the BibleEvent instances added to the session.
         If no changes are needed, returns (fresh_snapshot_dto, []).
 
     Raises:
@@ -289,9 +309,15 @@ async def _merge_inferred_in_session(
             f"Mergeable fields: {allowed}"
         )
 
-    # Re-read the row from the DB INSIDE the already-open session.
-    # This is the critical HIGH finding fix: derive locked AND changes from the FRESH
-    # row state, never from the caller's potentially-stale DTO.
+    # WR-01: this is the canonical SQLA row handle for this transaction. Inside
+    # the same AsyncSession, session.get(...) returns the SAME Python object
+    # via SQLAlchemy's identity map — it does NOT bypass any cache. The
+    # important property is that we then read locked + old_value OFF THIS ROW
+    # (not off the caller's DTO), so the audit entry reflects the in-session
+    # pre-write state rather than whatever stale snapshot the caller's DTO
+    # captured. ``populate_existing=True`` would be the right knob if we ever
+    # needed to defeat the identity map after a concurrent commit on a
+    # separate session.
     fresh_row = await session.get(type(row), row.id)
 
     # CR-02: compute_field_changes runs against the SQLA row itself, not a

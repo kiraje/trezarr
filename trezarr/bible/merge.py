@@ -6,9 +6,14 @@ The get_locked_fields() accessor exists so Phase 8 can swap to a parallel
 bible_lock table without touching call sites (CONTEXT.md §D-34).
 
 IMPORTANT: compute_field_changes() operates on whatever entity snapshot is
-passed to it. In store.py, _merge_inferred_in_session() always passes a fresh
-DTO built from the DB row read INSIDE the transaction — never the caller's
-potentially-stale DTO. This guarantees correct old_value audit entries.
+passed to it. In store.py, _merge_inferred_in_session() passes the SQLA row
+itself (not the caller's DTO), so getattr resolves against the row's current
+in-session attribute values. WR-01 clarification: within the same AsyncSession,
+SQLAlchemy's identity map means session.get(model, pk) returns the SAME Python
+object as the caller's prior load — so the defence is not "re-read bypasses
+cache", it is "read the row, never the caller's DTO." The caller's DTO may
+carry pre-write state from a prior session; the SQLA row's attribute values
+reflect what this transaction has materialised.
 
 Design decisions honoured:
   D-34  human lock > prior value > new inference. get_locked_fields() is the
@@ -55,8 +60,13 @@ def compute_field_changes(
 
     Pure function — no DB, no side effects. Easy to unit test exhaustively.
 
-    IMPORTANT: In store.py, always call this with a DTO built from the FRESH
-    DB row read inside the transaction, not the caller's stale DTO. This
+    IMPORTANT: In store.py, always call this with the SQLA row inside the
+    open transaction — not the caller's external DTO. The SQLA row's
+    attribute values reflect this session's in-flight view; the caller's
+    DTO may carry pre-write state from a prior session. WR-01: within the
+    same AsyncSession the identity map returns the same handle the caller
+    holds, so this is not about cache-bypass — it is about routing the
+    lookup through the SQLA model rather than the Pydantic DTO. This
     function itself has no such constraint, but the call site must enforce it.
 
     Args:
