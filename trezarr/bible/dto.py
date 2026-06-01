@@ -146,6 +146,32 @@ class AddressMapDTO(BaseModel):
     locked_fields: list[str] = []   # D-34: mutable default safe in Pydantic v2 (see dto.py:14)
 
 
+class RelationshipEventDTO(BaseModel):
+    """Relationship transition entry DTO (BIBLE-07).
+
+    model_config mirrors AddressMapDTO: from_attributes=True only — no aliases needed,
+    column names match Python field names 1:1.
+
+    Note: suggested_self_term / suggested_address_term are NOT persisted to DB
+    (the relationship_event schema is locked from Phase 4, D-31). They are
+    populated from RelationshipEventInference in-memory and carried through
+    reconciliation only.
+    """
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    series_id: int
+    character_a_id: int
+    character_b_id: int
+    episode_marker: str
+    description: str | None = None
+    created_at: datetime | None = None  # datetime | None — Pydantic v2 coerces ISO-8601
+    # In-memory only (from inference, not stored in DB):
+    suggested_self_term: str | None = None
+    suggested_address_term: str | None = None
+
+
 class BibleEventDTO(BaseModel):
     """Append-only audit log entry DTO — D-32 provenance schema.
 
@@ -212,4 +238,5 @@ class SeriesBibleDTO(BaseModel):
     characters: list[CharacterDTO] = []
     terms: list[TermDTO] = []
     address_map: list[AddressMapDTO] = []   # Eagerly loaded by load_series_bible Phase 5+
+    relationship_events: list[RelationshipEventDTO] = []  # [Phase 6 ADDITIVE — safe default []]
     locked_fields: list[str] = []

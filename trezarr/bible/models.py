@@ -93,6 +93,9 @@ class Series(Base):
     address_maps: Mapped[list["AddressMap"]] = relationship(
         back_populates="series", cascade="all, delete-orphan"
     )
+    relationship_events: Mapped[list["RelationshipEvent"]] = relationship(
+        back_populates="series", cascade="all, delete-orphan"
+    )
 
 
 class Character(Base):
@@ -211,6 +214,8 @@ class RelationshipEvent(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime, server_default=func.current_timestamp()
     )
+
+    series: Mapped["Series"] = relationship(back_populates="relationship_events")
 
 
 class BibleEvent(Base):

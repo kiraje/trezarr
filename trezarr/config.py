@@ -142,6 +142,16 @@ class TrezarrSettings(BaseSettings):
     # Use Field(default=None) explicitly to avoid default_factory/mutable default issues
     pronoun_safe_default: tuple[str, str] | None = Field(default=None)  # D-50
 
+    # ── Phase 6: Relationship Evolution + Self-Review (D-51…D-60) ──────────────────
+    # Capability A — Relationship Evolution (BIBLE-07)
+    enable_relationship_events: bool = True         # D-60: toggle for staged rollout/tests
+    relationship_event_min_confidence: float = 0.0  # min confidence to emit (0.0 = all)
+
+    # Capability B — Self-Review Pass (ENG-05)
+    enable_self_review: bool = True                 # D-60: toggle for staged rollout/tests
+    self_review_context_lines_k: int = 3            # context K for review batches (translate default)
+    self_review_max_cues_per_batch: int = 20        # smaller batches → fewer tokens per review call
+
     def __init__(self, _yaml_file: str | None = None, **data: Any) -> None:
         """Create settings.
 

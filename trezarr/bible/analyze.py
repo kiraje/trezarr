@@ -21,7 +21,7 @@ from typing import TYPE_CHECKING
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
-from trezarr.bible.store import upsert_character, upsert_term, upsert_address_pair, merge_inferred
+from trezarr.bible.store import upsert_character, upsert_term, upsert_address_pair, merge_inferred, record_relationship_event, load_series_bible
 
 if TYPE_CHECKING:
     from trezarr.config import TrezarrSettings
@@ -58,6 +58,17 @@ class AddressMapInference(BaseModel):
     self_term: str
     address_term: str
     confidence: float = 0.0
+
+
+class RelationshipEventInference(BaseModel):
+    """A relationship transition detected by Pass-1 analysis (BIBLE-07, D-51)."""
+
+    character_a_name: str
+    character_b_name: str
+    episode_marker: str        # set to the current episode_key
+    description: str           # narrative description of the shift
+    suggested_self_term: str | None = None    # new self_term for A→B (if LLM can suggest)
+    suggested_address_term: str | None = None # new address_term for A→B (if LLM can suggest)
 
 
 class CharacterInference(BaseModel):
@@ -97,6 +108,7 @@ class BibleAnalysis(BaseModel):
     characters: list[CharacterInference] = []
     terms: list[TermInference] = []
     address_map: list[AddressMapInference] = []
+    relationship_events: list[RelationshipEventInference] = []  # [Phase 6 ADDITIVE — safe default []]
 
 
 # ---------------------------------------------------------------------------
@@ -108,6 +120,7 @@ def _build_analysis_prompt(
     cue_texts: list[str],
     bible: "SeriesBibleDTO",
     arr_metadata: dict,
+    episode_key: str = "",   # [Phase 6 NEW — for relationship_events episode_marker]
 ) -> str:
     """Build the Pass-1 holistic analysis prompt.
 
@@ -197,6 +210,13 @@ def _build_analysis_prompt(
         "  - terms: list of proper nouns, titles, places, jargon with source_term and vietnamese_rendering\n"
         "  - address_map: list of directed pronoun pairs with speaker_name, addressee_name, self_term "
         "(how speaker refers to themselves), address_term (how speaker addresses the other), confidence (0.0-1.0)\n"
+        "  - relationship_events: list of relationship transitions detected in this episode\n"
+        "    (ONLY emit when a relationship has CHANGED relative to the existing Bible context above).\n"
+        f"    Each entry: character_a_name, character_b_name, episode_marker (use \"{episode_key}\"),\n"
+        "    description (narrative description, e.g. 'They become lovers in this episode'),\n"
+        "    suggested_self_term (optional: new Vietnamese self-reference term for A→B),\n"
+        "    suggested_address_term (optional: new Vietnamese address term for A→B).\n"
+        "    IMPORTANT: Do NOT emit entries for stable, unchanged relationships.\n"
         "Focus on Vietnamese pronoun accuracy. The most important output is the address_map — "
         "identify which Vietnamese pronoun pairs (anh/em, chị/em, ông/bà, etc.) are appropriate "
         "for each speaker→addressee relationship."
@@ -271,7 +291,7 @@ async def analyze_file(
     else:
         cue_texts = all_cue_texts
 
-    prompt = _build_analysis_prompt(cue_texts, bible, arr_metadata)
+    prompt = _build_analysis_prompt(cue_texts, bible, arr_metadata, episode_key=episode_key)
 
     # Call LLMClient — sole concurrency gate is inside LLMClient._semaphore (D-06, Pitfall A).
     # NEVER add asyncio.Semaphore here. response_model triggers Tier-1/2 path (D-47).
@@ -309,9 +329,12 @@ async def analyze_file(
 
 async def merge_bible_analysis(
     session_factory: object,
-    series_dto: "SeriesDTO",
-    analysis: BibleAnalysis,
-    episode_key: str,
+    series_dto: "SeriesDTO | None" = None,
+    analysis: BibleAnalysis | None = None,
+    episode_key: str = "",
+    *,
+    series_id: int | None = None,
+    settings: object = None,
 ) -> None:
     """Merge a BibleAnalysis result into the Series Bible via store functions.
 
@@ -321,6 +344,8 @@ async def merge_bible_analysis(
       3. For each term → upsert_term.
       4. For each address_map entry → resolve speaker+addressee IDs from the name map,
          then upsert_address_pair. Unresolvable names are warned and skipped (never crash).
+      5. For each relationship_event → resolve character IDs case-insensitively (CR-01),
+         then record_relationship_event. Advisory only — no total-failure raise (WR-06).
 
     WR-06: Per-row store failures are caught so one bad character/term/pair does not
     abort the merge.  However, if ALL rows fail (likely a systemic DB issue), a
@@ -329,17 +354,30 @@ async def merge_bible_analysis(
 
     Args:
         session_factory: Async session factory (passed through to store functions).
-        series_dto:      SeriesDTO for the current series (carries id).
+        series_dto:      SeriesDTO for the current series (carries id). If None, series_id must be set.
         analysis:        BibleAnalysis from analyze_file().
         episode_key:     Episode identifier for bible_event provenance.
+        series_id:       Series surrogate PK — alternative to series_dto.id (Phase-6 callers).
+        settings:        TrezarrSettings — used for enable_relationship_events toggle.
     """
-    series_id = series_dto.id
+    # Resolve series_id from either series_dto or explicit series_id kwarg
+    if series_dto is not None:
+        _series_id = series_dto.id
+    elif series_id is not None:
+        _series_id = series_id
+    else:
+        raise ValueError("merge_bible_analysis requires either series_dto or series_id")
+    series_id = _series_id  # type: ignore[assignment]
+
+    # analysis defaults to empty BibleAnalysis if called with None (backward compat)
+    if analysis is None:
+        analysis = BibleAnalysis()
 
     # Step 1: Update series register if inferred
     # WR-07: guard against empty/whitespace register_value — "" is not None but must
     # not overwrite a good prior register with an empty string.
     reg = (analysis.register_value or "").strip()
-    if reg:
+    if reg and series_dto is not None:
         try:
             await merge_inferred(
                 session_factory,
@@ -354,7 +392,18 @@ async def merge_bible_analysis(
 
     # Step 2: Upsert characters — build name→id map for address_map resolution
     # WR-06: count failures; raise BibleAnalysisError on total failure (systemic DB fault).
+    # Pre-seed name_to_id with existing DB characters (case-insensitive, CR-01) so that
+    # relationship_event resolution works even when the character is not in analysis.characters.
     name_to_id: dict[str, int] = {}
+    try:
+        existing_bible = await load_series_bible(session_factory, series_id=series_id)
+        for c in existing_bible.characters:
+            name_to_id[c.original_latin_name.strip().lower()] = c.id
+    except Exception as exc:
+        logger.warning(
+            "Pass 1: could not pre-load existing characters for series %d (name resolution may miss some): %s",
+            series_id, exc,
+        )
     char_fail_count = 0
     for char in analysis.characters:
         try:
@@ -485,3 +534,53 @@ async def merge_bible_analysis(
             f"Pass 1 merge: ALL {pair_fail_count} address-pair upserts failed for series {series_id} "
             f"episode {episode_key!r} — likely a systemic DB failure (WR-06)"
         )
+
+    # Step 5: Record relationship events (D-51, D-52, BIBLE-07)
+    # Uses the SAME name_to_id map built in Step 2 (case-insensitive, CR-01).
+    # Pitfall 4: resolve via .strip().lower() — same as address_map Step 4.
+    # D-60 toggle: skip if enable_relationship_events is False.
+    enable_rel_events = getattr(settings, "enable_relationship_events", True)
+    if enable_rel_events:
+        event_fail_count = 0
+        for event in analysis.relationship_events:
+            char_a_id = name_to_id.get((event.character_a_name or "").strip().lower())
+            char_b_id = name_to_id.get((event.character_b_name or "").strip().lower())
+
+            if char_a_id is None:
+                logger.warning(
+                    "Pass 1: could not resolve character_a_name %r to ID for series %d — "
+                    "skipping relationship_event (%r ↔ %r)",
+                    event.character_a_name, series_id,
+                    event.character_a_name, event.character_b_name,
+                )
+                continue
+            if char_b_id is None:
+                logger.warning(
+                    "Pass 1: could not resolve character_b_name %r to ID for series %d — "
+                    "skipping relationship_event (%r ↔ %r)",
+                    event.character_b_name, series_id,
+                    event.character_a_name, event.character_b_name,
+                )
+                continue
+
+            try:
+                await record_relationship_event(
+                    session_factory,
+                    series_id=series_id,
+                    character_a_id=char_a_id,
+                    character_b_id=char_b_id,
+                    episode_marker=episode_key,
+                    description=event.description,
+                )
+                logger.debug(
+                    "Pass 1: recorded relationship_event %r ↔ %r at %r for series %d",
+                    event.character_a_name, event.character_b_name, episode_key, series_id,
+                )
+            except Exception as exc:
+                event_fail_count += 1
+                logger.warning(
+                    "Pass 1: failed to record relationship_event %r ↔ %r for series %d: %s",
+                    event.character_a_name, event.character_b_name, series_id, exc,
+                )
+        # WR-06 pattern: total failure check is omitted for relationship_events —
+        # events are advisory, not required for a successful translation (unlike address pairs).
