@@ -2,9 +2,9 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: verifying
-stopped_at: Completed 05-06-PLAN.md (three-pass pipeline integration, 0 xfailed)
-last_updated: "2026-06-01T14:36:11.401Z"
+status: ready_to_plan
+stopped_at: Phase 05 complete (6/6) — ready to discuss Phase 6
+last_updated: 2026-06-01T18:56:38.504Z
 last_activity: 2026-06-01
 progress:
   total_phases: 10
@@ -21,13 +21,13 @@ progress:
 See: .planning/PROJECT.md (updated 2026-05-31)
 
 **Core value:** Vietnamese subtitles that stay consistent and relationally correct (right pronoun pair, stable names/terms) across an entire series — produced automatically.
-**Current focus:** Phase 05 — three-pass-pronoun-engine
+**Current focus:** Phase 6 — relationship evolution + self review
 
 ## Current Position
 
-Phase: 05 (three-pass-pronoun-engine) — EXECUTING
-Plan: 6 of 6
-Status: Phase complete — ready for verification
+Phase: 6
+Plan: Not started
+Status: Ready to plan
 Last activity: 2026-06-01
 
 Progress: [██████████] 100%
@@ -36,7 +36,7 @@ Progress: [██████████] 100%
 
 **Velocity:**
 
-- Total plans completed: 16
+- Total plans completed: 22
 - Average duration: 6 min
 - Total execution time: 0.1 hours
 
@@ -48,6 +48,7 @@ Progress: [██████████] 100%
 | 02 | 3 | - | - |
 | 03 | 5 | - | - |
 | 04 | 4 | - | - |
+| 05 | 6 | - | - |
 
 **Recent Trend:**
 
