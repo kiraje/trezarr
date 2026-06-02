@@ -1206,6 +1206,7 @@ async def apply_human_edit_term(
                 session.add(row)
                 await session.flush()  # populate row.id
                 old_value = None
+                new_value = vr  # normalize so the audit event matches what was stored
             else:
                 old_value = getattr(row, field)
                 setattr(row, field, new_value)
