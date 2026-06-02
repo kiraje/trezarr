@@ -233,7 +233,24 @@ Decimal phases appear between their surrounding integers in numeric order.
   2. An edited field can be locked; locked fields are read-only to Pass-1 merges and survive re-analysis unchanged
   3. A locked correction propagates forward — it appears in subsequent episode translations for at least the next several episodes without reverting
 
-**Plans**: TBD
+**Plans:** 4 plans
+
+**Wave 1**
+
+- [ ] 08-01-PLAN.md — Wave 0: RED test scaffold — tests/bible/test_human_edit.py, tests/web/test_bible_api.py, test_reconcile.py D-90 stub (BIBLE-08, BIBLE-09)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [ ] 08-02-PLAN.md — Wave 1: Engine layer — KINSHIP_RECIPROCAL gap fill (D-90), KNOWN_PRONOUN_TERMS constants (D-86), get_series_lock accessor (D-81), apply_human_edit_character/apply_human_edit_address_pair/load_field_history/load_all_series store writers (D-79, D-80, D-82, D-83)
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
+- [ ] 08-03-PLAN.md — Wave 2: REST router — trezarr/web/routes/bible.py + app.py registration; all Bible endpoints with D-39 boundary, entity_type allowlist, D-87 HTTP 422 guard, D-81 series lock (BIBLE-08, BIBLE-09)
+
+**Wave 4** *(blocked on Wave 3 completion)*
+
+- [ ] 08-04-PLAN.md — Wave 3: SPA layer — api/client.ts wrappers, LockBadge, LockToggleButton, PronounCombo, FieldHistoryPanel, ReciprocalSuggestionPanel, BibleList, BibleEditor, App.tsx + AppShell.tsx (D-84, D-85, D-86, D-87, D-88) + human-verify checkpoint (BIBLE-08)
+
 **UI hint**: yes
 
 ### Phase 9: Multi-Format — ASS/SSA + VTT
@@ -281,6 +298,6 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 5. Three-Pass Pronoun Engine | 6/6 | Complete   | 2026-06-01 |
 | 6. Relationship Evolution + Self-Review | 3/3 | Complete    | 2026-06-01 |
 | 7. Web UI & Service Hardening | 6/6 | Complete    | 2026-06-01 |
-| 8. Editable Series Bible UI | 0/TBD | Not started | - |
+| 8. Editable Series Bible UI | 0/4 | Not started | - |
 | 9. Multi-Format — ASS/SSA + VTT | 0/TBD | Not started | - |
 | 10. Source Selection & Per-Series Overrides | 0/TBD | Not started | - |
