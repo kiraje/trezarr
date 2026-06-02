@@ -265,7 +265,7 @@ Decimal phases appear between their surrounding integers in numeric order.
   2. Karaoke (`\k`) lines round-trip without corruption (preserved verbatim where remapping is unsafe)
   3. VTT parses and writes back round-tripping cue settings/positioning, and signs render in their original screen position in a media player
 
-**Plans:** 1/6 plans executed
+**Plans:** 2/6 plans executed
 
 **Wave 1**
 
@@ -273,7 +273,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-- [ ] 09-02-PLAN.md — Wave 1: Shared foundation — SubDoc.envelope field (D-92), tc_to_ms extension for ASS centiseconds + VTT hourless (D-101), sentinel TAG_RE \\N/\\n/\\h arm (D-98) (FMT-02, FMT-03, FMT-04)
+- [x] 09-02-PLAN.md — Wave 1: Shared foundation — SubDoc.envelope field (D-92), tc_to_ms extension for ASS centiseconds + VTT hourless (D-101), sentinel TAG_RE \\N/\\n/\\h arm (D-98) (FMT-02, FMT-03, FMT-04)
 
 **Wave 3** *(blocked on Wave 2 completion — plans 09-03 and 09-04 run in parallel)*
 
@@ -335,5 +335,5 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 6. Relationship Evolution + Self-Review | 3/3 | Complete    | 2026-06-01 |
 | 7. Web UI & Service Hardening | 6/6 | Complete    | 2026-06-01 |
 | 8. Editable Series Bible UI | 4/4 | Complete   | 2026-06-02 |
-| 9. Multi-Format — ASS/SSA + VTT | 1/6 | In Progress|  |
+| 9. Multi-Format — ASS/SSA + VTT | 2/6 | In Progress|  |
 | 10. Source Selection & Per-Series Overrides | 0/4 | Planning complete | - |
