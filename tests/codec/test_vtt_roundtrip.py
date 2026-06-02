@@ -1,7 +1,7 @@
-"""Wave 0 RED stubs: byte-identity round-trip tests for the VTT codec (FMT-04).
+"""Byte-identity round-trip tests for the VTT codec (FMT-04).
 
-All tests are xfail stubs — the implementation (trezarr.subtitles.vtt) does not
-yet exist. Tests will go GREEN in Wave 2.
+Promoted from Wave 0 xfail stubs to real assertions in Wave 2 (plan 09-04)
+now that trezarr.subtitles.vtt is implemented.
 
 Covers:
   FMT-04 — Byte-identical round-trip for all 8 VTT fixture files
@@ -9,6 +9,7 @@ Covers:
   FMT-04 — STYLE / REGION / NOTE blocks preserved verbatim
   D-101  — Hourless timecode (MM:SS.mmm) round-trips correctly
 """
+import warnings
 from pathlib import Path
 
 import pytest
@@ -27,22 +28,13 @@ _VTT_FIXTURE_FILES = [
 ]
 
 
-@pytest.mark.xfail(
-    raises=(ImportError, AssertionError, TypeError),
-    strict=False,
-    reason="trezarr.subtitles.vtt not yet implemented (Wave 2)",
-)
 @pytest.mark.parametrize("fixture", _VTT_FIXTURE_FILES)
 def test_byte_identical_roundtrip(tmp_path, fixture):
     """Read a VTT fixture, write it back, assert bytes are identical (FMT-04).
 
     Mirrors the SRT byte-identity contract in test_srt_roundtrip.py exactly.
     """
-    import warnings
-
-    vtt_mod = pytest.importorskip("trezarr.subtitles.vtt")
-    read_vtt = vtt_mod.read_vtt
-    write_vtt = vtt_mod.write_vtt
+    from trezarr.subtitles.vtt import read_vtt, write_vtt
 
     src = FIXTURES / fixture
     original_bytes = src.read_bytes()
@@ -56,16 +48,9 @@ def test_byte_identical_roundtrip(tmp_path, fixture):
     )
 
 
-@pytest.mark.xfail(
-    raises=(ImportError, AssertionError, TypeError),
-    strict=False,
-    reason="trezarr.subtitles.vtt not yet implemented (Wave 2)",
-)
 def test_cue_settings_preserved(tmp_path):
     """cue_settings.vtt: cue settings strings on timing lines must survive round-trip (FMT-04)."""
-    vtt_mod = pytest.importorskip("trezarr.subtitles.vtt")
-    read_vtt = vtt_mod.read_vtt
-    write_vtt = vtt_mod.write_vtt
+    from trezarr.subtitles.vtt import read_vtt, write_vtt
 
     src = FIXTURES / "cue_settings.vtt"
     original_bytes = src.read_bytes()
@@ -79,16 +64,9 @@ def test_cue_settings_preserved(tmp_path):
     assert output_bytes == original_bytes, "cue_settings.vtt round-trip not byte-identical"
 
 
-@pytest.mark.xfail(
-    raises=(ImportError, AssertionError, TypeError),
-    strict=False,
-    reason="trezarr.subtitles.vtt not yet implemented (Wave 2)",
-)
 def test_blocks_verbatim(tmp_path):
     """style_region.vtt and note_block.vtt: STYLE, REGION, NOTE blocks preserved verbatim (FMT-04, D-100)."""
-    vtt_mod = pytest.importorskip("trezarr.subtitles.vtt")
-    read_vtt = vtt_mod.read_vtt
-    write_vtt = vtt_mod.write_vtt
+    from trezarr.subtitles.vtt import read_vtt, write_vtt
 
     # Check STYLE and REGION blocks.
     src = FIXTURES / "style_region.vtt"
@@ -112,16 +90,9 @@ def test_blocks_verbatim(tmp_path):
     assert output_note_bytes == original_note_bytes, "note_block.vtt round-trip not byte-identical"
 
 
-@pytest.mark.xfail(
-    raises=(ImportError, AssertionError, TypeError),
-    strict=False,
-    reason="trezarr.subtitles.vtt not yet implemented (Wave 2)",
-)
 def test_hourless_timecode_roundtrip(tmp_path):
     """hourless_tc.vtt: MM:SS.mmm timecodes must be preserved verbatim on write-back (D-101)."""
-    vtt_mod = pytest.importorskip("trezarr.subtitles.vtt")
-    read_vtt = vtt_mod.read_vtt
-    write_vtt = vtt_mod.write_vtt
+    from trezarr.subtitles.vtt import read_vtt, write_vtt
 
     src = FIXTURES / "hourless_tc.vtt"
     original_bytes = src.read_bytes()
