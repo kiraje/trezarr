@@ -170,7 +170,46 @@ async def process_one_item(
     else:
         _bazarr_inventory = None
 
-    source_sub_path = eligible_item.source_sub_path
+    # WR-03 / D-109: use select_source_for_item to apply the per-series source
+    # priority + Bazarr inventory to select the best available source path.
+    # This wires the D-109 fallback chain that was previously computed but discarded.
+    # D-104 graceful degradation: if selection or path resolution fails, fall back
+    # to the path that scan_for_eligible_items already chose.
+    source_sub_path = eligible_item.source_sub_path  # default: scan's choice
+    try:
+        from trezarr.discover.scan import select_source_for_item  # noqa: PLC0415
+        from trezarr.discover.scan import find_source_sub  # noqa: PLC0415
+
+        # Per-series source override: pass it only when it actually differs from
+        # global settings (None = let ranking decide; no artificial override).
+        per_series_override = (
+            _source_priority
+            if _source_priority != settings.source_lang_priority
+            else None
+        )
+        best_lang = select_source_for_item(
+            media_item,
+            settings,
+            bazarr_inventory=_bazarr_inventory,
+            per_series_source_override=per_series_override,
+        )
+        if best_lang is not None:
+            # Resolve the language code to a real path on the filesystem.
+            # find_source_sub([best_lang]) returns the first (and only) matching
+            # file for that language — or None if the file is gone (TOCTOU).
+            media_path = getattr(media_item, "local_path", None)
+            if media_path is not None:
+                fs_result = find_source_sub(media_path, [best_lang])
+                if fs_result is not None:
+                    source_sub_path = fs_result[0]
+    except Exception:
+        # D-104: any error in source selection → degrade to scan's existing choice.
+        logger.debug(
+            "Source selection failed for %s — using scan's source: %s",
+            getattr(media_item, "local_path", "?"), eligible_item.source_sub_path,
+        )
+        source_sub_path = eligible_item.source_sub_path
+
     result = await translate_file(
         source_sub_path,
         settings,
