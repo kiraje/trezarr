@@ -1125,12 +1125,19 @@ async def apply_human_edit_address_pair(
                     session.add(evt)
                     events.append(evt)
 
-            # D-80: lock both fields as a pair if lock=True
+            # D-80: lock or unlock both fields as a pair (symmetric)
             if lock:
                 locked_list = list(row.locked_fields or [])
                 for f in ("self_term", "address_term"):
                     if f not in locked_list:
                         locked_list.append(f)
+                row.locked_fields = locked_list  # reassignment = dirty-tracked
+            elif not lock:
+                # CR-03: explicit unlock — remove self_term and address_term from locked_fields
+                locked_list = list(row.locked_fields or [])
+                for f in ("self_term", "address_term"):
+                    if f in locked_list:
+                        locked_list.remove(f)
                 row.locked_fields = locked_list  # reassignment = dirty-tracked
 
         # expire_on_commit=False: attributes accessible post-commit (Pitfall 2)
