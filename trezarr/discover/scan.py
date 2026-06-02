@@ -433,15 +433,22 @@ def select_source_for_item(
                     continue
                 available_langs.add(code2.lower())
 
-    # Filesystem fallback / complement: scan for source sidecar files (D-104).
+    # Filesystem fallback / complement: scan for ALL source sidecar files (D-104, CR-01).
+    # Do NOT use find_source_sub here — it returns only the first priority-matching
+    # file, so available_langs would have at most 1 language code and rank_sources
+    # would be a no-op for filesystem sources. Instead, glob directly for all
+    # {stem}.{lang}.srt files and collect every language code present on disk.
     media_path = getattr(media_item, "local_path", None)
     if media_path is not None:
-        # Probe using existing find_source_sub with a broad language list to discover
-        # what's actually present on disk.
-        fs_result = find_source_sub(media_path, ["ko", "ja", "zh", "th", "en", "fr", "de", "es", "pt", "it", "ru", "ar", "hi", "id", "ms", "ta", "tr"])
-        if fs_result is not None:
-            _path, fs_lang = fs_result
-            available_langs.add(fs_lang.lower())
+        try:
+            escaped_stem = _glob.escape(media_path.stem)
+            fs_candidates = sorted(media_path.parent.glob(f"{escaped_stem}.*.srt"))
+        except OSError:
+            fs_candidates = []
+        for candidate in fs_candidates:
+            m = _LANG_SIDECAR_RE.match(candidate.name)
+            if m and m.group(1) == media_path.stem:
+                available_langs.add(m.group(2).lower())
 
     if not available_langs:
         return None
