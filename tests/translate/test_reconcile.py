@@ -1023,12 +1023,19 @@ async def test_enable_relationship_events_false_suppresses_transition(session_fa
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(
-    raises=(AssertionError,),
-    strict=False,
-    reason="KINSHIP_RECIPROCAL bác/cháu gaps not yet filled — Plan 08-02 D-90",
-)
 async def test_kinship_reciprocal_bac_chau():
-    """D-90 H1 fix: bác/cháu, chú/cháu, cô/cháu, thầy/em, tao/mày round-trip in KINSHIP_RECIPROCAL; junior-only attribution on bác/cháu does not overwrite locked pair."""
+    """D-90 H1 fix: bác/cháu, chú/cháu, cô/cháu, thầy/em, tao/mày round-trip in KINSHIP_RECIPROCAL.
+
+    xfail removed: D-90 implementation is shipped (reconcile.py:58-69).
+    This is a real GREEN regression test — if any D-90 pair is accidentally removed it will fail loudly.
+    """
     from trezarr.translate.reconcile import KINSHIP_RECIPROCAL  # noqa: PLC0415
     assert ("bác", "cháu") in KINSHIP_RECIPROCAL and ("cháu", "bác") in KINSHIP_RECIPROCAL
+    # All D-90 pairs must be present (forward AND reverse)
+    for pair in [
+        ("chú", "cháu"), ("cháu", "chú"),
+        ("cô", "cháu"), ("cháu", "cô"),
+        ("thầy", "em"), ("em", "thầy"),
+        ("tao", "mày"), ("mày", "tao"),
+    ]:
+        assert pair in KINSHIP_RECIPROCAL, f"Missing D-90 pair: {pair}"
