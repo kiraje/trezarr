@@ -119,23 +119,29 @@ async def patch_character(
 
 @router.post("/series/{series_id}/characters")
 async def add_character(series_id: int, request: Request) -> JSONResponse:
-    """Add a character to the series Bible via upsert_character."""
+    """Add a character to the series Bible via upsert_character.
+
+    WR-03 / D-81: acquires get_series_lock(series_id) before the write, consistent
+    with all other write routes, to prevent interleaving with Pass-1 inference commits.
+    """
     session_factory = _get_session_factory(request)
     if session_factory is None:
         raise HTTPException(status_code=503, detail="No DB session available")
 
     body = await request.json()
+    from trezarr.web.worker import get_series_lock  # noqa: PLC0415
     from trezarr.bible.store import upsert_character  # noqa: PLC0415
 
-    dto, _events = await upsert_character(
-        session_factory,
-        series_id=series_id,
-        original_latin_name=body["original_latin_name"],
-        gender=body.get("gender"),
-        rough_age=body.get("rough_age"),
-        role=body.get("role"),
-        source=body.get("source", "import"),
-    )
+    async with get_series_lock(series_id):  # D-81: outermost CM (WR-03)
+        dto, _events = await upsert_character(
+            session_factory,
+            series_id=series_id,
+            original_latin_name=body["original_latin_name"],
+            gender=body.get("gender"),
+            rough_age=body.get("rough_age"),
+            role=body.get("role"),
+            source=body.get("source", "import"),
+        )
     return JSONResponse(dto.model_dump(by_alias=True))
 
 
