@@ -354,6 +354,11 @@ async def patch_series_register(series_id: int, request: Request) -> JSONRespons
     "register" via CR-02 alias). Series lock (D-81) is the outermost CM.
     """
     body = await request.json()
+    # WR-04: reject a missing "value" key rather than silently passing None to the store
+    # (which would NULL the register and propagate that None to subsequent translations if locked).
+    value = body.get("value")
+    if value is None:
+        raise HTTPException(status_code=422, detail="'value' is required")
     session_factory = _get_session_factory(request)
     if session_factory is None:
         raise HTTPException(status_code=503, detail="No DB session available")
@@ -367,7 +372,7 @@ async def patch_series_register(series_id: int, request: Request) -> JSONRespons
                 session_factory,
                 series_id=series_id,
                 field="register",  # ORM attribute name (MERGEABLE_FIELDS["series"] = frozenset({"register"}))
-                new_value=body.get("value"),
+                new_value=value,
                 lock=body.get("lock", False),
             )
         except ValueError as exc:
