@@ -182,6 +182,8 @@ export interface SeriesListItem {
   arr_series_id: number;
   register: string | null; // alias="register" — NOT register_value
   locked_fields: string[];
+  source_lang_override: string[] | null;
+  model_override: string | null;
 }
 
 export interface CharacterDTO {
@@ -248,6 +250,13 @@ export interface SeriesBibleDTO {
   address_map: AddressMapDTO[];
   relationship_events: RelationshipEventDTO[];
   locked_fields: string[];
+  source_lang_override: string[] | null;
+  model_override: string | null;
+}
+
+export interface SeriesOverridesRequest {
+  source_lang_override: string[] | null; // null = clear / inherit global
+  model_override: string | null; // null = clear / inherit global
 }
 
 export interface PronounsResponse {
@@ -317,6 +326,23 @@ export async function patchRegister(
     body: JSON.stringify(payload),
   });
   if (!resp.ok) throw new Error(`PATCH register: ${resp.status}`);
+  return resp.json();
+}
+
+/** PATCH /api/bible/series/{id}/overrides — set source-priority and model overrides. */
+export async function patchSeriesOverrides(
+  seriesId: number,
+  payload: SeriesOverridesRequest,
+): Promise<SeriesBibleDTO> {
+  const resp = await fetchWithTimeout(
+    `/api/bible/series/${seriesId}/overrides`,
+    {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    },
+  );
+  if (!resp.ok) throw new Error(`PATCH overrides: ${resp.status}`);
   return resp.json();
 }
 

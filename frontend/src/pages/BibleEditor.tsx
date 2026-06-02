@@ -17,9 +17,11 @@ import { Clock, Pencil, Trash2 } from "lucide-react";
 import {
   getSeriesBible,
   getPronouns,
+  getSettings,
   patchCharacter,
   patchAddressMapPair,
   patchRegister,
+  patchSeriesOverrides,
   addCharacter,
   addTerm,
   addAddressMapPair,
@@ -30,6 +32,7 @@ import {
   type AddressMapDTO,
   type TermDTO,
   type PronounsResponse,
+  type SettingsResponse,
 } from "../api/client";
 import LockBadge, { type LockState } from "../components/LockBadge";
 import LockToggleButton from "../components/LockToggleButton";
@@ -96,7 +99,7 @@ function TextField({
   );
 }
 
-type Tab = "characters" | "address_map" | "terms" | "register";
+type Tab = "characters" | "address_map" | "terms" | "register" | "overrides";
 
 // ── Main page ─────────────────────────────────────────────────────────────────
 
@@ -198,6 +201,7 @@ export default function BibleEditor() {
             ["address_map", "Address Map"],
             ["terms", "Terms"],
             ["register", "Register"],
+            ["overrides", "Overrides"],
           ] as [Tab, string][]
         ).map(([tab, label]) => (
           <button
@@ -246,6 +250,14 @@ export default function BibleEditor() {
         )}
         {activeTab === "register" && (
           <RegisterSection
+            seriesId={seriesId}
+            bible={bible}
+            setBible={setBible}
+            showToast={showToast}
+          />
+        )}
+        {activeTab === "overrides" && (
+          <OverridesSection
             seriesId={seriesId}
             bible={bible}
             setBible={setBible}
@@ -2060,6 +2072,433 @@ function RegisterSection({
         className="h-9 w-full bg-accent text-white text-sm rounded disabled:opacity-50 hover:bg-[#2563eb] focus:outline-[#3b82f6] focus:outline-2 focus:outline-offset-2 transition-colors duration-150"
       >
         {saving ? "Saving…" : "Save Register"}
+      </button>
+    </SectionCard>
+  );
+}
+
+// ── Source Priority Editor ────────────────────────────────────────────────────
+
+interface SourcePriorityEditorProps {
+  value: string[];
+  globalDefault: string[];
+  onChange: (v: string[] | null) => void;
+  onClear?: () => void;
+  disabled?: boolean;
+}
+
+function SourcePriorityEditor({
+  value,
+  globalDefault,
+  onChange,
+  onClear,
+  disabled = false,
+}: SourcePriorityEditorProps) {
+  const [inputValue, setInputValue] = useState("");
+  const [inputError, setInputError] = useState<string | null>(null);
+
+  function handleRemove(code: string) {
+    const next = value.filter((c) => c !== code);
+    onChange(next.length > 0 ? next : null);
+  }
+
+  function commitInput(raw: string) {
+    const trimmed = raw.trim().toLowerCase();
+    if (!trimmed) {
+      setInputError(null);
+      return;
+    }
+    if (!/^[a-z]{2}$/.test(trimmed)) {
+      setInputError("Must be a 2-letter ISO-639-1 code (e.g. ko, zh, en)");
+      return;
+    }
+    setInputError(null);
+    if (!value.includes(trimmed)) {
+      const next = [...value, trimmed];
+      onChange(next);
+    }
+    setInputValue("");
+  }
+
+  function handleKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      commitInput(inputValue);
+    }
+  }
+
+  function handleBlur() {
+    commitInput(inputValue);
+  }
+
+  const isOverridden = value.length > 0;
+
+  return (
+    <div className="flex flex-col gap-1">
+      <span className="text-xs text-text-muted">Source language preference</span>
+      {isOverridden ? (
+        <span className="text-xs text-accent">Per-series override active</span>
+      ) : (
+        <span className="text-xs text-text-muted">
+          Inherited from global config:{" "}
+          {globalDefault.length > 0 ? globalDefault.join(", ") : "—"}
+        </span>
+      )}
+      <div className="flex flex-wrap items-center gap-2 min-h-[28px]">
+        {value.map((code) => (
+          <span
+            key={code}
+            className="flex items-center h-7 px-2 gap-2 bg-[#1e293b] text-xs text-text-primary border border-[#2d3148] rounded"
+          >
+            {code}
+            <button
+              type="button"
+              aria-label={`Remove ${code} from source priority`}
+              disabled={disabled}
+              onClick={() => handleRemove(code)}
+              className="text-text-muted hover:text-[#f87171] focus:outline-[#3b82f6] focus:outline-2 focus:outline-offset-2 disabled:opacity-60 disabled:cursor-not-allowed"
+            >
+              ×
+            </button>
+          </span>
+        ))}
+        <input
+          type="text"
+          placeholder="+ Add"
+          aria-label="Add language code"
+          value={inputValue}
+          disabled={disabled}
+          onChange={(e) => {
+            setInputValue(e.target.value);
+            setInputError(null);
+          }}
+          onKeyDown={handleKeyDown}
+          onBlur={handleBlur}
+          className="h-7 w-16 bg-bg-surface border border-[#2d3148] rounded px-2 text-xs text-text-primary focus:outline-[#3b82f6] focus:outline-2 focus:outline-offset-2 disabled:opacity-60 disabled:cursor-not-allowed"
+        />
+      </div>
+      {inputError && (
+        <p role="alert" className="text-xs text-[#f87171]">
+          {inputError}
+        </p>
+      )}
+      {isOverridden && (
+        <button
+          type="button"
+          disabled={disabled}
+          onClick={() => (onClear ? onClear() : onChange(null))}
+          className="text-xs text-accent self-start focus:outline-[#3b82f6] focus:outline-2 focus:outline-offset-2 disabled:opacity-60 disabled:cursor-not-allowed"
+        >
+          Clear source override
+        </button>
+      )}
+    </div>
+  );
+}
+
+// ── Overrides Section ─────────────────────────────────────────────────────────
+
+interface OverridesSectionProps {
+  seriesId: number;
+  bible: SeriesBibleDTO;
+  setBible: React.Dispatch<React.SetStateAction<SeriesBibleDTO | null>>;
+  showToast: (t: Omit<ToastState, "id">) => void;
+}
+
+function OverridesSection({
+  seriesId,
+  bible,
+  setBible,
+  showToast,
+}: OverridesSectionProps) {
+  const [sourcePriority, setSourcePriority] = useState<string[]>(
+    bible.source_lang_override ?? [],
+  );
+  const [modelValue, setModelValue] = useState(bible.model_override ?? "");
+  const [modelError, setModelError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [globalSettings, setGlobalSettings] =
+    useState<SettingsResponse | null>(null);
+
+  // Register sub-section state (independent of overrides save path)
+  const [registerValue, setRegisterValue] = useState(bible.register ?? "");
+  const [registerSaving, setRegisterSaving] = useState(false);
+  const isRegisterLocked = bible.locked_fields.includes("register");
+  const registerLockState: LockState = isRegisterLocked ? "locked" : "inference";
+  const registerDirty = registerValue !== (bible.register ?? "");
+
+  useEffect(() => {
+    getSettings()
+      .then(setGlobalSettings)
+      .catch(() => {
+        /* degrade gracefully — provenance badges show fallback text */
+      });
+  }, []);
+
+  const dirty =
+    JSON.stringify(sourcePriority) !==
+      JSON.stringify(bible.source_lang_override ?? []) ||
+    modelValue !== (bible.model_override ?? "");
+
+  const globalSourceDefault = Array.isArray(
+    globalSettings?.source_lang_priority,
+  )
+    ? (globalSettings.source_lang_priority as string[])
+    : [];
+  const globalModel =
+    typeof globalSettings?.llm_model === "string"
+      ? globalSettings.llm_model
+      : "";
+
+  async function handleSave() {
+    // Validate model length (T-10-11)
+    if (modelValue.length > 256) {
+      setModelError("Model ID must be 256 characters or fewer");
+      return;
+    }
+    setModelError(null);
+    setSaving(true);
+    try {
+      // CRITICAL (D-111): only source_lang_override and model_override — register excluded
+      const updated = await patchSeriesOverrides(seriesId, {
+        source_lang_override:
+          sourcePriority.length > 0 ? sourcePriority : null,
+        model_override: modelValue.trim() || null,
+      });
+      setBible((prev) =>
+        prev
+          ? {
+              ...prev,
+              source_lang_override: updated.source_lang_override,
+              model_override: updated.model_override,
+            }
+          : prev,
+      );
+      showToast({ message: "Overrides saved.", variant: "success" });
+    } catch {
+      showToast({
+        message: "Failed to save overrides. Check the server logs.",
+        variant: "error",
+      });
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleClearSource() {
+    setSaving(true);
+    try {
+      const updated = await patchSeriesOverrides(seriesId, {
+        source_lang_override: null,
+        model_override: modelValue.trim() || null,
+      });
+      setSourcePriority([]);
+      setBible((prev) =>
+        prev
+          ? {
+              ...prev,
+              source_lang_override: updated.source_lang_override,
+              model_override: updated.model_override,
+            }
+          : prev,
+      );
+      showToast({ message: "Overrides saved.", variant: "success" });
+    } catch {
+      showToast({
+        message: "Failed to save overrides. Check the server logs.",
+        variant: "error",
+      });
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleClearModel() {
+    setSaving(true);
+    try {
+      const updated = await patchSeriesOverrides(seriesId, {
+        source_lang_override:
+          sourcePriority.length > 0 ? sourcePriority : null,
+        model_override: null,
+      });
+      setModelValue("");
+      setModelError(null);
+      setBible((prev) =>
+        prev
+          ? {
+              ...prev,
+              source_lang_override: updated.source_lang_override,
+              model_override: updated.model_override,
+            }
+          : prev,
+      );
+      showToast({ message: "Overrides saved.", variant: "success" });
+    } catch {
+      showToast({
+        message: "Failed to save overrides. Check the server logs.",
+        variant: "error",
+      });
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  // Register sub-section: independent save path via patchRegister (NOT patchSeriesOverrides)
+  async function handleSaveRegister() {
+    setRegisterSaving(true);
+    try {
+      await patchRegister(seriesId, {
+        value: registerValue,
+        lock: isRegisterLocked,
+      });
+      setBible((prev) => {
+        if (!prev) return prev;
+        return { ...prev, register: registerValue };
+      });
+      showToast({ message: "Register saved.", variant: "success" });
+    } catch {
+      showToast({
+        message: "Failed to save changes. Check the server logs.",
+        variant: "error",
+      });
+    } finally {
+      setRegisterSaving(false);
+    }
+  }
+
+  async function toggleRegisterLock() {
+    setRegisterSaving(true);
+    try {
+      await patchRegister(seriesId, {
+        value: registerValue,
+        lock: !isRegisterLocked,
+      });
+      setBible((prev) => {
+        if (!prev) return prev;
+        const newLockedFields = !isRegisterLocked
+          ? [...prev.locked_fields, "register"]
+          : prev.locked_fields.filter((f) => f !== "register");
+        return { ...prev, locked_fields: newLockedFields };
+      });
+      showToast({
+        message: !isRegisterLocked ? "Field locked." : "Field unlocked.",
+        variant: "success",
+      });
+    } catch {
+      showToast({
+        message: "Failed to save changes. Check the server logs.",
+        variant: "error",
+      });
+    } finally {
+      setRegisterSaving(false);
+    }
+  }
+
+  return (
+    <SectionCard>
+      <h2 className="text-base font-semibold text-text-primary">Overrides</h2>
+      <p className="text-xs text-text-muted -mt-2">
+        Per-series overrides take priority over global config. Leave blank to
+        inherit the global default.
+      </p>
+
+      {/* Source Language Preference */}
+      <SourcePriorityEditor
+        value={sourcePriority}
+        globalDefault={globalSourceDefault}
+        onChange={(v) => setSourcePriority(v ?? [])}
+        onClear={handleClearSource}
+        disabled={saving}
+      />
+
+      {/* Model Override */}
+      <div className="flex flex-col gap-1">
+        <span className="text-xs text-text-muted">Model override</span>
+        {modelValue.trim() ? (
+          <span className="text-xs text-accent">Per-series override active</span>
+        ) : (
+          <span className="text-xs text-text-muted">
+            Inherited: {globalModel || "—"}
+          </span>
+        )}
+        <input
+          id="model_override"
+          type="text"
+          value={modelValue}
+          onChange={(e) => {
+            setModelValue(e.target.value);
+            if (e.target.value.length <= 256) setModelError(null);
+          }}
+          placeholder={globalModel || "e.g. gpt-4o"}
+          disabled={saving}
+          maxLength={300}
+          className="h-9 w-full bg-bg-surface border border-[#2d3148] rounded px-2 text-sm text-text-primary focus:outline-[#3b82f6] focus:outline-2 focus:outline-offset-2 disabled:opacity-60 disabled:cursor-not-allowed"
+        />
+        {modelError && (
+          <p role="alert" className="text-xs text-[#f87171]">
+            {modelError}
+          </p>
+        )}
+        {modelValue.trim() && (
+          <button
+            type="button"
+            disabled={saving}
+            onClick={handleClearModel}
+            className="text-xs text-accent self-start focus:outline-[#3b82f6] focus:outline-2 focus:outline-offset-2 disabled:opacity-60 disabled:cursor-not-allowed"
+          >
+            Clear model override
+          </button>
+        )}
+      </div>
+
+      {/* Register sub-section — independent save path via patchRegister (NOT patchSeriesOverrides) */}
+      <div className="flex flex-col gap-1 pt-2 border-t border-[#2d3148]">
+        <div className="flex items-end gap-3">
+          <div className="flex-1">
+            <TextField
+              id="register_override"
+              label="Register"
+              value={registerValue}
+              onChange={setRegisterValue}
+              placeholder="e.g. formal, intimate, historical"
+              disabled={registerSaving}
+            />
+          </div>
+          <div className="flex items-center gap-1 mb-1">
+            <LockBadge state={registerLockState} />
+            <LockToggleButton
+              state={registerLockState}
+              onToggle={toggleRegisterLock}
+            />
+          </div>
+        </div>
+        {!isRegisterLocked && (
+          <div
+            className="text-xs px-3 py-2 rounded"
+            style={{ backgroundColor: "#1e3a5f", color: "#60a5fa" }}
+          >
+            This value may be overwritten on the next episode analysis. Lock to
+            pin it.
+          </div>
+        )}
+        <button
+          type="button"
+          disabled={!registerDirty || registerSaving}
+          onClick={handleSaveRegister}
+          className="h-9 w-full bg-accent text-white text-sm rounded disabled:opacity-50 hover:bg-[#2563eb] focus:outline-[#3b82f6] focus:outline-2 focus:outline-offset-2 transition-colors duration-150"
+        >
+          {registerSaving ? "Saving…" : "Save Register"}
+        </button>
+      </div>
+
+      {/* Save Overrides button — controls source_lang_override + model_override ONLY (D-111) */}
+      <button
+        type="button"
+        disabled={!dirty || saving}
+        onClick={handleSave}
+        className="h-9 w-full bg-accent text-white text-sm rounded disabled:opacity-50 hover:bg-[#2563eb] focus:outline-[#3b82f6] focus:outline-2 focus:outline-offset-2 transition-colors duration-150"
+      >
+        {saving ? "Saving…" : "Save Overrides"}
       </button>
     </SectionCard>
   );
