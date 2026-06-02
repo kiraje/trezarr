@@ -90,6 +90,41 @@ async def test_get_field_history():
     assert isinstance(resp.json(), list)
 
 
+async def test_field_history_dto_is_json_serializable():
+    """Regression (Phase-8 live-UAT): the history route must serialize BibleEventDTO via
+    model_dump(mode="json"). A real bible_event row carries a datetime created_at; a plain
+    model_dump() leaves a datetime object that Starlette's JSONResponse cannot encode -> 500.
+    The prior test_get_field_history only hit the empty-DB branch (session_factory is None ->
+    JSONResponse([])), so the datetime serialization was never exercised. This guards it.
+    """
+    import json  # noqa: PLC0415
+    from datetime import datetime, timezone  # noqa: PLC0415
+
+    import pytest  # noqa: PLC0415
+
+    from trezarr.bible.dto import BibleEventDTO  # noqa: PLC0415
+
+    dto = BibleEventDTO(
+        id=1,
+        series_id=1,
+        episode_key="S01E01",
+        entity_type="character",
+        entity_id=1,
+        field="gender",
+        old_value="male",
+        new_value="female",
+        source="import",
+        created_at=datetime(2026, 6, 2, 3, 58, 49, tzinfo=timezone.utc),
+    )
+
+    # What the route now does — must be JSON-serializable (no raise).
+    json.dumps([dto.model_dump(mode="json", by_alias=True)])
+
+    # The original bug: a plain model_dump() leaves a datetime that json.dumps rejects.
+    with pytest.raises(TypeError):
+        json.dumps([dto.model_dump(by_alias=True)])
+
+
 async def test_bible_route_does_not_import_sqla():
     """D-39: bible route module must not import SQLAlchemy models or sqlalchemy directly."""
     import inspect  # noqa: PLC0415

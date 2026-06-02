@@ -411,7 +411,11 @@ async def get_field_history(
     dtos = await load_field_history(
         session_factory, series_id, entity_type, entity_id, field
     )
-    return JSONResponse([d.model_dump(by_alias=True) for d in dtos])
+    # mode="json" serializes datetime (created_at) to an ISO string; a plain
+    # model_dump() leaves a datetime object that Starlette's JSONResponse cannot
+    # encode → 500. BibleEventDTO is the only DTO with a datetime field, which is
+    # why only the history endpoint hit this. (Phase-8 live-UAT finding.)
+    return JSONResponse([d.model_dump(mode="json", by_alias=True) for d in dtos])
 
 
 # ── GET /api/pronouns ─────────────────────────────────────────────────────────────
