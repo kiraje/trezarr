@@ -53,6 +53,20 @@ class LedgerProtocol(Protocol):
         """
         ...
 
+    async def check_by_output_path(self, output_path: "str | Path") -> "LedgerEntry | None":
+        """Return any ledger entry whose output_path matches — secondary D-110 check.
+
+        Used by gap.is_eligible Case 1.5 to detect Trezarr-owned vi sidecars
+        written from a different (lower-priority) source path.
+
+        Args:
+            output_path: Absolute path to the output (vi sidecar) file (str or Path).
+
+        Returns:
+            The LedgerEntry if output_path is known, else None.
+        """
+        ...
+
     @staticmethod
     def content_hash(source_bytes: bytes) -> str:
         """Return a short deterministic hash of source_bytes.

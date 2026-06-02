@@ -72,6 +72,8 @@ class EligibleItem:
     source_sub_path: Path
     reason: str
     source_lang: str
+    # Phase 10 additions:
+    source_upgraded: bool = False  # True when Case 1.5 fires (richer source available)
 
 
 @dataclass
@@ -115,6 +117,7 @@ class ScanStats:
     foreign_vi: int = 0
     already_done: int = 0
     error: int = 0
+    source_upgraded: int = 0  # Phase 10: Case 1.5 re-translation from richer source
 
 
 def find_source_sub(media_path: Path, lang_priority: Sequence[str]) -> tuple[Path, str] | None:
@@ -281,6 +284,12 @@ async def scan_for_eligible_items(
                 stats.foreign_vi += 1
             elif "already translated" in reason_lower:
                 stats.already_done += 1
+            elif "richer source" in reason_lower:
+                # Case 1.5: richer source available — eligible, not skipped.
+                # This branch should NOT be reached in the `not ok` path because
+                # Case 1.5 returns eligible=True. Included defensively in case a
+                # future variant produces False with this reason string.
+                stats.source_upgraded += 1
             elif "no source" in reason_lower:
                 # Case 0a — TOCTOU between find_source_sub and is_eligible
                 # (the source file vanished between glob and read). Counted
@@ -307,13 +316,161 @@ async def scan_for_eligible_items(
                 )
             continue
 
+        # Phase 10: track Case 1.5 source-upgrade items (D-110).
+        is_source_upgrade = "richer source" in reason.lower()
+        if is_source_upgrade:
+            stats.source_upgraded += 1
         eligible.append(
             EligibleItem(
                 media_item=item,
                 source_sub_path=source_sub_path,
                 reason=reason,
                 source_lang=source_lang,
+                source_upgraded=is_source_upgrade,
             )
         )
 
     return eligible, stats
+
+
+def select_source_for_item(
+    media_item: Any,
+    settings: Any,
+    bazarr_inventory: "list | None" = None,
+    per_series_source_override: "list[str] | None" = None,
+) -> "str | None":
+    """Select the best available source language for a media item (D-109).
+
+    Implements the D-109 fallback chain:
+      1. per_series_source_override — if provided and any entry exists in available sources
+      2. rank_sources over Bazarr inventory ∪ filesystem-detected langs, biased by
+         media_item.original_language
+      3. global settings.source_lang_priority
+      4. first available source of any language
+
+    Path safety (D-105, T-10-03):
+      For each SubtitleEntry in bazarr_inventory:
+        - apply_path_mapping(entry.path, settings.path_mappings)
+        - assert_within_media_roots(mapped_path, media_roots)  [INTG-03 traversal guard]
+        - Path(mapped_path).exists()
+      Only entries that pass all three checks contribute code2 to the available-language set.
+      Entries that fail (path outside media roots, or mapped path not on disk) are discarded
+      silently. This prevents Bazarr-reported paths from causing traversal exploits.
+
+    Bazarr soft-dependency (D-104):
+      If bazarr_inventory is None or settings.bazarr_use_inventory is False, skip Bazarr
+      step entirely and fall through to filesystem glob (find_source_sub).
+
+    Args:
+        media_item:               MediaItem-shaped object with .local_path (Path) and
+                                  optionally .original_language (str | None).
+        settings:                 TrezarrSettings-shaped object with .source_lang_priority,
+                                  .path_mappings, .bazarr_use_inventory, .media_roots (optional).
+        bazarr_inventory:         Optional list of BazarrInventoryItem or SubtitleEntry objects
+                                  from BazarrClient.fetch_episodes/fetch_movies. None = degrade
+                                  to filesystem glob (D-104).
+        per_series_source_override: Optional per-series source language priority list (D-111).
+                                  If provided, entries are checked against available sources first.
+
+    Returns:
+        2-letter source language code (e.g. "ko", "en") of the best available source,
+        or None if no source found.
+    """
+    # Lazy imports to avoid circular imports at module load time.
+    from trezarr.paths import apply_path_mapping, assert_within_media_roots, build_media_roots  # noqa: PLC0415
+    from trezarr.source_selection.rank import normalize_original_language, rank_sources  # noqa: PLC0415
+
+    # ── Step 1: Collect available source languages ─────────────────────────────
+    available_langs: set[str] = set()
+
+    # Build media roots for the traversal guard (D-29/INTG-03).
+    try:
+        media_roots = build_media_roots(settings)
+    except Exception:  # noqa: BLE001
+        media_roots = []
+
+    # Bazarr inventory path (D-104 soft-dependency check).
+    use_bazarr = (
+        bazarr_inventory is not None
+        and getattr(settings, "bazarr_use_inventory", True)
+    )
+    if use_bazarr and bazarr_inventory:
+        for entry in bazarr_inventory:
+            # SubtitleEntry has .code2 and .path; BazarrInventoryItem has .subtitles.
+            # Handle both types.
+            entries_to_check = []
+            if hasattr(entry, "subtitles"):
+                # BazarrInventoryItem
+                entries_to_check = entry.subtitles
+            elif hasattr(entry, "code2"):
+                # SubtitleEntry directly
+                entries_to_check = [entry]
+
+            for sub in entries_to_check:
+                raw_path = getattr(sub, "path", "")
+                code2 = getattr(sub, "code2", "")
+                if not raw_path or not code2:
+                    continue
+                # D-105: apply path mapping before any filesystem use.
+                try:
+                    mapped_path = apply_path_mapping(raw_path, getattr(settings, "path_mappings", []))
+                except Exception:  # noqa: BLE001
+                    continue
+                # INTG-03: traversal guard — discard paths outside media roots (T-10-03).
+                if media_roots:
+                    try:
+                        assert_within_media_roots(mapped_path, media_roots)
+                    except ValueError:
+                        # Path outside configured media roots — discard this entry.
+                        logger.debug(
+                            "Bazarr subtitle path %s failed traversal guard — discarding",
+                            raw_path,
+                        )
+                        continue
+                # Existence check — only count sources that are actually accessible.
+                from pathlib import Path as _Path  # noqa: PLC0415
+                if not _Path(mapped_path).exists():
+                    continue
+                available_langs.add(code2.lower())
+
+    # Filesystem fallback / complement: scan for source sidecar files (D-104).
+    media_path = getattr(media_item, "local_path", None)
+    if media_path is not None:
+        # Probe using existing find_source_sub with a broad language list to discover
+        # what's actually present on disk.
+        fs_result = find_source_sub(media_path, ["ko", "ja", "zh", "th", "en", "fr", "de", "es", "pt", "it", "ru", "ar", "hi", "id", "ms", "ta", "tr"])
+        if fs_result is not None:
+            _path, fs_lang = fs_result
+            available_langs.add(fs_lang.lower())
+
+    if not available_langs:
+        return None
+
+    # ── Step 2: Select the best language ────────────────────────────────────────
+    # Normalize original_language from the MediaItem.
+    orig_lang_name: str | None = getattr(media_item, "original_language", None)
+    original_language_code = normalize_original_language(orig_lang_name)
+
+    available_list = list(available_langs)
+
+    # Per-series override (D-111 / D-109 step 1): if provided, use override order,
+    # filtered to what's actually available.
+    if per_series_source_override:
+        for override_lang in per_series_source_override:
+            if override_lang.lower() in available_langs:
+                return override_lang.lower()
+        # No override lang available — fall through to ranking.
+
+    # SRC-02 richness ranking over available sources biased by original_language (D-109 step 2).
+    ranked = rank_sources(available_list, original_language_code)
+    if ranked:
+        return ranked[0]
+
+    # Global source_lang_priority (D-109 step 3).
+    global_priority = getattr(settings, "source_lang_priority", ["en"])
+    for lang in global_priority:
+        if lang.lower() in available_langs:
+            return lang.lower()
+
+    # First available (D-109 step 4).
+    return next(iter(available_langs))

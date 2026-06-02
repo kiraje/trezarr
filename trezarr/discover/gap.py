@@ -55,9 +55,17 @@ async def is_eligible(source_sub_path: Path, ledger: LedgerProtocol) -> tuple[bo
               ⇒ (False, "no source subtitle at <path>")
 
       Case 1  vi_path exists AND no ledger entry for source_sub_path
+              AND check_by_output_path(vi_path) is None
               ⇒ (False, "foreign vi sidecar at <vi_path> — not ours, skipping")
               D-26 never-clobber-foreign-vi guard. Bazarr or some other tool
               wrote this; we leave it alone.
+
+      Case 1.5 (D-110) vi_path exists AND no ledger entry for source_sub_path
+              AND check_by_output_path(vi_path) is not None
+              ⇒ (True, "richer source available — re-translating")
+              Trezarr wrote this vi from a DIFFERENT (lower-priority) source.
+              The current source_sub_path is richer — re-translate.
+              No loop: after re-translation, Case 2 fires (done + hash match).
 
       Case 2  ledger entry exists, status=done, AND vi_path exists
               ⇒ compare current source-bytes hash against entry.content_hash
@@ -104,9 +112,24 @@ async def is_eligible(source_sub_path: Path, ledger: LedgerProtocol) -> tuple[bo
     vi_path = derive_vi_sidecar_path(source_sub_path)  # Pitfall 5 — source_sub_path, not video
     entry = await ledger.check(str(source_sub_path))
 
-    # Case 1 — foreign vi sidecar (D-26): vi present, ledger has no record.
-    # We did NOT write this; never clobber (D-26, D-96: applies to .vi.<ext> for all formats).
+    # Case 1 / Case 1.5 — vi sidecar present, ledger has no entry for this source.
+    # Phase 10 D-110: first check if Trezarr wrote this vi from a DIFFERENT source.
     if vi_path.exists() and entry is None:
+        # Case 1.5 (D-110): query by output_path to see if Trezarr wrote this vi
+        # from a different (lower-priority) source path. If so, the richer source
+        # should trigger a re-translation — not a foreign-vi skip.
+        prior_entry = await ledger.check_by_output_path(str(vi_path))
+        if prior_entry is not None:
+            # Trezarr owns this vi sidecar (it was written from a different source).
+            # Re-translate from the richer source now available (D-110).
+            logger.info(
+                "richer source available for %s (prior source: %s) — re-translating",
+                source_sub_path,
+                prior_entry.source_path,
+            )
+            return (True, "richer source available — re-translating")
+        # Case 1 (D-26): check_by_output_path returned None → truly foreign vi sidecar.
+        # We did NOT write this; never clobber (D-26, D-96: applies to .vi.<ext> for all formats).
         logger.info(
             "foreign vi sidecar at %s — skipping %s (D-26, never clobber)",
             vi_path, source_sub_path,

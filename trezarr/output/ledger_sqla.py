@@ -85,6 +85,33 @@ class LedgerSQLA:
                 return None
             return _row_to_entry(row)
 
+    async def check_by_output_path(self, output_path: str | Path) -> LedgerEntry | None:
+        """Return any ledger entry whose output_path matches — secondary D-110 check.
+
+        Used by gap.is_eligible Case 1.5 to detect Trezarr-owned vi sidecars that
+        were written from a different (lower-priority) source path. This allows the
+        source-language upgrade seam to distinguish:
+          - Trezarr-owned vi (from a different source) → re-translate from richer source
+          - Genuinely foreign vi (no ledger record) → D-26 never-clobber guard
+
+        Pattern is identical to check() but queries ProcessedFile.output_path instead
+        of ProcessedFile.source_path.
+
+        Args:
+            output_path: Absolute path to the output (vi sidecar) file (str or Path).
+
+        Returns:
+            The LedgerEntry if output_path is found in the processed_file table,
+            else None.
+        """
+        key = str(output_path)
+        async with self._session_factory() as session:
+            result = await session.execute(
+                select(ProcessedFile).where(ProcessedFile.output_path == key)
+            )
+            row = result.scalar_one_or_none()
+            return _row_to_entry(row) if row is not None else None
+
     async def record(self, entry: LedgerEntry) -> None:
         """Persist or update the ledger entry (upsert semantics).
 

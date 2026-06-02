@@ -178,6 +178,28 @@ class Ledger:
         """
         return self._data.get(str(source_path))
 
+    async def check_by_output_path(self, output_path: str | Path) -> LedgerEntry | None:
+        """Return any ledger entry whose output_path matches — secondary D-110 check.
+
+        Used by gap.is_eligible Case 1.5 to detect Trezarr-owned vi sidecars
+        written from a different (lower-priority) source path.
+
+        The JSON ledger is keyed on source_path; we do a linear scan over values
+        for output_path lookups. This is acceptable for the JSON (legacy) backend
+        which is used only in tests and one-shot migration paths.
+
+        Args:
+            output_path: Absolute path to the output (vi sidecar) file (str or Path).
+
+        Returns:
+            The first LedgerEntry whose output_path matches, or None.
+        """
+        key = str(output_path)
+        for entry in self._data.values():
+            if entry.output_path == key:
+                return entry
+        return None
+
     async def record(self, entry: LedgerEntry) -> None:
         """Record (insert or update) an entry in the ledger and persist to disk.
 
