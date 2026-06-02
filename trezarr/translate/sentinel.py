@@ -11,10 +11,12 @@ from __future__ import annotations
 
 import re
 
-# Matches SRT inline tags (<i>, <b>, <u>, <font color="…">, </i> etc.)
-# and inline ASS override tags ({\anX}, {\pos(x,y)}, {\an8} etc.).
-# The two alternatives cover all tag forms found in SRT/ASS subtitle files.
-TAG_RE = re.compile(r'(<[^>]+>|\{\\[^}]+\})')
+# Matches SRT inline tags (<i>, <b>, <u>, <font color="…">, </i> etc.),
+# inline ASS override tags ({\anX}, {\pos(x,y)}, {\an8} etc.), and
+# ASS raw hard-break sequences (\N, \n, \h — not inside braces, D-98).
+# The \\[Nnh] arm is a fixed two-character match (literal backslash + char class);
+# no quantifiers, no backtracking — ASVS L1 compliant (T-09-02-B).
+TAG_RE = re.compile(r'(<[^>]+>|\{\\[^}]+\}|\\[Nnh])')
 
 
 def extract_sentinels(text: str) -> tuple[str, dict[str, str]]:
