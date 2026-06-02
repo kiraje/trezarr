@@ -22,7 +22,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 7: Web UI & Service Hardening** - Dockerized long-running service with config/queue/history/logs/retry, monitoring, and crash-safe resumption (completed 2026-06-01)
 - [x] **Phase 8: Editable Series Bible UI** - View, correct, and lock Bible fields so human overrides propagate forward (the override valve) (completed 2026-06-02)
 - [ ] **Phase 9: Multi-Format — ASS/SSA + VTT** - Translate ASS/SSA and VTT while preserving styling, tags, positioning, and cue settings byte-identical
-- [ ] **Phase 10: Source Selection & Per-Series Overrides** - Read Bazarr's subtitle inventory and pick the source language whose relational system best serves Vietnamese; per-series tuning
+- [x] **Phase 10: Source Selection & Per-Series Overrides** - Read Bazarr's subtitle inventory and pick the source language whose relational system best serves Vietnamese; per-series tuning (completed 2026-06-02)
 
 ## Phase Details
 
@@ -303,7 +303,7 @@ Decimal phases appear between their surrounding integers in numeric order.
   3. When multiple sources exist, Trezarr selects the relationally-richest source (prefers Chinese/Korean/Japanese/Thai for East-Asian content over English) and falls back to whatever is available
   4. A user can set per-series overrides for source-language preference, register, and model
 
-**Plans:** 3/4 plans executed
+**Plans:** 4/4 plans complete
 
 **Wave 0**
 
@@ -316,7 +316,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-- [ ] 10-04-PLAN.md — Wave 2: BibleEditor Overrides tab (SourcePriorityEditor + model field + register sub-section) + client.ts wrappers + human-verify checkpoint (SVC-05)
+- [x] 10-04-PLAN.md — Wave 2: BibleEditor Overrides tab (SourcePriorityEditor + model field + register sub-section) + client.ts wrappers + human-verify checkpoint (SVC-05)
 
 **UI hint**: yes
 
@@ -336,4 +336,4 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 7. Web UI & Service Hardening | 6/6 | Complete    | 2026-06-01 |
 | 8. Editable Series Bible UI | 4/4 | Complete   | 2026-06-02 |
 | 9. Multi-Format — ASS/SSA + VTT | 5/6 | In Progress|  |
-| 10. Source Selection & Per-Series Overrides | 3/4 | In Progress|  |
+| 10. Source Selection & Per-Series Overrides | 4/4 | Complete   | 2026-06-02 |
