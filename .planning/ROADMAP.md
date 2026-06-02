@@ -336,4 +336,4 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 7. Web UI & Service Hardening | 6/6 | Complete    | 2026-06-01 |
 | 8. Editable Series Bible UI | 4/4 | Complete   | 2026-06-02 |
 | 9. Multi-Format — ASS/SSA + VTT | 5/6 | In Progress|  |
-| 10. Source Selection & Per-Series Overrides | 4/4 | Complete   | 2026-06-02 |
+| 10. Source Selection & Per-Series Overrides | 4/4 | Complete    | 2026-06-02 |
