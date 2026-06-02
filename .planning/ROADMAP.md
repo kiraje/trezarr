@@ -265,7 +265,29 @@ Decimal phases appear between their surrounding integers in numeric order.
   2. Karaoke (`\k`) lines round-trip without corruption (preserved verbatim where remapping is unsafe)
   3. VTT parses and writes back round-tripping cue settings/positioning, and signs render in their original screen position in a media player
 
-**Plans**: TBD
+**Plans:** 6 plans
+
+**Wave 1**
+
+- [ ] 09-01-PLAN.md — Wave 0: RED test stubs (10 files in tests/codec/ + tests/translate/ + tests/output/ + tests/discover/) + 16 ASS/SSA/VTT fixture files (FMT-02, FMT-03, FMT-04)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [ ] 09-02-PLAN.md — Wave 1: Shared foundation — SubDoc.envelope field (D-92), tc_to_ms extension for ASS centiseconds + VTT hourless (D-101), sentinel TAG_RE \\N/\\n/\\h arm (D-98) (FMT-02, FMT-03, FMT-04)
+
+**Wave 3** *(blocked on Wave 2 completion — plans 09-03 and 09-04 run in parallel)*
+
+- [ ] 09-03-PLAN.md — Wave 2A: ASS/SSA codec — hand-rolled read_ass/write_ass with AssDoc/AssOpaqueSegment/AssDialogueSlot; karaoke + drawing verbatim pass-through; validate.py gate extension SENTINEL_ONLY_RE + raw-is-not-None guard (D-91, D-97, D-98, D-99, D-102) (FMT-02, FMT-03)
+- [ ] 09-04-PLAN.md — Wave 2B: VTT codec — hand-rolled read_vtt/write_vtt with VttDoc/VttOpaqueBlock/VttCueBlock; WEBVTT header, NOTE/STYLE/REGION verbatim, cue settings in timing_line (D-91, D-100) (FMT-04)
+
+**Wave 4** *(blocked on Wave 3 completion)*
+
+- [ ] 09-05-PLAN.md — Wave 3: Pipeline wiring — dispatch.py (read_subtitle/write_subtitle, D-94), derive_vi_sidecar_path generalized to mirror source extension (D-95), engine.py + gap.py seam swap + envelope carry-through, AUTO-04 generalized for .vi.<ext> (D-96) (FMT-02, FMT-03, FMT-04)
+
+**Wave 5** *(blocked on Wave 4 completion)*
+
+- [ ] 09-06-PLAN.md — Wave 4: Human visual UAT — positioned sign rendering in mpv/Jellyfin for .vi.ass ({\pos}/{\an8}) and .vi.vtt (position:/line:) confirms FMT-04 success criterion 3 (FMT-02, FMT-03, FMT-04)
+
 **UI hint**: yes
 
 ### Phase 10: Source Selection & Per-Series Overrides
@@ -299,5 +321,5 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 6. Relationship Evolution + Self-Review | 3/3 | Complete    | 2026-06-01 |
 | 7. Web UI & Service Hardening | 6/6 | Complete    | 2026-06-01 |
 | 8. Editable Series Bible UI | 4/4 | Complete   | 2026-06-02 |
-| 9. Multi-Format — ASS/SSA + VTT | 0/TBD | Not started | - |
+| 9. Multi-Format — ASS/SSA + VTT | 0/6 | Planning complete | - |
 | 10. Source Selection & Per-Series Overrides | 0/TBD | Not started | - |
