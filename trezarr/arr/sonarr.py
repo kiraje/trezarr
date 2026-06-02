@@ -97,6 +97,8 @@ class MediaItem:
     year: int | None = None            # D-35: premiere/release year
     network: str | None = None         # D-35: broadcast network (Sonarr only)
     runtime: int | None = None         # D-35: runtime in minutes
+    # ── Phase 10: original_language capture (D-108) ──
+    original_language: str | None = None  # e.g. "Korean", "English" — from arr originalLanguage.name
 
 
 def build_sonarr_client(settings: "TrezarrSettings") -> Sonarr:
@@ -198,6 +200,8 @@ def discover_sonarr_items(settings: "TrezarrSettings") -> list[MediaItem]:
                         year=series.get("year"),
                         network=series.get("network"),
                         runtime=series.get("runtime"),
+                        # Phase 10 — D-108: originalLanguage.name for SRC-02 relational-richness ranking
+                        original_language=series.get("originalLanguage", {}).get("name"),
                         # tmdb_id intentionally omitted for Sonarr (defaults to None — D-33)
                     )
                 )

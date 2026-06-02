@@ -169,6 +169,8 @@ def discover_radarr_items(settings: "TrezarrSettings") -> list[MediaItem]:
                     overview=movie.get("overview"),
                     year=movie.get("year"),
                     runtime=movie.get("runtime"),         # movies use "runtime" (minutes)
+                    # Phase 10 — D-108: originalLanguage.name for SRC-02 relational-richness ranking
+                    original_language=movie.get("originalLanguage", {}).get("name"),
                     # network intentionally omitted for Radarr movies (defaults to None — D-35)
                 )
             )

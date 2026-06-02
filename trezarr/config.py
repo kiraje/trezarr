@@ -166,6 +166,9 @@ class TrezarrSettings(BaseSettings):
     bazarr_port: int = 6767
     bazarr_api_key: SecretStr = SecretStr("")       # NEVER logged; SecretStr masks in repr/str
     bazarr_enabled: bool = False
+    # Phase 10: Bazarr inventory use (D-104)
+    bazarr_use_inventory: bool = True   # When True: query Bazarr for subtitle inventory.
+                                        # When False: degrade to filesystem glob (find_source_sub).
 
     def __init__(self, _yaml_file: str | None = None, **data: Any) -> None:
         """Create settings.
