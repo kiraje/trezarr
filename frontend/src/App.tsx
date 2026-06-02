@@ -18,6 +18,8 @@ import Settings from "./pages/Settings";
 import Queue from "./pages/Queue";
 import History from "./pages/History";
 import JobLogs from "./pages/JobLogs";
+import BibleList from "./pages/BibleList";
+import BibleEditor from "./pages/BibleEditor";
 
 export default function App() {
   return (
@@ -30,15 +32,8 @@ export default function App() {
           <Route path="/queue" element={<Queue />} />
           <Route path="/history" element={<History />} />
           <Route path="/jobs/:id/logs" element={<JobLogs />} />
-          {/* Phase 8 placeholder */}
-          <Route
-            path="/bible"
-            element={
-              <div className="text-[#6b7280] text-sm">
-                Series Bible editing will be available in a future release.
-              </div>
-            }
-          />
+          <Route path="/bible" element={<BibleList />} />
+          <Route path="/bible/:seriesId" element={<BibleEditor />} />
         </Routes>
       </AppShell>
     </BrowserRouter>

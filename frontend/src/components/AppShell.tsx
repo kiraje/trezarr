@@ -90,12 +90,10 @@ export default function AppShell({ children }: AppShellProps) {
             icon={<History size={16} />}
             label="History"
           />
-          {/* Phase 8 placeholder — visible but muted */}
           <NavItem
             to="/bible"
             icon={<BookOpen size={16} />}
             label="Bible"
-            disabled
           />
         </nav>
 
