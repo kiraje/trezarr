@@ -1642,3 +1642,63 @@ async def merge_inferred(
             updated_dto,
             [BibleEventDTO.model_validate(e, from_attributes=True) for e in raw_events],
         )
+
+
+async def set_series_overrides(
+    session_factory: async_sessionmaker[AsyncSession],
+    *,
+    series_id: int,
+    source_lang_override: list[str] | None,  # None = clear override (inherit global)
+    model_override: str | None,              # None = clear override (inherit global)
+) -> SeriesDTO:
+    """Set per-series source-lang and model overrides (D-111, SVC-05).
+
+    NULL = inherit global config. Empty list [] treated as NULL (cleared).
+    Emits BibleEvent for audit (D-32). No MERGEABLE_FIELDS check needed —
+    these columns are NOT in the merge_inferred pathway; they are override-only.
+
+    Args:
+        session_factory:       Async session factory.
+        series_id:             PK of the Series row to update.
+        source_lang_override:  Ordered list of ISO-639-1 codes, or None to clear.
+                               Empty list [] is treated as None (cleared).
+        model_override:        LLM model identifier, or None to clear.
+
+    Returns:
+        SeriesDTO for the updated row (D-39: returns DTO, not ORM row).
+
+    Raises:
+        ValueError: If series_id not found.
+    """
+    async with session_factory() as session:
+        async with session.begin():
+            # WR-01: re-read INSIDE the transaction off the SQLA row
+            row = await session.get(Series, series_id)
+            if row is None:
+                raise ValueError(f"Series {series_id} not found")
+
+            # Normalize: empty list [] treated as NULL (cleared override)
+            src_override = source_lang_override if source_lang_override else None
+            mdl_override = model_override or None
+
+            row.source_lang_override = src_override
+            row.model_override = mdl_override
+
+            # D-32: audit event in the same transaction
+            evt = BibleEvent(
+                series_id=series_id,
+                episode_key=None,
+                entity_type="series",
+                entity_id=series_id,
+                field="overrides",
+                old_value=None,
+                new_value={
+                    "source_lang_override": src_override,
+                    "model_override": mdl_override,
+                },
+                source="import",  # human edit via UI
+            )
+            session.add(evt)
+
+        # expire_on_commit=False: attributes accessible post-commit (Pitfall 2)
+        return SeriesDTO.model_validate(row, from_attributes=True)

@@ -69,6 +69,9 @@ class SeriesDTO(BaseModel):
     register_value: str | None = Field(default=None, alias="register")
     arr_metadata: dict[str, Any] = {}
     locked_fields: list[str] = []
+    # Phase 10: per-series override fields (D-111)
+    source_lang_override: list[str] | None = None
+    model_override: str | None = None
 
 
 class CharacterDTO(BaseModel):
@@ -240,3 +243,6 @@ class SeriesBibleDTO(BaseModel):
     address_map: list[AddressMapDTO] = []   # Eagerly loaded by load_series_bible Phase 5+
     relationship_events: list[RelationshipEventDTO] = []  # [Phase 6 ADDITIVE — safe default []]
     locked_fields: list[str] = []
+    # Phase 10: per-series override fields (D-111)
+    source_lang_override: list[str] | None = None
+    model_override: str | None = None

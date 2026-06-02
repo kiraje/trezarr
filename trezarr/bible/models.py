@@ -83,6 +83,9 @@ class Series(Base):
     register: Mapped[str | None] = mapped_column(String, default=None)   # D-35: Phase 5 sets
     arr_metadata: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)  # D-35 snapshot
     locked_fields: Mapped[list[str]] = mapped_column(JSON, default=list)      # D-34 callable!
+    # ── Phase 10: per-series override columns (D-111, migration 0003) ──────────
+    source_lang_override: Mapped[list[str] | None] = mapped_column(JSON, default=None)
+    model_override: Mapped[str | None] = mapped_column(String, default=None)
 
     characters: Mapped[list["Character"]] = relationship(
         back_populates="series", cascade="all, delete-orphan"

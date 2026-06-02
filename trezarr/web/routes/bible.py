@@ -9,13 +9,17 @@ Design decisions honoured:
   D-87  PATCH address-map: HTTP 422 when lock=True and either term is empty/whitespace.
   D-88  No relationship-event authoring; event list is read-only display only.
   D-39  Routes receive/return Pydantic DTOs only — no SQLAlchemy models imported here.
+  D-114 PATCH /bible/series/{id}/overrides — per-series source_lang_override + model_override.
+        2-letter lang-code validation (T-10-06); lazy imports (D-39); per-series lock (D-81).
 """
 from __future__ import annotations
 
 import logging
+import re
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse
+from pydantic import BaseModel
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -374,6 +378,65 @@ async def patch_series_register(series_id: int, request: Request) -> JSONRespons
                 field="register",  # ORM attribute name (MERGEABLE_FIELDS["series"] = frozenset({"register"}))
                 new_value=value,
                 lock=body.get("lock", False),
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=404, detail=str(exc))
+    return JSONResponse(dto.model_dump(by_alias=True))
+
+
+# ── PATCH /api/bible/series/{id}/overrides ────────────────────────────────────────
+
+
+class SeriesOverridesRequest(BaseModel):
+    """Request body for PATCH /api/bible/series/{id}/overrides (D-114, SVC-05).
+
+    source_lang_override: Ordered list of 2-letter ISO-639-1 codes, or None to clear.
+    model_override:       LLM model identifier string, or None to clear.
+    """
+
+    source_lang_override: list[str] | None = None  # None = clear override
+    model_override: str | None = None              # None = clear override
+
+
+@router.patch("/bible/series/{series_id}/overrides")
+async def patch_series_overrides(
+    series_id: int,
+    body: SeriesOverridesRequest,
+    request: Request,
+) -> JSONResponse:
+    """PATCH source_lang_override and model_override for a series (D-114, SVC-05).
+
+    Validates source_lang_override elements as 2-letter lowercase codes (T-10-06,
+    ASVS V5 input validation — prevents injection into the language selection pipeline).
+    Returns 422 on invalid codes. Returns 404 if series not found. Returns 503
+    if DB is not configured.
+
+    Lazy imports inside handler only (D-39: no SQLAlchemy at module level).
+    Per-series asyncio.Lock (D-81) is the outermost context manager.
+    """
+    session_factory = _get_session_factory(request)
+    if session_factory is None:
+        raise HTTPException(status_code=503, detail="No DB session available")
+
+    # T-10-06: validate source_lang_override elements as 2-letter lowercase codes
+    if body.source_lang_override is not None:
+        invalid = [c for c in body.source_lang_override if not re.match(r'^[a-z]{2}$', c)]
+        if invalid:
+            raise HTTPException(
+                status_code=422,
+                detail=f"source_lang_override contains invalid language codes: {invalid}",
+            )
+
+    from trezarr.web.worker import get_series_lock  # noqa: PLC0415
+    from trezarr.bible.store import set_series_overrides  # noqa: PLC0415
+
+    async with get_series_lock(series_id):  # D-81: outermost CM
+        try:
+            dto = await set_series_overrides(
+                session_factory,
+                series_id=series_id,
+                source_lang_override=body.source_lang_override,
+                model_override=body.model_override,
             )
         except ValueError as exc:
             raise HTTPException(status_code=404, detail=str(exc))
