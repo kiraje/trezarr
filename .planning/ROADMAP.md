@@ -233,7 +233,7 @@ Decimal phases appear between their surrounding integers in numeric order.
   2. An edited field can be locked; locked fields are read-only to Pass-1 merges and survive re-analysis unchanged
   3. A locked correction propagates forward — it appears in subsequent episode translations for at least the next several episodes without reverting
 
-**Plans:** 1/4 plans executed
+**Plans:** 2/4 plans executed
 
 **Wave 1**
 
@@ -241,7 +241,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-- [ ] 08-02-PLAN.md — Wave 1: Engine layer — KINSHIP_RECIPROCAL gap fill (D-90), KNOWN_PRONOUN_TERMS constants (D-86), get_series_lock accessor (D-81), apply_human_edit_character/apply_human_edit_address_pair/load_field_history/load_all_series store writers (D-79, D-80, D-82, D-83)
+- [x] 08-02-PLAN.md — Wave 1: Engine layer — KINSHIP_RECIPROCAL gap fill (D-90), KNOWN_PRONOUN_TERMS constants (D-86), get_series_lock accessor (D-81), apply_human_edit_character/apply_human_edit_address_pair/load_field_history/load_all_series store writers (D-79, D-80, D-82, D-83)
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
@@ -298,6 +298,6 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 5. Three-Pass Pronoun Engine | 6/6 | Complete   | 2026-06-01 |
 | 6. Relationship Evolution + Self-Review | 3/3 | Complete    | 2026-06-01 |
 | 7. Web UI & Service Hardening | 6/6 | Complete    | 2026-06-01 |
-| 8. Editable Series Bible UI | 1/4 | In Progress|  |
+| 8. Editable Series Bible UI | 2/4 | In Progress|  |
 | 9. Multi-Format — ASS/SSA + VTT | 0/TBD | Not started | - |
 | 10. Source Selection & Per-Series Overrides | 0/TBD | Not started | - |
