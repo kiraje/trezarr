@@ -215,7 +215,12 @@ def write_vtt(doc: SubDoc, path: str | Path) -> None:
             parts.append("".join(chunk_parts))
 
     result = "".join(parts)
-    Path(path).write_bytes(result.encode(vtt_doc.encoding))
+    # CR-01 (D-19 / FMT-05): encode with doc.encoding, NOT vtt_doc.encoding.
+    # vtt_doc.encoding is the source encoding captured at read time; on the vi
+    # sidecar path write_vi_sidecar sets doc.encoding='utf-8' to force UTF-8
+    # output. (On a plain round-trip read_vtt sets doc.encoding == vtt_doc.encoding,
+    # so byte-identity is unchanged.)
+    Path(path).write_bytes(result.encode(doc.encoding))
 
 
 # ---------------------------------------------------------------------------

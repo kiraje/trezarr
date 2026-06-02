@@ -36,13 +36,36 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-# Module-level compiled regex — matches `{stem}.{lang}.srt` where {lang} is a
+# Canonical source-subtitle extensions Trezarr can translate. Mirrors the
+# dispatch table in trezarr/subtitles/dispatch.py (.srt → read_srt, .ass/.ssa →
+# read_ass, .vtt → read_vtt). WR-01: discovery MUST find all of these — globbing
+# only .srt left the entire ASS/SSA/VTT codec stack unreachable in production.
+_SOURCE_SUFFIXES = ("srt", "ass", "ssa", "vtt")
+
+# Module-level compiled regex — matches `{stem}.{lang}.{ext}` where {lang} is a
 # 2- or 3-letter ISO-639 code (per 03-RESEARCH.md Open Question 3 — Bazarr
-# regularly emits 3-letter codes like "eng", "jpn", "kor"). Case-insensitive
-# to handle the (rare) `.EN.SRT` variants. The first capture group is the
-# stem (everything before the language token); the second is the language
-# token itself.
-_LANG_SIDECAR_RE = re.compile(r'^(.+?)\.([a-z]{2,3})\.srt$', re.IGNORECASE)
+# regularly emits 3-letter codes like "eng", "jpn", "kor") and {ext} is any
+# supported source suffix. Case-insensitive to handle the (rare) `.EN.SRT`
+# variants. The first capture group is the stem (everything before the language
+# token); the second is the language token itself.
+_LANG_SIDECAR_RE = re.compile(
+    r'^(.+?)\.([a-z]{2,3})\.(?:' + '|'.join(_SOURCE_SUFFIXES) + r')$',
+    re.IGNORECASE,
+)
+
+
+def _glob_source_sidecars(media_dir: Path, escaped_stem: str) -> list[Path]:
+    """Glob every supported source-subtitle sidecar for ``escaped_stem``.
+
+    WR-01: globs all of ``_SOURCE_SUFFIXES`` (.srt/.ass/.ssa/.vtt), not just
+    .srt, so ASS/SSA/VTT sources are discoverable. Returns a single sorted list
+    so the existing deterministic "lexicographically-first wins" selection
+    within a language (MEDIUM #12) is preserved across the union of extensions.
+    """
+    candidates: list[Path] = []
+    for suffix in _SOURCE_SUFFIXES:
+        candidates.extend(media_dir.glob(f"{escaped_stem}.*.{suffix}"))
+    return sorted(candidates)
 
 
 @dataclass(frozen=True)
@@ -164,7 +187,7 @@ def find_source_sub(media_path: Path, lang_priority: Sequence[str]) -> tuple[Pat
     # the stem via glob.escape so the literal stem is matched on the filesystem.
     escaped_stem = _glob.escape(media_stem)
     try:
-        candidates = sorted(media_dir.glob(f"{escaped_stem}.*.srt"))
+        candidates = _glob_source_sidecars(media_dir, escaped_stem)
     except OSError as exc:
         # Directory unreadable / permission denied — log and treat as "no source".
         logger.warning("source-sub glob failed for %s: %s", media_dir, exc)
@@ -437,12 +460,13 @@ def select_source_for_item(
     # Do NOT use find_source_sub here — it returns only the first priority-matching
     # file, so available_langs would have at most 1 language code and rank_sources
     # would be a no-op for filesystem sources. Instead, glob directly for all
-    # {stem}.{lang}.srt files and collect every language code present on disk.
+    # {stem}.{lang}.{ext} sidecars (every supported source suffix — WR-01) and
+    # collect every language code present on disk.
     media_path = getattr(media_item, "local_path", None)
     if media_path is not None:
         try:
             escaped_stem = _glob.escape(media_path.stem)
-            fs_candidates = sorted(media_path.parent.glob(f"{escaped_stem}.*.srt"))
+            fs_candidates = _glob_source_sidecars(media_path.parent, escaped_stem)
         except OSError:
             fs_candidates = []
         for candidate in fs_candidates:

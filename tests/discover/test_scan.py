@@ -541,3 +541,68 @@ async def test_scan_counts_toctou_no_source_into_no_source_bucket(tmp_path, monk
         f"Expected stats.no_source == 1 (TOCTOU between find_source_sub and is_eligible), got {stats.no_source}"
     )
     assert stats.error == 0, "TOCTOU no-source must NOT be counted as error (WR-03)"
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# WR-01 — ASS/SSA/VTT source discovery (Phase 9 multi-format reachability)
+# ──────────────────────────────────────────────────────────────────────────────
+
+
+@pytest.mark.parametrize("ext", ["ass", "ssa", "vtt"])
+def test_find_source_sub_discovers_non_srt_sources(tmp_path, ext):
+    """WR-01: find_source_sub discovers .ass/.ssa/.vtt sources, not just .srt.
+
+    Before the fix the glob and _LANG_SIDECAR_RE were hard-coded to .srt, so an
+    operator whose only source subtitle was ASS/SSA/VTT saw ZERO eligible items —
+    the entire Phase 9 codec stack was unreachable in production.
+    """
+    scan_mod = pytest.importorskip("trezarr.discover.scan")
+    find_source_sub = scan_mod.find_source_sub
+
+    media = tmp_path / "Show.S01E09.mkv"
+    media.write_bytes(b"\x00\x00\x00fake-mkv")
+    src = tmp_path / f"Show.S01E09.en.{ext}"
+    src.write_text("placeholder", encoding="utf-8")
+
+    result = find_source_sub(media, ["en"])
+
+    assert result is not None, f".{ext} source must be discoverable (WR-01)"
+    sub_path, lang = result
+    assert sub_path == src
+    assert sub_path.suffix == f".{ext}"
+    assert lang == "en"
+
+
+def test_find_source_sub_priority_across_extensions(tmp_path):
+    """WR-01: language priority still governs selection across mixed extensions.
+
+    An .en.ass and a .zh.vtt both present → the higher-priority language wins
+    regardless of file extension.
+    """
+    scan_mod = pytest.importorskip("trezarr.discover.scan")
+    find_source_sub = scan_mod.find_source_sub
+
+    media = tmp_path / "Show.S01E10.mkv"
+    media.write_bytes(b"\x00\x00\x00fake-mkv")
+    (tmp_path / "Show.S01E10.zh.vtt").write_text("WEBVTT\n", encoding="utf-8")
+    en_ass = tmp_path / "Show.S01E10.en.ass"
+    en_ass.write_text("[Events]\n", encoding="utf-8")
+
+    result = find_source_sub(media, ["en", "zh"])
+
+    assert result is not None
+    sub_path, lang = result
+    assert lang == "en", "highest-priority language must win across extensions"
+    assert sub_path == en_ass
+
+
+def test_lang_sidecar_re_matches_all_supported_suffixes():
+    """WR-01: the sidecar regex accepts every supported source suffix."""
+    scan_mod = pytest.importorskip("trezarr.discover.scan")
+    rx = scan_mod._LANG_SIDECAR_RE
+    for ext in ("srt", "ass", "ssa", "vtt"):
+        m = rx.match(f"Show.S01E01.en.{ext}")
+        assert m is not None, f".{ext} sidecar must match _LANG_SIDECAR_RE (WR-01)"
+        assert m.group(2) == "en"
+    # A non-subtitle companion must NOT match.
+    assert rx.match("Show.S01E01.en.mkv") is None

@@ -212,7 +212,12 @@ def write_ass(doc: SubDoc, path: str | Path) -> None:
             parts.append(seg.prefix + text_out + seg.line_ending)
 
     result = "".join(parts)
-    Path(path).write_bytes(result.encode(ass_doc.encoding))
+    # CR-01 (D-19 / FMT-05): encode with doc.encoding, NOT ass_doc.encoding.
+    # ass_doc.encoding is the source encoding captured at read time; on the vi
+    # sidecar path write_vi_sidecar sets doc.encoding='utf-8' to force UTF-8
+    # output. (On a plain round-trip read_ass sets doc.encoding == ass_doc.encoding,
+    # so byte-identity is unchanged.)
+    Path(path).write_bytes(result.encode(doc.encoding))
 
 
 # ---------------------------------------------------------------------------

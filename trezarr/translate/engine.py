@@ -998,22 +998,49 @@ async def translate_file(
         if _review_failed:
             review_results = [None] * len(review_batches)
 
-        # Splice corrections into translated_doc (Pitfall 8 — new SubLine objects, never mutate)
-        corrected_lines = list(translated_doc.lines)
-        offset = 0
+        # Splice corrections into translated_doc (Pitfall 8 — new SubLine objects, never mutate).
+        #
+        # CR-02 (D-98/D-99): review_batches come from batch_subdoc(translated_doc),
+        # which SKIPS raw-flagged (karaoke/drawing) cues — so rb.cues spans only the
+        # NON-raw cues, in document order. translated_doc.lines, however, contains ALL
+        # cues, with raw cues interleaved at their original positions. Indexing
+        # corrected_lines by a non-raw running offset (the old `corrected_lines[offset+i]`)
+        # therefore overwrote raw pass-through slots and misaligned every subsequent
+        # cue once any raw cue was present (FMT-03 violation). Mirror the queue-based
+        # assembly above (Step 8): flatten corrections per non-raw cue in document
+        # order, then walk the full doc, advancing the pointer ONLY on non-raw cues.
+        _corrections: list = []  # one entry per non-raw cue: (cue, new_text) or None
         for rb, corrected_texts in zip(review_batches, review_results):
             if corrected_texts is None:
-                offset += len(rb.cues)
+                _corrections.extend([None] * len(rb.cues))
+            else:
+                # Align defensively to rb.cues length (contract: _review_batch returns
+                # one text per cue) so the per-batch entry count always matches.
+                for idx in range(len(rb.cues)):
+                    if idx < len(corrected_texts):
+                        _corrections.append((rb.cues[idx], corrected_texts[idx]))
+                    else:
+                        _corrections.append(None)
+
+        _corr_iter = iter(_corrections)
+        corrected_lines: list[SubLine] = []
+        for line in translated_doc.lines:
+            if line.raw is not None:
+                # Raw pass-through (karaoke/drawing) — never reviewed; preserve verbatim.
+                corrected_lines.append(line)
                 continue
-            for i, (cue, new_text) in enumerate(zip(rb.cues, corrected_texts)):
-                corrected_lines[offset + i] = SubLine(
+            corr = next(_corr_iter)
+            if corr is None:
+                corrected_lines.append(line)  # batch returned no correction — keep translated
+            else:
+                cue, new_text = corr
+                corrected_lines.append(SubLine(
                     index=cue.index,
                     start_tc=cue.start_tc,
                     end_tc=cue.end_tc,
                     text=new_text,
                     raw=None,
-                )
-            offset += len(rb.cues)
+                ))
 
         translated_doc = SubDoc(
             lines=corrected_lines,
