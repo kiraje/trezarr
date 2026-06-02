@@ -845,11 +845,13 @@ function AddressMapSection({
   }
 
   const isHardBlocked = (pair: AddressMapDTO) => {
-    const isLocked =
-      pair.locked_fields.includes("self_term") ||
-      pair.locked_fields.includes("address_term");
+    // CR-04 / D-87: only block if the user is trying to LOCK an unlocked pair with empty terms.
+    // Unlocking must always be allowed — D-87 blocks locking-with-empty-term, not unlocking.
+    const wouldLock =
+      !pair.locked_fields.includes("self_term") &&
+      !pair.locked_fields.includes("address_term");
     return (
-      isLocked &&
+      wouldLock &&
       (editFields.selfTerm.trim() === "" || editFields.addressTerm.trim() === "")
     );
   };
