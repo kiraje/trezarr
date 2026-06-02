@@ -150,3 +150,92 @@ def test_secret_not_in_connection_error(httpx_mock):
     assert secret_key not in response_text, (
         f"D-71 violation: API key value leaked into connection error response"
     )
+
+
+
+# ── Regression: frontend/backend field-name contract (debug llm-test-connection-422) ──
+
+
+def test_llm_rejects_ui_prefixed_payload():
+    """The raw UI-prefixed payload (llm_*) MUST be rejected with 422 (regression guard).
+
+    This pins the backend contract that the frontend bug violated: the Settings UI
+    section-state object uses prefixed keys (llm_base_url/llm_model/llm_api_key).
+    Posting it raw produced HTTP 422 (every field "missing"), so "Test Connection"
+    never attempted a connection. The frontend now strips the `${svc}_` prefix via
+    stripSvcPrefix() before POSTing; this test documents WHY that mapping is required.
+    """
+    import asyncio  # noqa: PLC0415
+    from trezarr.web.app import create_app  # noqa: PLC0415
+    from httpx import AsyncClient, ASGITransport  # noqa: PLC0415
+
+    app = create_app()
+
+    async def _run():
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            return await client.post(
+                "/api/test/llm",
+                json={
+                    "llm_base_url": "https://api.tlemons.com/v1",
+                    "llm_model": "ds/deepseek-v4-pro",
+                    "llm_api_key": "",
+                },
+            )
+
+    resp = asyncio.run(_run())
+    assert resp.status_code == 422, "prefixed UI payload must 422 — frontend must strip the svc_ prefix"
+    missing = {tuple(e["loc"]) for e in resp.json()["detail"] if e["type"] == "missing"}
+    assert ("body", "base_url") in missing
+    assert ("body", "api_key") in missing
+    assert ("body", "model") in missing
+
+
+def test_llm_accepts_deprefixed_payload(httpx_mock):
+    """The de-prefixed payload (what the frontend now sends after stripSvcPrefix) succeeds.
+
+    Mirrors the exact shape the Settings UI produces post-fix: llm_* form keys with
+    the `llm_` prefix removed -> base_url/model/api_key. Proves the contract the
+    frontend now satisfies, using the same realistic Base URL/model from the report.
+    """
+    import asyncio  # noqa: PLC0415
+    from trezarr.web.app import create_app  # noqa: PLC0415
+    from httpx import AsyncClient, ASGITransport  # noqa: PLC0415
+
+    # openai SDK posts to base_url + /chat/completions
+    httpx_mock.add_response(
+        url="https://api.tlemons.com/v1/chat/completions",
+        json={
+            "id": "chatcmpl-test",
+            "object": "chat.completion",
+            "created": 1700000000,
+            "model": "ds/deepseek-v4-pro",
+            "choices": [
+                {
+                    "index": 0,
+                    "message": {"role": "assistant", "content": "p"},
+                    "finish_reason": "stop",
+                }
+            ],
+            "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
+        },
+        status_code=200,
+    )
+
+    app = create_app()
+
+    async def _run():
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            # The frontend's stripSvcPrefix("llm", {llm_base_url, llm_model, llm_api_key})
+            # yields exactly this body:
+            return await client.post(
+                "/api/test/llm",
+                json={
+                    "base_url": "https://api.tlemons.com/v1",
+                    "model": "ds/deepseek-v4-pro",
+                    "api_key": "test-key",
+                },
+            )
+
+    resp = asyncio.run(_run())
+    assert resp.status_code == 200
+    assert resp.json().get("ok") is True

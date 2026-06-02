@@ -62,6 +62,33 @@ export async function getEnvLocked(): Promise<EnvLockedResponse> {
   return resp.json();
 }
 
+/**
+ * Strip the `${svc}_` prefix from connection-test param keys.
+ *
+ * The Settings UI stores each section's form state under UI-prefixed keys
+ * (e.g. `llm_base_url`, `sonarr_host`, `bazarr_api_key`) so the section hooks
+ * stay distinct. The backend `/api/test/{svc}` Pydantic models, however, expect
+ * UNPREFIXED field names (`base_url`/`model`/`api_key` for llm;
+ * `host`/`port`/`api_key` for the *arr services).
+ *
+ * Posting the raw prefixed object produced HTTP 422 (every field "missing")
+ * before any connection was attempted — see debug session
+ * `llm-test-connection-422`. This mapping bridges the two naming schemes for all
+ * four service test buttons in one place.
+ */
+export function stripSvcPrefix(
+  svc: string,
+  params: Record<string, unknown>,
+): Record<string, unknown> {
+  const prefix = `${svc}_`;
+  const out: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(params)) {
+    const mapped = key.startsWith(prefix) ? key.slice(prefix.length) : key;
+    out[mapped] = value;
+  }
+  return out;
+}
+
 /** POST /api/test/{svc} — run a connection test for a service. */
 export async function testConnection(
   svc: string,
@@ -70,7 +97,7 @@ export async function testConnection(
   const resp = await fetchWithTimeout(`/api/test/${svc}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(params),
+    body: JSON.stringify(stripSvcPrefix(svc, params)),
   });
   if (!resp.ok) throw new Error(`POST /api/test/${svc}: ${resp.status}`);
   return resp.json();
