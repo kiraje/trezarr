@@ -9,7 +9,7 @@ Design decisions honoured:
          original_language. Tier 1: zh/ko/ja/th. Tier 2: other relational/honorific
          languages. Tier 3: en and flat-relational.
 
-sort_key algorithm (final algorithm from RESEARCH.md §Deep Dive Ranking):
+sort_key algorithm (WR-01 corrected):
   - Tier 1 languages (zh, ko, ja, th): carry grammatical relational/honorific info
     that Vietnamese needs for anh/em pronoun selection.
   - Tier 2 languages (id, ms, hi, ta, ar, tr, and unlisted): moderate honorifics.
@@ -17,10 +17,8 @@ sort_key algorithm (final algorithm from RESEARCH.md §Deep Dive Ranking):
     all relationships.
 
   sort_key(lang, original_language) -> float (lower = more preferred):
-    if lang == original_language:
-      if tier == 3: return 0.0     (native flat-relational → absolute top — D-107)
-      else:         return tier - 0.5   (native rich-relational → bonus within tier)
-    else:           return float(tier)
+    if lang == original_language: return 0.0   (native source always wins — D-107)
+    else:                         return float(tier)
 """
 from __future__ import annotations
 
@@ -110,17 +108,24 @@ _ORIG_LANG_NAME_TO_CODE2: dict[str, str] = {
 def sort_key(lang: str, original_language: str | None) -> float:
     """Return the sort key for a language code (lower = more preferred source).
 
-    This is the "final algorithm" from RESEARCH.md §Deep Dive Ranking:
-    - If lang IS the original_language of the content:
-        - Tier 3 (flat-relational native, e.g. en for a US show): return 0.0
-          (absolute top — native source wins over any fansub)
-        - Tier 1/2 (rich-relational native, e.g. ko for a K-drama): return tier - 0.5
-          (preferred within tier group — earns a 0.5 bonus)
+    Updated algorithm (WR-01 fix):
+    - If lang IS the original_language of the content: return 0.0
+      (absolute top — the native source ALWAYS wins over any non-native fansub,
+      regardless of tier. A Spanish show's native es source beats a Korean fansub;
+      a US show's native en source beats a Korean fansub; a K-drama's native ko
+      source beats an English sub — all return 0.0.)
     - Otherwise: return float(tier)
+      (non-native sources rank purely by relational-richness tier)
 
-    This produces correct behaviour for both cases:
-      - Korean drama (original=ko): ko gets 0.5, en gets 3.0 → ko wins
-      - US show (original=en): en gets 0.0, ko gets 1.0 → en wins
+    This corrects the prior Tier-3-only bias (WR-01): under the old algorithm,
+    languages absent from _TIER (e.g. es, fr, de) defaulted to _DEFAULT_TIER=2,
+    so sort_key("es", "es") returned 2-0.5=1.5 which was WORSE than a Korean
+    fansub's 1.0 — the opposite of native-language preference.
+
+    Examples:
+      - Korean drama (original=ko): ko → 0.0, en → 3.0 → ko wins
+      - US show (original=en): en → 0.0, ko → 1.0 → en wins
+      - Spanish drama (original=es): es → 0.0, ko → 1.0, en → 3.0 → es wins
 
     Args:
         lang:              2- or 3-letter language code (lower-cased).
@@ -130,17 +135,11 @@ def sort_key(lang: str, original_language: str | None) -> float:
     Returns:
         Float sort key. Lower = more preferred.
     """
-    t = _TIER.get(lang.lower(), _DEFAULT_TIER)
     if original_language and lang.lower() == original_language.lower():
-        if t == 3:
-            # Flat-relational native language (e.g. en for a US show) → absolute top.
-            # Prevents a Tier-1 fansub from displacing the native source.
-            return 0.0
-        else:
-            # Rich-relational native language (e.g. ko for a K-drama).
-            # Preferred within tier group but still below a hypothetical
-            # natively-tagged Tier-1 that IS the original language.
-            return float(t) - 0.5
+        # Native original-language source always wins, regardless of tier (WR-01).
+        # Prevents any non-native fansub from outranking the content's own language.
+        return 0.0
+    t = _TIER.get(lang.lower(), _DEFAULT_TIER)
     return float(t)
 
 
