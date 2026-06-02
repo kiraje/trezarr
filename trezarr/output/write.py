@@ -26,10 +26,11 @@ NEVER call the process-global umask syscall — that is unsafe in async code.
 apply_permissions computes file_mode = 0o666 & ~umask per-call.
 
 Sidecar naming:
+  Input:  Show.S01E01.en.ass  →  Output:  Show.S01E01.vi.ass
+  Input:  Show.S01E01.vtt     →  Output:  Show.S01E01.vi.vtt
   Input:  Show.S01E01.en.srt  →  Output:  Show.S01E01.vi.srt
-  Input:  Show.S01E01.srt     →  Output:  Show.S01E01.vi.srt
   Rule: strip any 2-letter ISO-639 language-code suffix from the stem
-  (e.g. ".en", ".ja", ".fr"), then append ".vi.srt".
+  (e.g. ".en", ".ja", ".fr"), then append ".vi<ext>" mirroring the source extension.
 """
 from __future__ import annotations
 
@@ -40,7 +41,7 @@ import tempfile
 from pathlib import Path
 
 from trezarr.subtitles.model import SubDoc
-from trezarr.subtitles.srt import write_srt
+from trezarr.subtitles.dispatch import write_subtitle as _dispatch_write_subtitle
 
 logger = logging.getLogger(__name__)
 
@@ -66,26 +67,32 @@ _LANG_CODE_RE = re.compile(r'\.[a-z]{2}$', re.IGNORECASE)
 
 
 def derive_vi_sidecar_path(media_path: str | Path) -> Path:
-    """Derive the Vietnamese sidecar path from a media (source SRT) path.
+    """Derive the Vietnamese sidecar path from a source subtitle path.
 
     Rules:
+      - Preserve the source extension (.srt, .ass, .ssa, .vtt).
       - If the stem ends with a 2-letter language code (e.g. ".en"), strip it.
-      - Append ".vi.srt" to form the sidecar name in the same directory.
+      - Append ".vi<ext>" to form the sidecar name in the same directory.
 
     This is the single source of truth for sidecar naming — both write_vi_sidecar
     and translate_file must call this function so dest paths can never diverge.
 
+    Example: Show.S01E01.en.ass → Show.S01E01.vi.ass
+             Episode.S02E03.vtt → Episode.S02E03.vi.vtt
+             Show.S01E01.en.srt → Show.S01E01.vi.srt
+
     Args:
-        media_path: Path to the source SRT file (str or Path).
+        media_path: Path to the source subtitle file (str or Path).
 
     Returns:
-        Path to the derived Vietnamese sidecar (e.g. Show.S01E01.vi.srt).
+        Path to the derived Vietnamese sidecar, mirroring the source extension.
     """
     media_path = Path(media_path).resolve()
+    suffix = media_path.suffix.lower()   # ".srt", ".ass", ".ssa", ".vtt"
     stem = media_path.stem
     if _LANG_CODE_RE.search(stem):
         stem = stem.rsplit('.', 1)[0]
-    return media_path.parent / (stem + '.vi.srt')
+    return media_path.parent / (stem + f'.vi{suffix}')
 
 
 def write_vi_sidecar(doc: SubDoc, media_path: str | Path) -> Path:
@@ -108,7 +115,14 @@ def write_vi_sidecar(doc: SubDoc, media_path: str | Path) -> Path:
     """
     dest = derive_vi_sidecar_path(media_path)
 
-    tmp_path: Path | None = None
+    # We use a two-stage temp strategy (D-19):
+    #   1. Reserve a slot with NamedTemporaryFile(suffix='.tmp') so os.replace is
+    #      guaranteed same-filesystem (dest.parent).
+    #   2. Write the actual content to a second temp path with dest.suffix so the
+    #      format dispatcher routes correctly.  Then atomically rename to dest.
+    # Both temp files are cleaned up in finally if the rename does not happen.
+    tmp_path: Path | None = None       # .tmp slot (may be removed early)
+    routed_tmp: Path | None = None     # dest.suffix-named write target
     try:
         with tempfile.NamedTemporaryFile(
             suffix='.tmp',
@@ -117,7 +131,14 @@ def write_vi_sidecar(doc: SubDoc, media_path: str | Path) -> Path:
         ) as f:
             tmp_path = Path(f.name)
 
-        # Force UTF-8 output regardless of source encoding (D-19)
+        # Build a write-target path in dest.parent with the correct dest.suffix so
+        # the dispatcher routes to the right codec (write_srt/write_ass/write_vtt).
+        # Use a unique name derived from tmp_path stem to avoid collisions.
+        routed_tmp = tmp_path.with_suffix(dest.suffix)
+
+        # Force UTF-8 output regardless of source encoding (D-19).
+        # Carry the envelope (AssDoc/VttDoc) through to doc_out so write_subtitle
+        # can reconstruct ASS/VTT structure from the translated cues (D-92, T-09-05-C).
         doc_out = SubDoc(
             lines=doc.lines,
             encoding='utf-8',
@@ -125,14 +146,19 @@ def write_vi_sidecar(doc: SubDoc, media_path: str | Path) -> Path:
             separators=doc.separators,
             leading=doc.leading,
             trailer=doc.trailer,
+            envelope=doc.envelope,   # carry AssDoc/VttDoc for write codec
         )
-        write_srt(doc_out, tmp_path)      # reuse Phase-1 serialiser
-        os.replace(tmp_path, dest)        # POSIX-atomic rename
-        tmp_path = None                   # prevent cleanup in finally
+        _dispatch_write_subtitle(doc_out, routed_tmp)   # format-dispatched serialiser (D-94)
+        os.replace(routed_tmp, dest)        # POSIX-atomic rename
+        routed_tmp = None                   # prevent cleanup in finally
         return dest
     finally:
+        # Remove the original .tmp slot if it still exists.
         if tmp_path is not None and tmp_path.exists():
-            tmp_path.unlink()             # cleanup on any failure before os.replace
+            tmp_path.unlink()
+        # Remove the routed_tmp if the rename did not happen (write failed).
+        if routed_tmp is not None and routed_tmp.exists():
+            routed_tmp.unlink()
 
 
 def apply_permissions(path: Path, puid: int, pgid: int, umask: int) -> None:
