@@ -303,11 +303,11 @@ Decimal phases appear between their surrounding integers in numeric order.
   3. When multiple sources exist, Trezarr selects the relationally-richest source (prefers Chinese/Korean/Japanese/Thai for East-Asian content over English) and falls back to whatever is available
   4. A user can set per-series overrides for source-language preference, register, and model
 
-**Plans:** 4 plans
+**Plans:** 1/4 plans executed
 
 **Wave 0**
 
-- [ ] 10-01-PLAN.md — Wave 0: RED test scaffold — Bazarr client stubs, source_selection package, gap Case 1.5 / D-110, migration 0003, model override, PATCH overrides route, original_language capture (INTG-02, SRC-01, SRC-02, SVC-05)
+- [x] 10-01-PLAN.md — Wave 0: RED test scaffold — Bazarr client stubs, source_selection package, gap Case 1.5 / D-110, migration 0003, model override, PATCH overrides route, original_language capture (INTG-02, SRC-01, SRC-02, SVC-05)
 
 **Wave 1** *(blocked on Wave 0 completion — plans 10-02 and 10-03 run in parallel)*
 
@@ -336,4 +336,4 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 7. Web UI & Service Hardening | 6/6 | Complete    | 2026-06-01 |
 | 8. Editable Series Bible UI | 4/4 | Complete   | 2026-06-02 |
 | 9. Multi-Format — ASS/SSA + VTT | 4/6 | In Progress|  |
-| 10. Source Selection & Per-Series Overrides | 0/4 | Planning complete | - |
+| 10. Source Selection & Per-Series Overrides | 1/4 | In Progress|  |

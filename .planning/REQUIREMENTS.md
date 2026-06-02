@@ -10,7 +10,7 @@ Requirements for initial release. Each maps to roadmap phases.
 ### Integration
 
 - [x] **INTG-01**: Trezarr connects to Sonarr and Radarr via their REST APIs (API-key auth) to discover the media library, episode/movie identity, file paths, and metadata
-- [ ] **INTG-02**: Trezarr connects to Bazarr via its API to read which source-language subtitles already exist for each item (so it never re-downloads subs)
+- [x] **INTG-02**: Trezarr connects to Bazarr via its API to read which source-language subtitles already exist for each item (so it never re-downloads subs)
 - [x] **INTG-03**: User can configure container↔host path mapping so Trezarr resolves the same media files the *arr stack sees
 - [x] **INTG-04**: Trezarr reads source subtitle files and writes Vietnamese sidecar files on the shared filesystem with correct permissions (PUID/PGID)
 
@@ -60,8 +60,8 @@ Requirements for initial release. Each maps to roadmap phases.
 
 ### Source Selection
 
-- [ ] **SRC-01**: Trezarr is source-language-agnostic — it can translate from any available source-language subtitle to Vietnamese
-- [ ] **SRC-02**: When multiple source subtitles exist for the same item, Trezarr selects the source language whose honorific/relational system best preserves the information Vietnamese needs (prefer Chinese/Korean/Japanese/Thai for East-Asian content over English, which flattens relationships), falling back to whatever is available
+- [x] **SRC-01**: Trezarr is source-language-agnostic — it can translate from any available source-language subtitle to Vietnamese
+- [x] **SRC-02**: When multiple source subtitles exist for the same item, Trezarr selects the source language whose honorific/relational system best preserves the information Vietnamese needs (prefer Chinese/Korean/Japanese/Thai for East-Asian content over English, which flattens relationships), falling back to whatever is available
 
 ### Service & Web UI
 
@@ -69,7 +69,7 @@ Requirements for initial release. Each maps to roadmap phases.
 - [x] **SVC-02**: A web UI lets the user configure connections (Sonarr/Radarr/Bazarr, LLM endpoint, paths) and global settings
 - [x] **SVC-03**: The web UI shows a Queue (in-flight), History (completed/failed with per-item reason), and per-job logs
 - [x] **SVC-04**: User can retry or re-run a failed/rejected item from the UI
-- [ ] **SVC-05**: User can set per-series overrides (source-language preference, register, model)
+- [x] **SVC-05**: User can set per-series overrides (source-language preference, register, model)
 
 ## v2 Requirements
 
@@ -108,7 +108,7 @@ Which phases cover which requirements. Populated during roadmap creation.
 | Requirement | Phase | Status |
 |-------------|-------|--------|
 | INTG-01 | Phase 3 | Complete |
-| INTG-02 | Phase 10 | Pending |
+| INTG-02 | Phase 10 | Complete |
 | INTG-03 | Phase 3 | Complete |
 | INTG-04 | Phase 3 | Complete |
 | AUTO-01 | Phase 3 | Complete |
@@ -140,13 +140,13 @@ Which phases cover which requirements. Populated during roadmap creation.
 | PRON-01 | Phase 5 | Complete |
 | PRON-02 | Phase 5 | Complete |
 | PRON-03 | Phase 5 | Complete |
-| SRC-01 | Phase 10 | Pending |
-| SRC-02 | Phase 10 | Pending |
+| SRC-01 | Phase 10 | Complete |
+| SRC-02 | Phase 10 | Complete |
 | SVC-01 | Phase 7 | Complete |
 | SVC-02 | Phase 7 | Complete |
 | SVC-03 | Phase 7 | Complete |
 | SVC-04 | Phase 7 | Complete |
-| SVC-05 | Phase 10 | Pending |
+| SVC-05 | Phase 10 | Complete |
 
 **Coverage:**
 - v1 requirements: 40 total (INTG 4, AUTO 5, FMT 5, ENG 7, BIBLE 9, PRON 3, SRC 2, SVC 5 — the initial header count of "38" was a miscount; all 40 listed requirements are mapped)
