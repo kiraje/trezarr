@@ -1936,7 +1936,7 @@ function RegisterSection({
   const [registerValue, setRegisterValue] = useState(bible.register ?? "");
   const [saving, setSaving] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
-  const isLocked = bible.locked_fields.includes("register") || bible.locked_fields.includes("register_value");
+  const isLocked = bible.locked_fields.includes("register");
   const lockState: LockState = isLocked ? "locked" : "inference";
   const dirty = registerValue !== (bible.register ?? "");
   const historyRef = useRef<HTMLDivElement>(null);
@@ -1971,9 +1971,7 @@ function RegisterSection({
         if (!prev) return prev;
         const newLockedFields = !isLocked
           ? [...prev.locked_fields, "register"]
-          : prev.locked_fields.filter(
-              (f) => f !== "register" && f !== "register_value",
-            );
+          : prev.locked_fields.filter((f) => f !== "register");
         return { ...prev, locked_fields: newLockedFields };
       });
       showToast({
