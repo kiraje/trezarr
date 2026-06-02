@@ -50,6 +50,17 @@ _work_queue: asyncio.Queue = asyncio.Queue()
 # ONLY asyncio.Lock (binary ownership) — never a counting semaphore (D-68/Pitfall C).
 _series_locks: dict[int, asyncio.Lock] = {}
 
+
+def get_series_lock(series_id: int) -> asyncio.Lock:
+    """Return the per-series asyncio.Lock for the given series_id (D-81).
+
+    Lazily creates the lock on first call — same pattern as _execute_job:412-415.
+    Bible write endpoints acquire this lock before store writes to prevent
+    interleaving with ongoing Pass-1 inference transactions.
+    """
+    return _series_locks.setdefault(series_id, asyncio.Lock())
+
+
 # In-memory dedup set for the session_factory=None path (test/stub mode).
 # When session_factory is None, we cannot hit the DB; use this set so the D-66
 # dedup contract holds in unit tests without a real DB.

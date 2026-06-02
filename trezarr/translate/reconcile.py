@@ -53,6 +53,32 @@ KINSHIP_RECIPROCAL: dict[tuple[str, str], tuple[str, str]] = {
     ("tôi", "bà"): ("bà", "tôi"),
 }
 
+# D-90: Additive fill of KINSHIP_RECIPROCAL gaps (bác/cháu, chú/cháu, cô/cháu, thầy/em, tao/mày)
+# Missing pairs verified C4 in harness review. Forward AND reverse keys added so round-trips work.
+KINSHIP_RECIPROCAL.update({
+    ("bác", "cháu"): ("cháu", "bác"),   # uncle/aunt (older-than-parent) ↔ niece/nephew
+    ("cháu", "bác"): ("bác", "cháu"),
+    ("chú", "cháu"): ("cháu", "chú"),   # uncle (younger-than-parent) ↔ niece/nephew
+    ("cháu", "chú"): ("chú", "cháu"),
+    ("cô", "cháu"):  ("cháu", "cô"),    # aunt (father's sister) ↔ niece/nephew
+    ("cháu", "cô"):  ("cô", "cháu"),
+    ("thầy", "em"):  ("em", "thầy"),    # teacher ↔ student
+    ("em", "thầy"):  ("thầy", "em"),
+    ("tao", "mày"):  ("mày", "tao"),    # intimate/rude peer
+    ("mày", "tao"):  ("tao", "mày"),
+})
+
+# KNOWN_PRONOUN_TERMS — shared vocabulary for the Bible editor combo (D-86).
+# Single source of truth: exposed via /api/pronouns; never duplicated in the frontend.
+# Split into self_terms and address_terms for gender-aware picker hints.
+KNOWN_PRONOUN_TERMS_SELF: list[str] = [
+    "tôi", "con", "em", "anh", "chị", "cháu", "mày", "tao", "bạn",
+]
+KNOWN_PRONOUN_TERMS_ADDRESS: list[str] = [
+    "bạn", "anh", "chị", "em", "con", "cháu", "ông", "bà", "bố", "mẹ",
+    "cha", "mày", "thầy", "dì", "cậu", "bác", "chú", "cô",
+]
+
 # ---------------------------------------------------------------------------
 # Safe-default constants (D-45, RESEARCH.md Key Pattern 5)
 # ---------------------------------------------------------------------------
