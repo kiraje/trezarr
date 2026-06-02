@@ -161,3 +161,4 @@ Items acknowledged and carried forward from previous milestone close:
 Last session: 2026-06-02T09:40:21.307Z
 Stopped at: Phase 10 Wave 0-2 executed (10-01/02/03 complete, 10-04 UI built); HOLDING at 10-04 human-verify checkpoint per user — awaiting browser UAT before completing phase
 Resume file: None
+| 5 | Fix WR-04: set_series_overrides bible_event old_value now records prior override values (audit-trail completeness) + test | 2026-06-02 | bd440a1 | — |
