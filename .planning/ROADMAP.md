@@ -303,7 +303,7 @@ Decimal phases appear between their surrounding integers in numeric order.
   3. When multiple sources exist, Trezarr selects the relationally-richest source (prefers Chinese/Korean/Japanese/Thai for East-Asian content over English) and falls back to whatever is available
   4. A user can set per-series overrides for source-language preference, register, and model
 
-**Plans:** 2/4 plans executed
+**Plans:** 3/4 plans executed
 
 **Wave 0**
 
@@ -312,7 +312,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 **Wave 1** *(blocked on Wave 0 completion — plans 10-02 and 10-03 run in parallel)*
 
 - [x] 10-02-PLAN.md — Wave 1A: BazarrClient + source_selection/rank.py + source_selection/resolve.py + original_language capture + ledger check_by_output_path + gap.py Case 1.5 + scan.py extensions (INTG-02, SRC-01, SRC-02)
-- [ ] 10-03-PLAN.md — Wave 1B: Migration 0003 + Series ORM override columns + DTOs + set_series_overrides store writer + PATCH /overrides route + LLMClient model-per-call + engine.py threading + cli.py/worker.py wiring (SVC-05)
+- [x] 10-03-PLAN.md — Wave 1B: Migration 0003 + Series ORM override columns + DTOs + set_series_overrides store writer + PATCH /overrides route + LLMClient model-per-call + engine.py threading + cli.py/worker.py wiring (SVC-05)
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
@@ -336,4 +336,4 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 7. Web UI & Service Hardening | 6/6 | Complete    | 2026-06-01 |
 | 8. Editable Series Bible UI | 4/4 | Complete   | 2026-06-02 |
 | 9. Multi-Format — ASS/SSA + VTT | 5/6 | In Progress|  |
-| 10. Source Selection & Per-Series Overrides | 2/4 | In Progress|  |
+| 10. Source Selection & Per-Series Overrides | 3/4 | In Progress|  |
