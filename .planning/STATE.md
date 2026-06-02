@@ -4,14 +4,14 @@ milestone: v1.0
 milestone_name: milestone
 status: executing
 stopped_at: Phase 10 UI-SPEC approved
-last_updated: "2026-06-02T05:00:38.701Z"
-last_activity: 2026-06-02 -- Phase 9 planning complete
+last_updated: "2026-06-02T06:04:00.000Z"
+last_activity: 2026-06-02 -- Phase 9 Plan 1 completed (Wave 0 RED scaffold)
 progress:
   total_phases: 10
   completed_phases: 8
-  total_plans: 40
-  completed_plans: 34
-  percent: 80
+  total_plans: 41
+  completed_plans: 35
+  percent: 83
 ---
 
 # Project State
@@ -21,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-05-31)
 
 **Core value:** Vietnamese subtitles that stay consistent and relationally correct (right pronoun pair, stable names/terms) across an entire series — produced automatically.
-**Current focus:** Phase 9 — multi format — ass/ssa + vtt
+**Current focus:** Phase 9 — Multi-Format — ASS/SSA + VTT
 
 ## Current Position
 
-Phase: 9
-Plan: Not started
-Status: Ready to execute
-Last activity: 2026-06-02 -- Phase 9 planning complete
+Phase: 9 (Multi-Format — ASS/SSA + VTT) — EXECUTING
+Plan: 2 of 6
+Status: Executing Phase 9 (Plan 1 complete — Wave 0 RED scaffold done)
+Last activity: 2026-06-02 -- Phase 9 Plan 1 completed (Wave 0 RED scaffold)
 
 Progress: [██████████] 100%
 
@@ -82,6 +82,7 @@ Progress: [██████████] 100%
 | Phase 08 P02 | 4 min | 2 tasks | 4 files |
 | Phase 08 P03 | 8 minutes | 2 tasks | 3 files |
 | Phase 08 P04 | continuation | 5 tasks | 10 files |
+| Phase 09 P01 | 8 minutes | 2 tasks | 26 files |
 
 ## Accumulated Context
 
@@ -120,6 +121,8 @@ Recent decisions affecting current work:
 - [Phase ?]: D-68 per-series asyncio.Lock (not Semaphore) serializes same-series episodes; distinct series run concurrently; zero asyncio.Semaphore in worker.py
 - [Phase ?]: Starlette ASGITransport passes inner Router app to lifespan not outer FastAPI instance; engine stored in mutable cell closure for test accessibility
 - [Phase ?]: Phase 08-01: xfail(strict=False) with raises=(ImportError, AssertionError, TypeError) for new-module stubs prevents FAILED when module not yet created
+- [Phase 09-01]: validate_allowlist xfail stubs use xfail(strict=False) without raises= restriction — raises= is too narrow because pytest.fail() inside try/except raises _pytest.outcomes.Failed, not AssertionError
+- [Phase 09-01]: Wave 0 xfail stubs for non-existent modules use pytest.importorskip — tests SKIP cleanly when module absent, go GREEN when module lands (established Trezarr pattern)
 
 ### Pending Todos
 
@@ -147,6 +150,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-06-02T04:52:18.615Z
-Stopped at: Phase 10 UI-SPEC approved
-Resume file: .planning/phases/10-source-selection-per-series-overrides/10-UI-SPEC.md
+Last session: 2026-06-02T06:04:00.000Z
+Stopped at: Phase 9 Plan 1 complete (Wave 0 RED scaffold)
+Resume file: .planning/phases/09-multi-format-ass-ssa-vtt/09-02-PLAN.md
