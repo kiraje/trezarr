@@ -1,7 +1,4 @@
-"""Wave 0 RED stubs: drawing-run verbatim pass-through tests (D-98 / FMT-02).
-
-All tests are xfail stubs — the implementation (trezarr.subtitles.ass) does not
-yet exist. Tests will go GREEN in Wave 2.
+"""Drawing-run verbatim pass-through tests (D-98 / FMT-02).
 
 Covers:
   D-98 / FMT-02 — Drawing-run cue SubLine.raw is set to the original Text field
@@ -14,11 +11,6 @@ import pytest
 FIXTURES = Path(__file__).parent.parent / "fixtures"
 
 
-@pytest.mark.xfail(
-    raises=(ImportError, AssertionError, TypeError),
-    strict=False,
-    reason="trezarr.subtitles.ass not yet implemented (Wave 2)",
-)
 def test_drawing_run_is_raw():
     r"""drawing.ass: SubLine for {\p1}...{\p0} must have raw set to the original Text (D-98).
 
@@ -48,15 +40,10 @@ def test_drawing_run_is_raw():
         )
 
 
-@pytest.mark.xfail(
-    raises=(ImportError, AssertionError, TypeError),
-    strict=False,
-    reason="trezarr.subtitles.ass not yet implemented (Wave 2)",
-)
 def test_drawing_run_not_in_llm_batch():
     r"""Drawing-run SubLine (raw set) must not appear in any translate batch (D-98 / FMT-02).
 
-    batch_subdoc filters out SubLines where raw is set — these are opaque
+    batch_subdoc skips SubLines where raw is set — these are opaque
     pass-through cues that are never sent to the LLM.
     """
     ass_mod = pytest.importorskip("trezarr.subtitles.ass")
@@ -80,7 +67,7 @@ def test_drawing_run_not_in_llm_batch():
     # Gather all texts across all batches.
     batched_texts = []
     for batch in batches:
-        batched_texts.extend([sl.text for sl in batch.lines])
+        batched_texts.extend([sl.text for sl in batch.cues])
 
     # No drawing-run cue should appear in any batch.
     drawing_lines = [sl for sl in sub_doc.lines if sl.raw is not None]

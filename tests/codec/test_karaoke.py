@@ -1,7 +1,4 @@
-"""Wave 0 RED stubs: karaoke verbatim pass-through tests (D-99 / FMT-03).
-
-All tests are xfail stubs — the implementation (trezarr.subtitles.ass) does not
-yet exist. Tests will go GREEN in Wave 2.
+"""Karaoke verbatim pass-through tests (D-99 / FMT-03).
 
 Covers:
   D-99 / FMT-03 — Karaoke cue SubLine.raw is set to the original Text field
@@ -15,11 +12,6 @@ import pytest
 FIXTURES = Path(__file__).parent.parent / "fixtures"
 
 
-@pytest.mark.xfail(
-    raises=(ImportError, AssertionError, TypeError),
-    strict=False,
-    reason="trezarr.subtitles.ass not yet implemented (Wave 2)",
-)
 def test_karaoke_text_is_raw():
     r"""karaoke.ass: SubLine for the karaoke cue must have raw set to the original Text (D-99).
 
@@ -49,15 +41,10 @@ def test_karaoke_text_is_raw():
     )
 
 
-@pytest.mark.xfail(
-    raises=(ImportError, AssertionError, TypeError),
-    strict=False,
-    reason="trezarr.subtitles.ass not yet implemented (Wave 2)",
-)
 def test_karaoke_not_in_llm_batch():
     r"""Karaoke SubLine (raw set) must not appear in any translate batch (D-99 / FMT-03).
 
-    batch_subdoc filters out SubLines where raw is set — these are opaque
+    batch_subdoc skips SubLines where raw is set — these are opaque
     pass-through cues that are never sent to the LLM.
     """
     ass_mod = pytest.importorskip("trezarr.subtitles.ass")
@@ -82,7 +69,7 @@ def test_karaoke_not_in_llm_batch():
     # Gather all SubLines that appear in any batch.
     batched_texts = []
     for batch in batches:
-        batched_texts.extend([sl.text for sl in batch.lines])
+        batched_texts.extend([sl.text for sl in batch.cues])
 
     # No karaoke cue should appear in any batch.
     karaoke_lines = [sl for sl in sub_doc.lines if sl.raw is not None]

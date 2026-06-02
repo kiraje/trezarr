@@ -1,7 +1,4 @@
-"""Wave 0 RED stubs: byte-identity round-trip tests for the ASS/SSA codec (FMT-02).
-
-All tests are xfail stubs — the implementation (trezarr.subtitles.ass) does not
-yet exist. Tests will go GREEN in Wave 2.
+"""Byte-identity round-trip tests for the ASS/SSA codec (FMT-02).
 
 Covers:
   FMT-02 — Byte-identical round-trip for all 8 ASS/SSA fixture files
@@ -29,11 +26,6 @@ _ASS_FIXTURE_FILES = [
 ]
 
 
-@pytest.mark.xfail(
-    raises=(ImportError, AssertionError, TypeError),
-    strict=False,
-    reason="trezarr.subtitles.ass not yet implemented (Wave 2)",
-)
 @pytest.mark.parametrize("fixture", _ASS_FIXTURE_FILES)
 def test_byte_identical_roundtrip(tmp_path, fixture):
     """Read an ASS/SSA fixture, write it back, assert bytes are identical (FMT-02).
@@ -58,11 +50,6 @@ def test_byte_identical_roundtrip(tmp_path, fixture):
     )
 
 
-@pytest.mark.xfail(
-    raises=(ImportError, AssertionError, TypeError),
-    strict=False,
-    reason="trezarr.subtitles.ass not yet implemented (Wave 2)",
-)
 def test_line_break_preserved(tmp_path):
     r"""mixed.ass: the \\N hard-break in Dialogue Text must survive round-trip (FMT-02).
 
@@ -82,11 +69,6 @@ def test_line_break_preserved(tmp_path):
     )
 
 
-@pytest.mark.xfail(
-    raises=(ImportError, AssertionError, TypeError),
-    strict=False,
-    reason="trezarr.subtitles.ass not yet implemented (Wave 2)",
-)
 def test_section_headers_preserved(tmp_path):
     """Write-back bytes must contain the original [Script Info] header verbatim (FMT-02)."""
     ass_mod = pytest.importorskip("trezarr.subtitles.ass")
@@ -103,11 +85,6 @@ def test_section_headers_preserved(tmp_path):
     assert b"[Events]" in output_bytes, "Expected [Events] in write-back bytes"
 
 
-@pytest.mark.xfail(
-    raises=(ImportError, AssertionError, TypeError),
-    strict=False,
-    reason="trezarr.subtitles.ass not yet implemented (Wave 2)",
-)
 def test_comments_verbatim(tmp_path):
     """Comment: event lines must be preserved verbatim in write-back bytes (FMT-02, D-97)."""
     ass_mod = pytest.importorskip("trezarr.subtitles.ass")
@@ -124,11 +101,6 @@ def test_comments_verbatim(tmp_path):
     )
 
 
-@pytest.mark.xfail(
-    raises=(ImportError, AssertionError, TypeError),
-    strict=False,
-    reason="trezarr.subtitles.ass not yet implemented (Wave 2)",
-)
 def test_ssa_roundtrip(tmp_path):
     """ssa_v4.ssa ([V4 Styles] variant) must round-trip byte-identically (FMT-02)."""
     import warnings
@@ -147,11 +119,6 @@ def test_ssa_roundtrip(tmp_path):
     assert out.read_bytes() == original_bytes, "SSA round-trip not byte-identical"
 
 
-@pytest.mark.xfail(
-    raises=(ImportError, AssertionError, TypeError, UserWarning),
-    strict=False,
-    reason="trezarr.subtitles.ass not yet implemented (Wave 2)",
-)
 def test_malformed_dialogue_preserved_and_flagged(tmp_path):
     """Malformed Dialogue must emit UserWarning AND keep raw is not None (D-10).
 

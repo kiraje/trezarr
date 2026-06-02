@@ -141,6 +141,11 @@ def batch_subdoc(
     current_chars = 0
 
     for i, cue in enumerate(doc.lines):
+        # D-98/D-99: skip opaque pass-through cues (karaoke, drawing) — they are
+        # never sent to the LLM.  Setting SubLine.raw marks the cue as verbatim.
+        if cue.raw is not None:
+            continue
+
         gap_ms = _gap_ms(doc.lines[i - 1], cue) if i > 0 else 0
         at_scene_gap = gap_ms >= settings.translate_scene_gap_ms
 
