@@ -1018,6 +1018,8 @@ async def apply_human_edit_character(
                 row.locked_fields = locked_list
 
             # D-32: audit event in the same transaction
+            # WR-01: use source="lock" only when actually locking; otherwise use "import"
+            # as the closest VALID_SOURCES value for a human edit without a lock operation.
             evt = BibleEvent(
                 series_id=series_id,
                 episode_key=None,
@@ -1026,7 +1028,7 @@ async def apply_human_edit_character(
                 field=field,
                 old_value=old_value,
                 new_value=new_value,
-                source="lock",
+                source="lock" if lock else "import",
             )
             session.add(evt)
 
@@ -1101,7 +1103,8 @@ async def apply_human_edit_address_pair(
                         field="self_term",
                         old_value=old_self,
                         new_value=self_term,
-                        source="lock",
+                        # WR-01: use source="lock" only when actually locking
+                        source="lock" if lock else "import",
                     )
                     session.add(evt)
                     events.append(evt)
@@ -1120,7 +1123,8 @@ async def apply_human_edit_address_pair(
                         field="address_term",
                         old_value=old_addr,
                         new_value=address_term,
-                        source="lock",
+                        # WR-01: use source="lock" only when actually locking
+                        source="lock" if lock else "import",
                     )
                     session.add(evt)
                     events.append(evt)
@@ -1245,6 +1249,8 @@ async def apply_human_edit_term(
                 row.locked_fields = locked_list
 
             # D-32: audit event in the same transaction
+            # WR-01: use source="lock" only when actually locking; otherwise use "import"
+            # as the closest VALID_SOURCES value for a human edit without a lock operation.
             evt = BibleEvent(
                 series_id=series_id,
                 episode_key=None,
@@ -1253,7 +1259,7 @@ async def apply_human_edit_term(
                 field=field,
                 old_value=old_value,
                 new_value=new_value,
-                source="lock",
+                source="lock" if lock else "import",
             )
             session.add(evt)
 
@@ -1322,6 +1328,8 @@ async def apply_human_edit_series(
                 row.locked_fields = locked_list
 
             # D-32: audit event in the same transaction
+            # WR-01: use source="lock" only when actually locking; otherwise use "import"
+            # as the closest VALID_SOURCES value for a human edit without a lock operation.
             evt = BibleEvent(
                 series_id=series_id,
                 episode_key=None,
@@ -1330,7 +1338,7 @@ async def apply_human_edit_series(
                 field=field,
                 old_value=old_value,
                 new_value=new_value,
-                source="lock",
+                source="lock" if lock else "import",
             )
             session.add(evt)
 
