@@ -1,10 +1,11 @@
 ---
 phase: 10
 slug: source-selection-per-series-overrides
-status: draft
+status: approved
 shadcn_initialized: false
 preset: none
 created: 2026-06-02
+reviewed_at: 2026-06-02
 ---
 
 # Phase 10 — UI Design Contract
