@@ -363,3 +363,126 @@ def test_discovery_error_raised_on_http_error(httpx_mock):
 
     with pytest.raises(DiscoveryError):
         discover_sonarr_items(settings)
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# D-108 Wave-0 stubs: original_language capture
+#
+# These are the AUTHORITATIVE D-108 coverage stubs (see 10-VALIDATION.md and
+# 10-01-PLAN.md: no separate test_sonarr.py / test_radarr.py files are created).
+#
+# Sonarr and Radarr APIs include originalLanguage:{id, name} in series/movie
+# objects. MediaItem must expose original_language for Phase-10 ranking to work.
+# ──────────────────────────────────────────────────────────────────────────────
+
+
+@pytest.mark.xfail(
+    strict=False,
+    raises=(AssertionError, AttributeError),
+    reason="MediaItem.original_language field not yet added (D-108, Phase 10)",
+)
+def test_sonarr_captures_original_language(httpx_mock):
+    """discover_sonarr_items captures originalLanguage.name → MediaItem.original_language (D-108).
+
+    Sonarr v3 series objects include originalLanguage:{id:1, name:"Korean"} for
+    East-Asian content. The D-108 original_language field on MediaItem enables
+    Phase-10 ranking to prefer the native source language.
+    """
+    sonarr_mod = pytest.importorskip("trezarr.arr.sonarr")
+    discover_sonarr_items = sonarr_mod.discover_sonarr_items
+
+    from trezarr.config import TrezarrSettings
+
+    httpx_mock.add_response(
+        url="http://192.168.1.100:8989/api/v3/series",
+        json=[
+            {
+                "id": 1,
+                "title": "Crash Landing on You",
+                "path": "/tv/CLOY",
+                "monitored": True,
+                "tvdbId": 200,
+                "originalLanguage": {"id": 1, "name": "Korean"},
+            },
+        ],
+    )
+    httpx_mock.add_response(
+        url="http://192.168.1.100:8989/api/v3/episodefile?seriesId=1",
+        json=[
+            {
+                "id": 10,
+                "seriesId": 1,
+                "seasonNumber": 1,
+                "path": "/tv/CLOY/Season 1/CLOY.S01E01.mkv",
+                "relativePath": "Season 1/CLOY.S01E01.mkv",
+            },
+        ],
+    )
+
+    settings = TrezarrSettings(
+        sonarr_enabled=True,
+        sonarr_host="192.168.1.100",
+        sonarr_port=8989,
+        sonarr_api_key="test-key",
+        path_mappings=[],
+    )
+
+    items = discover_sonarr_items(settings)
+
+    assert len(items) == 1, f"Expected 1 MediaItem, got {len(items)}"
+    assert items[0].original_language == "Korean", (
+        f"D-108: expected MediaItem.original_language == 'Korean', got {items[0].original_language!r}"
+    )
+
+
+@pytest.mark.xfail(
+    strict=False,
+    raises=(AssertionError, AttributeError),
+    reason="MediaItem.original_language field not yet added (D-108, Phase 10)",
+)
+def test_radarr_captures_original_language(httpx_mock):
+    """discover_radarr_items captures originalLanguage.name → MediaItem.original_language (D-108).
+
+    Radarr v3 movie objects include originalLanguage:{id:1, name:"Korean"} for
+    non-English films (e.g. Parasite). The D-108 field enables ranking to prefer
+    the native source language.
+    """
+    radarr_mod = pytest.importorskip("trezarr.arr.radarr")
+    discover_radarr_items = radarr_mod.discover_radarr_items
+
+    from trezarr.config import TrezarrSettings
+
+    httpx_mock.add_response(
+        url="http://192.168.1.100:7878/api/v3/movie",
+        json=[
+            {
+                "id": 1,
+                "title": "Parasite",
+                "path": "/movies/Parasite (2019)",
+                "monitored": True,
+                "movieFileId": 42,
+                "originalLanguage": {"id": 1, "name": "Korean"},
+                "movieFile": {
+                    "id": 42,
+                    "movieId": 1,
+                    "path": "/movies/Parasite (2019)/Parasite.mkv",
+                    "relativePath": "Parasite.mkv",
+                },
+            },
+        ],
+    )
+
+    settings = TrezarrSettings(
+        radarr_enabled=True,
+        radarr_host="192.168.1.100",
+        radarr_port=7878,
+        radarr_api_key="test-key",
+        path_mappings=[],
+    )
+
+    items = discover_radarr_items(settings)
+
+    assert len(items) == 1, f"Expected 1 MediaItem, got {len(items)}"
+    assert items[0].original_language == "Korean", (
+        f"D-108: expected MediaItem.original_language == 'Korean', got {items[0].original_language!r}"
+    )

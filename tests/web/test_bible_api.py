@@ -14,6 +14,8 @@ asyncio_mode="auto" is configured project-wide in pyproject.toml — no @pytest.
 """
 from __future__ import annotations
 
+import pytest
+
 
 async def test_get_series_list():
     """BIBLE-08 c1: GET /api/series returns list; bounded (LIMIT 500 per security domain)."""
@@ -171,3 +173,75 @@ async def test_delete_term():
         resp = await client.delete("/api/series/1/terms/999")
     # No DB → route returns 404 (session_factory None → HTTPException 404)
     assert resp.status_code == 404
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Wave 0 RED stubs: PATCH /series/{id}/overrides (SVC-05 / D-114)
+# xfail — route does not exist yet (Phase 10 Plan 03)
+# ──────────────────────────────────────────────────────────────────────────────
+
+
+@pytest.mark.xfail(
+    strict=False,
+    raises=(ImportError, AssertionError, TypeError),
+    reason="PATCH /api/bible/series/{id}/overrides route not yet implemented (D-114 / SVC-05, Phase 10)",
+)
+async def test_patch_overrides_stores_source_and_model():
+    """PATCH /api/bible/series/1/overrides → 200 + DTO has correct override fields (D-114 / SVC-05).
+
+    Sends a PATCH with source_lang_override and model_override, expects 200 and the
+    returned Series DTO (or override DTO) to reflect the stored values.
+    """
+    import pytest  # noqa: PLC0415
+    from trezarr.web.app import create_app  # noqa: PLC0415
+    from httpx import AsyncClient, ASGITransport  # noqa: PLC0415
+
+    app = create_app()
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        resp = await client.patch(
+            "/api/bible/series/1/overrides",
+            json={"source_lang_override": ["ko", "en"], "model_override": "gpt-4o"},
+        )
+
+    assert resp.status_code == 200, (
+        f"Expected 200 from PATCH /api/bible/series/1/overrides, got {resp.status_code}: {resp.text}"
+    )
+    body = resp.json()
+    assert body.get("source_lang_override") == ["ko", "en"], (
+        f"Expected source_lang_override=['ko','en'] in response, got {body.get('source_lang_override')!r}"
+    )
+    assert body.get("model_override") == "gpt-4o", (
+        f"Expected model_override='gpt-4o' in response, got {body.get('model_override')!r}"
+    )
+
+
+@pytest.mark.xfail(
+    strict=False,
+    raises=(ImportError, AssertionError, TypeError),
+    reason="PATCH /api/bible/series/{id}/overrides null-clear not yet implemented (D-114 / SVC-05, Phase 10)",
+)
+async def test_patch_overrides_clears_with_null():
+    """PATCH /api/bible/series/1/overrides with null values → 200 + DTO shows null fields (D-114).
+
+    Null values clear the per-series override, reverting to global settings.
+    """
+    from trezarr.web.app import create_app  # noqa: PLC0415
+    from httpx import AsyncClient, ASGITransport  # noqa: PLC0415
+
+    app = create_app()
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        resp = await client.patch(
+            "/api/bible/series/1/overrides",
+            json={"source_lang_override": None, "model_override": None},
+        )
+
+    assert resp.status_code == 200, (
+        f"Expected 200 from PATCH /api/bible/series/1/overrides (null clear), got {resp.status_code}: {resp.text}"
+    )
+    body = resp.json()
+    assert body.get("source_lang_override") is None, (
+        f"Expected source_lang_override=null after clearing, got {body.get('source_lang_override')!r}"
+    )
+    assert body.get("model_override") is None, (
+        f"Expected model_override=null after clearing, got {body.get('model_override')!r}"
+    )
