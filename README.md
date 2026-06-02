@@ -186,8 +186,9 @@ trezarr/
 frontend/             # React 19 + Vite 7 + Tailwind SPA (built into the image)
 ```
 
-**Stack:** Python 3.12 · FastAPI · Uvicorn · `openai` (AsyncOpenAI) · `pysubs2`-class codec
-handling · `pyarr` · SQLAlchemy 2.0 + aiosqlite + Alembic · APScheduler · React 19 / Vite 7.
+**Stack:** Python 3.12 · FastAPI · Uvicorn · `openai` (AsyncOpenAI) · a custom SRT codec layer
+(`charset-normalizer` for encoding/BOM fidelity) · `pyarr` · SQLAlchemy 2.0 + aiosqlite +
+Alembic · APScheduler · React 19 / Vite 7. (Phase 9 adds `pysubs2` for ASS/SSA + VTT.)
 
 ---
 
