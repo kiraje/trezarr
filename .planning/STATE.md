@@ -4,13 +4,13 @@ milestone: v1.0
 milestone_name: milestone
 status: executing
 stopped_at: Phase 9 Plan 1 complete (Wave 0 RED scaffold)
-last_updated: "2026-06-02T05:27:07.470Z"
-last_activity: 2026-06-02 -- Phase 10 planning complete
+last_updated: "2026-06-02T05:30:11.458Z"
+last_activity: 2026-06-02 -- Phase 10 execution started
 progress:
   total_phases: 10
   completed_phases: 8
   total_plans: 44
-  completed_plans: 36
+  completed_plans: 37
   percent: 80
 ---
 
@@ -21,16 +21,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-05-31)
 
 **Core value:** Vietnamese subtitles that stay consistent and relationally correct (right pronoun pair, stable names/terms) across an entire series — produced automatically.
-**Current focus:** Phase 9 — Multi-Format — ASS/SSA + VTT
+**Current focus:** Phase 10 — Source Selection & Per-Series Overrides
 
 ## Current Position
 
-Phase: 9 (Multi-Format — ASS/SSA + VTT) — EXECUTING
-Plan: 3 of 6
-Status: Ready to execute
-Last activity: 2026-06-02 -- Phase 10 planning complete
+Phase: 10 (Source Selection & Per-Series Overrides) — EXECUTING
+Plan: 1 of 4
+Status: Executing Phase 10
+Last activity: 2026-06-02 -- Phase 10 execution started
 
-Progress: [████████░░] 82%
+Progress: [████████░░] 84%
 
 ## Performance Metrics
 
@@ -83,6 +83,7 @@ Progress: [████████░░] 82%
 | Phase 08 P03 | 8 minutes | 2 tasks | 3 files |
 | Phase 08 P04 | continuation | 5 tasks | 10 files |
 | Phase 09 P01 | 8 minutes | 2 tasks | 26 files |
+| Phase 09-multi-format-ass-ssa-vtt P03 | 25 | 2 tasks | 7 files |
 
 ## Accumulated Context
 
@@ -150,6 +151,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-06-02T05:18:13.392Z
+Last session: 2026-06-02T05:30:11.451Z
 Stopped at: Phase 9 Plan 1 complete (Wave 0 RED scaffold)
 Resume file: None

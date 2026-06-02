@@ -265,7 +265,7 @@ Decimal phases appear between their surrounding integers in numeric order.
   2. Karaoke (`\k`) lines round-trip without corruption (preserved verbatim where remapping is unsafe)
   3. VTT parses and writes back round-tripping cue settings/positioning, and signs render in their original screen position in a media player
 
-**Plans:** 2/6 plans executed
+**Plans:** 3/6 plans executed
 
 **Wave 1**
 
@@ -277,7 +277,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 
 **Wave 3** *(blocked on Wave 2 completion — plans 09-03 and 09-04 run in parallel)*
 
-- [ ] 09-03-PLAN.md — Wave 2A: ASS/SSA codec — hand-rolled read_ass/write_ass with AssDoc/AssOpaqueSegment/AssDialogueSlot; karaoke + drawing verbatim pass-through; validate.py gate extension SENTINEL_ONLY_RE + raw-is-not-None guard (D-91, D-97, D-98, D-99, D-102) (FMT-02, FMT-03)
+- [x] 09-03-PLAN.md — Wave 2A: ASS/SSA codec — hand-rolled read_ass/write_ass with AssDoc/AssOpaqueSegment/AssDialogueSlot; karaoke + drawing verbatim pass-through; validate.py gate extension SENTINEL_ONLY_RE + raw-is-not-None guard (D-91, D-97, D-98, D-99, D-102) (FMT-02, FMT-03)
 - [ ] 09-04-PLAN.md — Wave 2B: VTT codec — hand-rolled read_vtt/write_vtt with VttDoc/VttOpaqueBlock/VttCueBlock; WEBVTT header, NOTE/STYLE/REGION verbatim, cue settings in timing_line (D-91, D-100) (FMT-04)
 
 **Wave 4** *(blocked on Wave 3 completion)*
@@ -335,5 +335,5 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 6. Relationship Evolution + Self-Review | 3/3 | Complete    | 2026-06-01 |
 | 7. Web UI & Service Hardening | 6/6 | Complete    | 2026-06-01 |
 | 8. Editable Series Bible UI | 4/4 | Complete   | 2026-06-02 |
-| 9. Multi-Format — ASS/SSA + VTT | 2/6 | In Progress|  |
+| 9. Multi-Format — ASS/SSA + VTT | 3/6 | In Progress|  |
 | 10. Source Selection & Per-Series Overrides | 0/4 | Planning complete | - |
