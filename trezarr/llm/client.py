@@ -60,6 +60,7 @@ class LLMClient:
         self,
         messages: list[dict],
         response_model: type[BaseModel] | None = None,
+        model: str | None = None,   # D-113: per-call model override; None = use self._model
     ) -> BaseModel | str:
         """Make an LLM call, applying the configured structured-output tier strategy.
 
@@ -67,6 +68,9 @@ class LLMClient:
             messages: Chat messages in OpenAI format.  Must be a non-empty list.
             response_model: Optional Pydantic model for structured output (Tier 1).
                 If None, skips Tier 1 and starts at Tier 2.
+            model: Optional per-call model name override (D-113).  When provided,
+                overrides self._model for this single call.  When None (default),
+                self._model is used.  The single _semaphore is unchanged (D-06).
 
         Returns:
             When Tier 1 (json_schema) succeeds with a ``response_model``, the parsed
@@ -85,13 +89,14 @@ class LLMClient:
         if not messages:
             raise ValueError("messages must be a non-empty list of chat messages")
 
-        async with self._semaphore:  # D-06: enforce concurrency cap
-            return await self._call_with_fallback(messages, response_model)
+        async with self._semaphore:  # D-06: enforce concurrency cap — UNCHANGED
+            return await self._call_with_fallback(messages, response_model, model)
 
     async def _call_with_fallback(
         self,
         messages: list[dict],
         response_model: type[BaseModel] | None,
+        model: str | None = None,  # D-113: per-call override; None = use self._model
     ) -> BaseModel | str:
         """Internal dispatch implementing the three-tier degradation (D-04).
 
@@ -110,6 +115,7 @@ class LLMClient:
         Pinned modes (json_schema|json_object) propagate exceptions instead of falling back.
         """
         mode = self._mode
+        effective_model = model or self._model  # D-113: per-call override, falls back to global
 
         # ── Tier 1: json_schema (strict structured output) ────────────────────
         # parse() is attempted in auto/json_schema mode regardless of whether
@@ -122,7 +128,7 @@ class LLMClient:
                 if response_model is not None:
                     parse_kwargs["response_format"] = response_model
                 parsed = await self._client.chat.completions.parse(
-                    model=self._model,
+                    model=effective_model,
                     messages=messages,
                     **parse_kwargs,
                 )
@@ -158,7 +164,7 @@ class LLMClient:
         if mode in ("auto", "json_object"):
             try:
                 resp = await self._client.chat.completions.create(
-                    model=self._model,
+                    model=effective_model,
                     messages=messages,
                     response_format={"type": "json_object"},
                 )
@@ -173,7 +179,7 @@ class LLMClient:
 
         # ── Tier 3: plain text (always works; caller uses delimited-text protocol) ──
         resp = await self._client.chat.completions.create(
-            model=self._model,
+            model=effective_model,
             messages=messages,
         )
         content = resp.choices[0].message.content

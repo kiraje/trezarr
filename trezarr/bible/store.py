@@ -1476,6 +1476,44 @@ async def load_all_series(
         return [SeriesDTO.model_validate(r, from_attributes=True) for r in rows]
 
 
+async def get_series_by_arr_id(
+    session_factory: async_sessionmaker[AsyncSession],
+    *,
+    arr_kind: str,
+    arr_series_id: int,
+    arr_instance: str = "default",
+) -> "SeriesDTO | None":
+    """Return SeriesDTO for (arr_kind, arr_instance, arr_series_id), or None if not found.
+
+    Read-only query — does NOT create. Used by process_one_item (D-112) to fetch
+    per-series overrides before translate_file so resolve_effective_settings can
+    apply source_lang_override and model_override.
+
+    Args:
+        session_factory: Async session factory.
+        arr_kind:        "sonarr" or "radarr".
+        arr_series_id:   Integer series ID from pyarr.
+        arr_instance:    Instance name (default "default").
+
+    Returns:
+        SeriesDTO if found; None if this series has not been registered in the Bible yet.
+    """
+    async with session_factory() as session:
+        stmt = (
+            select(Series)
+            .where(
+                Series.arr_kind == arr_kind,
+                Series.arr_instance == arr_instance,
+                Series.arr_series_id == arr_series_id,
+            )
+            .limit(1)
+        )
+        row = (await session.execute(stmt)).scalar_one_or_none()
+        if row is None:
+            return None
+        return SeriesDTO.model_validate(row, from_attributes=True)
+
+
 async def record_relationship_event(
     session_factory: async_sessionmaker[AsyncSession],
     *,

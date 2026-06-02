@@ -105,6 +105,7 @@ async def process_one_item(
     the exact same production path as `trezarr run --once`.
 
     Steps performed (mirrors the original _run_pipeline_steps per-item body):
+      0. resolve_effective_settings — per-series source priority + model override (D-112).
       1. translate_file — runs the full 3-pass + self-review pipeline.
       2. Path-traversal guard (assert_within_media_roots) if media_roots is non-empty.
       3. apply_permissions — enforces PUID/PGID/umask on the output file.
@@ -124,6 +125,51 @@ async def process_one_item(
     Returns:
         ItemResult with status ∈ {done, skipped, quarantined, error}.
     """
+    # Step 0 — D-112: resolve per-series effective settings before translate_file.
+    # Load series_dto from DB if session_factory is available and media_item has
+    # the required arr identity; degrade gracefully to global settings if not.
+    from trezarr.source_selection.resolve import resolve_effective_settings  # noqa: PLC0415
+
+    series_dto = None
+    # eligible_item may be an EligibleItem (has .media_item) or a test MediaItem stub.
+    # Use getattr to handle both gracefully (D-104: degrade to global settings if not found).
+    media_item = getattr(eligible_item, "media_item", eligible_item)
+    arr_kind = getattr(media_item, "arr_kind", None)
+    arr_series_id = getattr(media_item, "series_id", None)
+
+    if session_factory is not None and arr_kind and arr_series_id is not None:
+        try:
+            from trezarr.bible.store import get_series_by_arr_id  # noqa: PLC0415
+            series_dto = await get_series_by_arr_id(
+                session_factory, arr_kind=arr_kind, arr_series_id=arr_series_id
+            )
+        except Exception:
+            # D-104 graceful degradation: DB error → use global settings
+            logger.debug(
+                "Failed to load series_dto for arr_kind=%s arr_series_id=%s — using global settings",
+                arr_kind, arr_series_id,
+            )
+
+    _source_priority, _register, effective_model = resolve_effective_settings(series_dto, settings)
+
+    # Bazarr inventory wiring (D-104, D-112): if enabled, fetch inventory for better source selection.
+    # Note: eligible_item.source_sub_path is already selected by scan; this provides the inventory
+    # for any re-translation path that calls select_source_for_item within translate_file.
+    if settings.bazarr_enabled and settings.bazarr_use_inventory and arr_kind == "sonarr" and arr_series_id:
+        try:
+            from trezarr.arr.bazarr import BazarrClient, BazarrError  # noqa: PLC0415
+            bazarr_client = BazarrClient.from_settings(settings)
+            _bazarr_inventory = await bazarr_client.fetch_episodes(arr_series_id)
+        except Exception as exc:
+            # D-104: BazarrError or any error → degrade to None (Bazarr unreachable must never block)
+            logger.warning(
+                "Bazarr inventory unavailable for series_id=%s: %s — degrading to filesystem scan",
+                arr_series_id, exc,
+            )
+            _bazarr_inventory = None
+    else:
+        _bazarr_inventory = None
+
     source_sub_path = eligible_item.source_sub_path
     result = await translate_file(
         source_sub_path,
@@ -132,6 +178,7 @@ async def process_one_item(
         ledger,
         eligible_item=eligible_item,
         session_factory=session_factory,
+        model=effective_model,  # D-113: per-series model override threads here
     )
 
     if result.status == "done":

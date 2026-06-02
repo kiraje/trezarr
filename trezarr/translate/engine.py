@@ -272,6 +272,7 @@ async def _review_batch(
     bible: object,
     llm_client: LLMClient,
     settings: "TrezarrSettings",
+    model: "str | None" = None,  # D-113: per-call model override
 ) -> "list[str] | None":
     """Review a batch of translated cues against the Series Bible.
 
@@ -309,8 +310,8 @@ async def _review_batch(
             dominant_pair=dominant_pair,
         )
 
-        # Step 3: LLM call — no response_model (D-57)
-        raw_response = await llm_client.call([{"role": "user", "content": prompt}])
+        # Step 3: LLM call — no response_model (D-57); D-113: forward per-call model override
+        raw_response = await llm_client.call([{"role": "user", "content": prompt}], model=model)
 
         # Step 4: Parse numbered-line response
         corrected_texts = parse_numbered_response(str(raw_response), len(review_batch.cues))
@@ -423,6 +424,7 @@ def _make_translate_batch_fn(settings: "TrezarrSettings"):
         llm_client: LLMClient,
         _settings: "TrezarrSettings",
         pronoun_hints: "dict[int, tuple[str, str]] | None" = None,
+        model: "str | None" = None,  # D-113: per-call model override
     ) -> list[str]:
         """Translate a single batch, retrying on BatchValidationError only (D-18).
 
@@ -465,7 +467,8 @@ def _make_translate_batch_fn(settings: "TrezarrSettings"):
         )
 
         # Step 3: Call LLMClient (the sole concurrency gate is inside LLMClient._semaphore)
-        raw_response = await llm_client.call([{"role": "user", "content": prompt}])
+        # D-113: forward per-call model override; None = use client's global model
+        raw_response = await llm_client.call([{"role": "user", "content": prompt}], model=model)
 
         # Step 4: Parse the numbered-line response
         translated_texts = parse_numbered_response(str(raw_response), len(batch.cues))
@@ -494,6 +497,7 @@ async def _translate_batch(
     llm_client: LLMClient,
     settings: "TrezarrSettings",
     pronoun_hints: "dict[int, tuple[str, str]] | None" = None,
+    model: "str | None" = None,  # D-113: per-call model override
 ) -> list[str]:
     """Public entry point for translating a single batch with retry.
 
@@ -505,6 +509,7 @@ async def _translate_batch(
         llm_client:     The LLM client to call.
         settings:       Settings supplying translate_batch_retry_attempts.
         pronoun_hints:  Optional {1-based line index → (self_term, address_term)} (D-46).
+        model:          Optional per-call model override (D-113).
 
     Returns:
         List of translated text strings.
@@ -513,7 +518,7 @@ async def _translate_batch(
         BatchValidationError: If all retries are exhausted (reraise=True in decorator).
     """
     fn = _make_translate_batch_fn(settings)
-    return await fn(batch, llm_client, settings, pronoun_hints)
+    return await fn(batch, llm_client, settings, pronoun_hints, model)
 
 
 # ── Quarantine artifact write ──────────────────────────────────────────────────
@@ -582,6 +587,7 @@ async def translate_file(
     ledger: LedgerProtocol,
     eligible_item: "EligibleItem | None" = None,
     session_factory: "async_sessionmaker[AsyncSession] | None" = None,
+    model: str | None = None,   # D-113: per-call model override; threads to llm_client.call()
 ) -> TranslationResult:
     """Translate a source subtitle file to Vietnamese and write a vi sidecar.
 
@@ -828,7 +834,7 @@ async def translate_file(
     try:
         async with asyncio.TaskGroup() as tg:
             translate_tasks = [
-                tg.create_task(_translate_batch(b, llm_client, settings, per_batch_hints[i]))
+                tg.create_task(_translate_batch(b, llm_client, settings, per_batch_hints[i], model))
                 for i, b in enumerate(batches)
             ]
         batch_results = [t.result() for t in translate_tasks]
@@ -962,6 +968,7 @@ async def translate_file(
                         bible=bible,
                         llm_client=llm_client,
                         settings=settings,
+                        model=model,  # D-113: per-call model override
                     ))
                     for rb in review_batches
                 ]

@@ -855,7 +855,7 @@ async def test_run_once_end_to_end_smoke_with_temp_sqlite(tmp_path, settings_fac
         source_lang="en",
     )
 
-    async def _fake_translate(path, _settings, _llm, _ledger, eligible_item=None, session_factory=None):
+    async def _fake_translate(path, _settings, _llm, _ledger, eligible_item=None, session_factory=None, model=None):  # D-113: accept model kwarg
         from trezarr.output.ledger import LedgerEntry
         from trezarr.translate.engine import TranslationResult
         # Write the vi.srt sidecar so write-side logic works

@@ -171,7 +171,7 @@ async def test_pronoun_consistency_within_episode(session_factory, tmp_path):
                 result_lines.append(f"[{n}] Vâng, được rồi ổn.")
         return "\n".join(result_lines)
 
-    async def mock_llm_call(messages, response_model=None):
+    async def mock_llm_call(messages, response_model=None, model=None):  # D-113: accept model kwarg
         prompt_text = messages[0]["content"] if messages else ""
         if response_model is BibleAnalysis:
             return bible_analysis

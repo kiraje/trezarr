@@ -127,7 +127,7 @@ async def test_batch_retry(settings_factory):
 
     call_count = 0
 
-    async def _fake_call(messages):
+    async def _fake_call(messages, response_model=None, model=None):  # D-113: accept model kwarg
         nonlocal call_count
         call_count += 1
         if call_count < 2:
@@ -165,7 +165,7 @@ async def test_quarantine_on_retry_exhaustion(settings_factory):
     )
     batch = Batch(cues=[src_line], context_before=[], context_after=[])
 
-    async def _always_bad(messages):
+    async def _always_bad(messages, response_model=None, model=None):  # D-113: accept model kwarg
         return ""  # always empty — always triggers BatchValidationError
 
     from trezarr.llm.client import LLMClient
@@ -392,7 +392,7 @@ async def test_reassembly_preserves_raw_cues_at_original_positions(settings_fact
 
     # Mock the LLM client to return translated text for the 2 translatable cues.
     # The karaoke cue is skipped by batching — the LLM sees only cues [1] and [2].
-    async def _fake_llm(messages):
+    async def _fake_llm(messages, response_model=None, model=None):  # D-113: accept model kwarg
         # Return numbered-line response for 2 cues only
         return "[1] Xin chào thế giới\n[2] Tạm biệt thế giới"
 
