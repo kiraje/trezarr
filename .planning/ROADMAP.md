@@ -233,7 +233,7 @@ Decimal phases appear between their surrounding integers in numeric order.
   2. An edited field can be locked; locked fields are read-only to Pass-1 merges and survive re-analysis unchanged
   3. A locked correction propagates forward — it appears in subsequent episode translations for at least the next several episodes without reverting
 
-**Plans:** 2/4 plans executed
+**Plans:** 3/4 plans executed
 
 **Wave 1**
 
@@ -245,7 +245,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
-- [ ] 08-03-PLAN.md — Wave 2: REST router — trezarr/web/routes/bible.py + app.py registration; all Bible endpoints with D-39 boundary, entity_type allowlist, D-87 HTTP 422 guard, D-81 series lock (BIBLE-08, BIBLE-09)
+- [x] 08-03-PLAN.md — Wave 2: REST router — trezarr/web/routes/bible.py + app.py registration; all Bible endpoints with D-39 boundary, entity_type allowlist, D-87 HTTP 422 guard, D-81 series lock (BIBLE-08, BIBLE-09)
 
 **Wave 4** *(blocked on Wave 3 completion)*
 
@@ -298,6 +298,6 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 5. Three-Pass Pronoun Engine | 6/6 | Complete   | 2026-06-01 |
 | 6. Relationship Evolution + Self-Review | 3/3 | Complete    | 2026-06-01 |
 | 7. Web UI & Service Hardening | 6/6 | Complete    | 2026-06-01 |
-| 8. Editable Series Bible UI | 2/4 | In Progress|  |
+| 8. Editable Series Bible UI | 3/4 | In Progress|  |
 | 9. Multi-Format — ASS/SSA + VTT | 0/TBD | Not started | - |
 | 10. Source Selection & Per-Series Overrides | 0/TBD | Not started | - |
