@@ -43,7 +43,7 @@ from trezarr.output._ledger_protocol import LedgerProtocol
 from trezarr.output.ledger import LedgerEntry
 from trezarr.output.write import derive_vi_sidecar_path, write_vi_sidecar
 from trezarr.subtitles.model import SubDoc, SubLine
-from trezarr.subtitles.srt import read_srt
+from trezarr.subtitles.dispatch import read_subtitle
 from trezarr.translate.batching import Batch, batch_subdoc
 from trezarr.translate.sentinel import extract_sentinels, reinsert_sentinels
 from trezarr.translate.validate import GateError, validate_subdoc
@@ -121,7 +121,7 @@ class TranslationResult:
 
     Attributes:
         status:          "done" | "skipped" | "quarantined"
-        output_path:     Path to the written .vi.srt sidecar (status="done" only).
+        output_path:     Path to the written vi sidecar (status="done" only; mirrors source extension — D-95).
         quarantine_path: Path to the quarantine JSON artifact (status="quarantined" only).
         reason:          Human-readable description of the failure (status="quarantined" only).
     """
@@ -583,7 +583,7 @@ async def translate_file(
     eligible_item: "EligibleItem | None" = None,
     session_factory: "async_sessionmaker[AsyncSession] | None" = None,
 ) -> TranslationResult:
-    """Translate a source SRT file to Vietnamese and write a .vi.srt sidecar.
+    """Translate a source subtitle file to Vietnamese and write a vi sidecar.
 
     This is the Phase-3-callable entry point for the translation pipeline.
     Phase-5 extension (D-48): when eligible_item and session_factory are provided,
@@ -595,7 +595,7 @@ async def translate_file(
 
     Steps:
       1. Resolve path to absolute; read source bytes; compute content hash
-      2. Derive destination .vi.srt path
+      2. Derive destination vi sidecar path (mirrors source extension — D-95)
       3. Ledger check (D-20 behavior table):
          - done + dest.exists() + hash matches → skip (idempotent no-op)
          - dest.exists() + not in ledger → foreign file, skip + log
@@ -647,7 +647,7 @@ async def translate_file(
 
     # Foreign file: dest exists but source_path not in ledger → skip + log (T-02-03-04)
     if entry is None and dest.exists():
-        logger.info("foreign vi.srt at %s, not ours — skipping %s", dest, path)
+        logger.info("foreign vi sidecar at %s, not ours — skipping %s", dest, path)
         return TranslationResult(status="skipped")
 
     # Already done + dest exists + hash matches → idempotent skip
@@ -671,7 +671,7 @@ async def translate_file(
     # (PermissionError, decode errors, malformed SRT).  A raise here would leave the
     # ledger at in_progress forever — catch and quarantine per the function contract.
     try:
-        source_doc = read_srt(path)
+        source_doc = read_subtitle(path)
         batches = batch_subdoc(source_doc, settings)
     except Exception as exc:
         reason = f"read/batch failure: {exc}"
@@ -852,14 +852,43 @@ async def translate_file(
         return _batch_quarantine
 
     # Step 8: Assemble translated SubDoc (Pitfall 8 — never mutate source SubLines)
-    translated_lines: list[SubLine] = []
+    #
+    # CRITICAL (D-98/D-99 reassembly integrity): batch_subdoc skips cues whose
+    # SubLine.raw is not None (karaoke/drawing pass-through).  Those cues are
+    # absent from every batch.cues list but MUST appear in the translated_doc at
+    # their original positions so the cue count matches source_doc.lines and the
+    # AssDoc slot index alignment (sub_index) stays correct.
+    #
+    # Algorithm:
+    #   1. Flatten batch_results into a queue of translated texts in document order.
+    #      The order of batch.cues matches the order of non-raw source lines because
+    #      batch_subdoc walks source_doc.lines sequentially and skips raw-flagged cues.
+    #   2. Walk source_doc.lines; for each cue:
+    #        - raw is not None  →  preserve verbatim (same SubLine object)
+    #        - raw is None      →  pop next translated text from the queue
+    _translated_queue: list[str] = []
     for batch, translated_texts in zip(batches, batch_results):
-        for src_line, translated_text in zip(batch.cues, translated_texts):
+        _translated_queue.extend(translated_texts)
+
+    _queue_iter = iter(_translated_queue)
+    translated_lines: list[SubLine] = []
+    for src_line in source_doc.lines:
+        if src_line.raw is not None:
+            # Opaque pass-through cue (karaoke/drawing) — preserve verbatim.
+            # New SubLine to honour "never mutate source SubLines" (Pitfall 8).
             translated_lines.append(SubLine(
                 index=src_line.index,
                 start_tc=src_line.start_tc,
                 end_tc=src_line.end_tc,
-                text=translated_text,
+                text=src_line.text,
+                raw=src_line.raw,
+            ))
+        else:
+            translated_lines.append(SubLine(
+                index=src_line.index,
+                start_tc=src_line.start_tc,
+                end_tc=src_line.end_tc,
+                text=next(_queue_iter),
                 raw=None,  # well-formed translated cue — raw not needed
             ))
 
@@ -870,6 +899,7 @@ async def translate_file(
         separators=source_doc.separators,
         leading=source_doc.leading,
         trailer=source_doc.trailer,
+        envelope=source_doc.envelope,   # carry AssDoc/VttDoc for write codec (D-92)
     )
 
     # Step 8.5 (Phase 6, D-55): Pass 4 Self-Review — best-effort Bible adherence correction.
@@ -972,6 +1002,7 @@ async def translate_file(
             separators=translated_doc.separators,
             leading=translated_doc.leading,
             trailer=translated_doc.trailer,
+            envelope=translated_doc.envelope,   # carry forward for write codec (D-92)
         )
 
     # Step 9: Document-level validation gate (D-16, D-17)

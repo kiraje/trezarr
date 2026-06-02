@@ -203,7 +203,7 @@ async def test_translate_file_read_failure_quarantines(settings_factory, tmp_pat
     from trezarr.llm.client import LLMClient
     client = LLMClient(settings)
 
-    with patch("trezarr.translate.engine.read_srt", side_effect=PermissionError("no access")):
+    with patch("trezarr.translate.engine.read_subtitle", side_effect=PermissionError("no access")):
         result = await translate_file(src, settings, client, ledger)
 
     assert result.status == "quarantined", (
@@ -333,4 +333,111 @@ def test_pronoun_hint_in_prompt():
     )
     assert "[2] World" in prompt, (
         "Unhinted line [2] should render without hint prefix"
+    )
+
+
+async def test_reassembly_preserves_raw_cues_at_original_positions(settings_factory, tmp_path):
+    """End-to-end reassembly: raw (karaoke/drawing) cues stay at their source positions (D-98/D-99).
+
+    MANDATORY integrity check (plan 09-05):
+    Runs the full translate_file pipeline on an ASS fixture that contains a karaoke
+    cue in the MIDDLE of the file, and asserts:
+      (a) The output is written as .vi.ass (derive_vi_sidecar_path mirrors source ext — D-95)
+      (b) The raw karaoke cue is present in the output at its original position with
+          BYTE-IDENTICAL text to the source (no misalignment, no corruption)
+      (c) The translatable cues surrounding it are in the output (not shifted)
+
+    This proves that batch_subdoc's raw-skip does not misalign the engine's
+    batch→SubDoc reassembly — the fixed reassembly walker in Step 8 correctly
+    interleaves skipped raw cues with translated cues in document order.
+    """
+    pytest.importorskip("trezarr.translate.engine")
+    from unittest.mock import patch, AsyncMock
+    from trezarr.translate.engine import translate_file
+    from trezarr.output.ledger import Ledger
+
+    quarantine_dir = tmp_path / "quarantine"
+    settings = settings_factory(
+        translate_quarantine_dir=str(quarantine_dir),
+        translate_batch_retry_attempts=1,
+    )
+
+    # Build a minimal ASS file with 3 cues: normal, karaoke (raw), normal.
+    # The karaoke cue MUST appear in the MIDDLE to verify position preservation.
+    ass_content = (
+        "[Script Info]\r\n"
+        "ScriptType: v4.00+\r\n"
+        "\r\n"
+        "[V4+ Styles]\r\n"
+        "Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, "
+        "BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, "
+        "BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding\r\n"
+        "Style: Default,Arial,20,&H00FFFFFF,&H000000FF,&H00000000,&H00000000,"
+        "0,0,0,0,100,100,0,0,1,2,2,2,10,10,10,1\r\n"
+        "\r\n"
+        "[Events]\r\n"
+        "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\r\n"
+        "Dialogue: 0,0:00:01.00,0:00:03.00,Default,,0,0,0,,Hello world\r\n"
+        r"Dialogue: 0,0:00:04.00,0:00:06.00,Default,,0,0,0,,{\k50}she {\k60}said {\k70}yes"
+        "\r\n"
+        "Dialogue: 0,0:00:07.00,0:00:09.00,Default,,0,0,0,,Goodbye world\r\n"
+    )
+    src = tmp_path / "Show.S01E01.en.ass"
+    src.write_bytes(ass_content.encode("utf-8"))
+
+    ledger = Ledger(tmp_path / "ledger.json")
+
+    from trezarr.llm.client import LLMClient
+    client = LLMClient(settings)
+
+    # Mock the LLM client to return translated text for the 2 translatable cues.
+    # The karaoke cue is skipped by batching — the LLM sees only cues [1] and [2].
+    async def _fake_llm(messages):
+        # Return numbered-line response for 2 cues only
+        return "[1] Xin chào thế giới\n[2] Tạm biệt thế giới"
+
+    with patch.object(client, "call", side_effect=_fake_llm):
+        result = await translate_file(src, settings, client, ledger)
+
+    # (a) Output is .vi.ass (mirrors source extension — D-95)
+    assert result.status == "done", (
+        f"Expected status='done', got {result.status!r}"
+    )
+    assert result.output_path is not None
+    output_path = result.output_path
+    assert output_path.suffix == ".ass", (
+        f"Expected .vi.ass output (D-95), got suffix {output_path.suffix!r}"
+    )
+    assert output_path.name == "Show.S01E01.vi.ass", (
+        f"Expected 'Show.S01E01.vi.ass', got {output_path.name!r}"
+    )
+    assert output_path.exists(), "Output .vi.ass file must exist on disk"
+
+    # (b) Read back the output and verify the karaoke cue is byte-identical at
+    #     position 2 (the middle slot).
+    from trezarr.subtitles.ass import read_ass
+    out_doc = read_ass(str(output_path))
+
+    karaoke_raw = r"{\k50}she {\k60}said {\k70}yes"
+    assert len(out_doc.lines) == 3, (
+        f"Expected 3 cues in output (2 translated + 1 raw), got {len(out_doc.lines)}"
+    )
+
+    # Position 1 (index 1) must be the karaoke cue — raw and text byte-identical to source
+    middle_cue = out_doc.lines[1]
+    assert middle_cue.raw == karaoke_raw, (
+        f"Karaoke cue at position 1 must have raw={karaoke_raw!r}, "
+        f"got raw={middle_cue.raw!r}"
+    )
+    assert middle_cue.text == karaoke_raw, (
+        f"Karaoke cue at position 1 must have text={karaoke_raw!r}, "
+        f"got text={middle_cue.text!r}"
+    )
+
+    # (c) Surrounding translatable cues exist (not shifted by the raw cue)
+    assert out_doc.lines[0].text == "Xin chào thế giới", (
+        f"First cue should be translated, got {out_doc.lines[0].text!r}"
+    )
+    assert out_doc.lines[2].text == "Tạm biệt thế giới", (
+        f"Third cue should be translated, got {out_doc.lines[2].text!r}"
     )

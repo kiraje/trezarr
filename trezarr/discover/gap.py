@@ -23,7 +23,8 @@ inside is_eligible.
 Per 03-RESEARCH.md Pitfall 5: the vi sidecar path is ALWAYS derived from the
 ``source_sub_path``, never from the video path. ``derive_vi_sidecar_path`` in
 ``trezarr.output.write`` knows how to strip the source-language suffix and
-append ``.vi.srt``; passing it the video path would yield a wrong target.
+append ``.vi<ext>`` mirroring the source extension; passing it the video path
+would yield a wrong target.
 """
 from __future__ import annotations
 
@@ -44,8 +45,9 @@ async def is_eligible(source_sub_path: Path, ledger: LedgerProtocol) -> tuple[bo
     the video-path parameter is intentionally absent. The original spec passed
     a video path so the function could re-derive the vi sidecar from the video
     file, but ``derive_vi_sidecar_path`` actually takes the source-sub path
-    (it strips the ".en" / ".ja" / etc. lang suffix and appends ".vi.srt").
-    Passing the video path would be wrong (Pitfall 5).
+    (it strips the ".en" / ".ja" / etc. lang suffix and appends ".vi<ext>"
+    mirroring the source extension). Passing the video path would be wrong
+    (Pitfall 5).
 
     Decision matrix (in evaluation order):
 
@@ -103,10 +105,10 @@ async def is_eligible(source_sub_path: Path, ledger: LedgerProtocol) -> tuple[bo
     entry = await ledger.check(str(source_sub_path))
 
     # Case 1 — foreign vi sidecar (D-26): vi present, ledger has no record.
-    # We did NOT write this; never clobber.
+    # We did NOT write this; never clobber (D-26, D-96: applies to .vi.<ext> for all formats).
     if vi_path.exists() and entry is None:
         logger.info(
-            "foreign vi.srt at %s — skipping %s (D-26, never clobber)",
+            "foreign vi sidecar at %s — skipping %s (D-26, never clobber)",
             vi_path, source_sub_path,
         )
         return (False, f"foreign vi sidecar at {vi_path} — not ours, skipping")
