@@ -15,6 +15,8 @@ re-exports them from tests/db/conftest.py.
 
 from __future__ import annotations
 
+import pytest
+
 
 # ---------------------------------------------------------------------------
 # Helpers — mirror test_address_map.py helper pattern
@@ -1014,3 +1016,19 @@ async def test_enable_relationship_events_false_suppresses_transition(session_fa
         f"enable_relationship_events=False must suppress transition; "
         f"expected carried-forward ('tôi', 'bạn'), got {pair_result!r}"
     )
+
+
+# ---------------------------------------------------------------------------
+# Phase 8 additions — D-90 H1 regression stubs
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.xfail(
+    raises=(AssertionError,),
+    strict=False,
+    reason="KINSHIP_RECIPROCAL bác/cháu gaps not yet filled — Plan 08-02 D-90",
+)
+async def test_kinship_reciprocal_bac_chau():
+    """D-90 H1 fix: bác/cháu, chú/cháu, cô/cháu, thầy/em, tao/mày round-trip in KINSHIP_RECIPROCAL; junior-only attribution on bác/cháu does not overwrite locked pair."""
+    from trezarr.translate.reconcile import KINSHIP_RECIPROCAL  # noqa: PLC0415
+    assert ("bác", "cháu") in KINSHIP_RECIPROCAL and ("cháu", "bác") in KINSHIP_RECIPROCAL
