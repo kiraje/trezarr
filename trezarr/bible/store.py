@@ -952,6 +952,497 @@ async def upsert_address_pair(
         )
 
 
+# ---------------------------------------------------------------------------
+# Phase 08: Human-edit write path — apply_human_edit_* + delete_* + history (D-79/D-80/D-82/D-83)
+# ---------------------------------------------------------------------------
+
+
+async def apply_human_edit_character(
+    session_factory: async_sessionmaker[AsyncSession],
+    *,
+    character_id: int,
+    series_id: int,
+    field: str,
+    new_value: Any,
+    lock: bool = False,
+) -> tuple[CharacterDTO, BibleEventDTO]:
+    """Apply a human edit (and optional lock) to a Character field (D-80).
+
+    Validates field against MERGEABLE_FIELDS["character"] before opening any session
+    (T-08-01 defence). Inside one session.begin() transaction: re-reads the row
+    (WR-01), sets the new value, reassigns locked_fields as a new list (D-80 JSON
+    dirty-tracking footgun guard), emits BibleEvent(source="lock") in the same txn
+    (D-32). Returns DTOs — SQLAlchemy models never escape this function (D-39).
+
+    Args:
+        session_factory: Async session factory.
+        character_id:    PK of the Character row to edit.
+        series_id:       Series the character belongs to (cross-series guard).
+        field:           Field name to modify (must be in MERGEABLE_FIELDS["character"]).
+        new_value:       New value to set.
+        lock:            If True, add field to locked_fields (human override flag).
+
+    Returns:
+        (CharacterDTO, BibleEventDTO) for the updated row and the audit event.
+
+    Raises:
+        ValueError: If field is not in MERGEABLE_FIELDS["character"].
+        ValueError: If character_id not found or series_id mismatch.
+    """
+    # Pre-session validation — field whitelist security defence (T-08-01)
+    allowed = MERGEABLE_FIELDS.get("character", frozenset())
+    if field not in allowed:
+        raise ValueError(
+            f"Field '{field}' is not editable for character. Editable fields: {allowed}"
+        )
+
+    async with session_factory() as session:
+        async with session.begin():
+            # WR-01: re-read INSIDE the transaction off the SQLA row
+            row = await session.get(Character, character_id)
+            if row is None or row.series_id != series_id:
+                raise ValueError(
+                    f"Character {character_id} not found in series {series_id}"
+                )
+
+            old_value = getattr(row, field)
+            setattr(row, field, new_value)
+
+            # D-80: reassign NEW list — never .append() on plain JSON column
+            locked_list = list(row.locked_fields or [])
+            if lock and field not in locked_list:
+                locked_list.append(field)
+                row.locked_fields = locked_list  # reassignment = dirty-tracked
+            elif not lock and field in locked_list:
+                locked_list.remove(field)
+                row.locked_fields = locked_list
+
+            # D-32: audit event in the same transaction
+            evt = BibleEvent(
+                series_id=series_id,
+                episode_key=None,
+                entity_type="character",
+                entity_id=character_id,
+                field=field,
+                old_value=old_value,
+                new_value=new_value,
+                source="lock",
+            )
+            session.add(evt)
+
+        # expire_on_commit=False: attributes accessible post-commit (Pitfall 2)
+        return (
+            CharacterDTO.model_validate(row, from_attributes=True),
+            BibleEventDTO.model_validate(evt, from_attributes=True),
+        )
+
+
+async def apply_human_edit_address_pair(
+    session_factory: async_sessionmaker[AsyncSession],
+    *,
+    address_map_id: int,
+    series_id: int,
+    self_term: str | None = None,
+    address_term: str | None = None,
+    lock: bool = False,
+) -> tuple[AddressMapDTO, list[BibleEventDTO]]:
+    """Apply a human edit (and optional lock) to an AddressMap pair (D-80).
+
+    D-87 pre-check: if lock=True and either term is empty/whitespace, raises ValueError
+    before opening any session (T-08-03 defence). Inside one session.begin() transaction:
+    re-reads the row (WR-01), updates self_term/address_term, reassigns locked_fields as
+    a new list (D-80), emits BibleEvents for each changed field (D-32). Returns DTOs
+    (D-39). NEVER routes through merge_inferred (D-80).
+
+    Args:
+        session_factory:  Async session factory.
+        address_map_id:   PK of the AddressMap row to edit.
+        series_id:        Series the pair belongs to (cross-series guard).
+        self_term:        New self_term value (Vietnamese self-reference).
+        address_term:     New address_term value (Vietnamese address term).
+        lock:             If True, lock both self_term and address_term (D-87: pair locks as a unit).
+
+    Returns:
+        (AddressMapDTO, list[BibleEventDTO]) for the updated row and audit events.
+
+    Raises:
+        ValueError: D-87 — if lock=True and either term is empty or whitespace.
+        ValueError: If address_map_id not found or series_id mismatch.
+    """
+    # D-87 pre-check BEFORE opening session (T-08-03)
+    if lock:
+        if not self_term or not self_term.strip():
+            raise ValueError("Both self_term and address_term must be non-empty before locking a pair")
+        if not address_term or not address_term.strip():
+            raise ValueError("Both self_term and address_term must be non-empty before locking a pair")
+
+    async with session_factory() as session:
+        async with session.begin():
+            # WR-01: re-read INSIDE the transaction
+            row = await session.get(AddressMap, address_map_id)
+            if row is None or row.series_id != series_id:
+                raise ValueError(
+                    f"AddressMap {address_map_id} not found in series {series_id}"
+                )
+
+            events: list[BibleEvent] = []
+
+            # Apply self_term change
+            if self_term is not None:
+                self_term = self_term.strip()
+                old_self = row.self_term
+                if old_self != self_term:
+                    row.self_term = self_term
+                    evt = BibleEvent(
+                        series_id=series_id,
+                        episode_key=None,
+                        entity_type="address_map",
+                        entity_id=address_map_id,
+                        field="self_term",
+                        old_value=old_self,
+                        new_value=self_term,
+                        source="lock",
+                    )
+                    session.add(evt)
+                    events.append(evt)
+
+            # Apply address_term change
+            if address_term is not None:
+                address_term = address_term.strip()
+                old_addr = row.address_term
+                if old_addr != address_term:
+                    row.address_term = address_term
+                    evt = BibleEvent(
+                        series_id=series_id,
+                        episode_key=None,
+                        entity_type="address_map",
+                        entity_id=address_map_id,
+                        field="address_term",
+                        old_value=old_addr,
+                        new_value=address_term,
+                        source="lock",
+                    )
+                    session.add(evt)
+                    events.append(evt)
+
+            # D-80: lock both fields as a pair if lock=True
+            if lock:
+                locked_list = list(row.locked_fields or [])
+                for f in ("self_term", "address_term"):
+                    if f not in locked_list:
+                        locked_list.append(f)
+                row.locked_fields = locked_list  # reassignment = dirty-tracked
+
+        # expire_on_commit=False: attributes accessible post-commit (Pitfall 2)
+        return (
+            AddressMapDTO.model_validate(row, from_attributes=True),
+            [BibleEventDTO.model_validate(e, from_attributes=True) for e in events],
+        )
+
+
+async def apply_human_edit_term(
+    session_factory: async_sessionmaker[AsyncSession],
+    *,
+    series_id: int,
+    source_term: str,
+    field: str,
+    new_value: Any,
+    lock: bool = False,
+) -> tuple[TermDTO, BibleEventDTO]:
+    """Apply a human edit (and optional lock) to a TermDictionary field (D-80).
+
+    Looks up the term by source_term; creates it if it does not exist (using new_value
+    as the initial vietnamese_rendering when field="vietnamese_rendering").
+    Validates field against MERGEABLE_FIELDS["term_dictionary"] before opening any session
+    (T-08-01 defence). Inside one session.begin() transaction: re-reads the row (WR-01),
+    sets the new value, reassigns locked_fields as a new list (D-80), emits BibleEvent
+    (D-32). NEVER routes through merge_inferred (D-80). Returns DTOs (D-39).
+
+    Args:
+        session_factory: Async session factory.
+        series_id:       Series the term belongs to.
+        source_term:     Source-language identity key for the term.
+        field:           Field to modify (must be in MERGEABLE_FIELDS["term_dictionary"]).
+        new_value:       New value to set.
+        lock:            If True, add field to locked_fields.
+
+    Returns:
+        (TermDTO, BibleEventDTO) for the updated/created row and the audit event.
+
+    Raises:
+        ValueError: If field is not in MERGEABLE_FIELDS["term_dictionary"].
+    """
+    # Pre-session validation — field whitelist security defence (T-08-01)
+    allowed = MERGEABLE_FIELDS.get("term_dictionary", frozenset())
+    if field not in allowed:
+        raise ValueError(
+            f"Field '{field}' is not editable for term_dictionary. Editable fields: {allowed}"
+        )
+
+    async with session_factory() as session:
+        async with session.begin():
+            # Look up the term by source_term identity key
+            stmt = select(TermDictionary).where(
+                TermDictionary.series_id == series_id,
+                TermDictionary.source_term == source_term,
+            )
+            row = (await session.execute(stmt)).scalar_one_or_none()
+
+            if row is None:
+                # Create the term row (require vietnamese_rendering for INSERT)
+                if field == "vietnamese_rendering":
+                    vr = str(new_value)
+                else:
+                    raise ValueError(
+                        f"Term '{source_term}' not found in series {series_id}. "
+                        f"Cannot create without vietnamese_rendering (field={field!r})."
+                    )
+                row = TermDictionary(
+                    series_id=series_id,
+                    source_term=source_term,
+                    vietnamese_rendering=vr,
+                    locked_fields=[],
+                )
+                session.add(row)
+                await session.flush()  # populate row.id
+                old_value = None
+            else:
+                old_value = getattr(row, field)
+                setattr(row, field, new_value)
+
+            # D-80: reassign NEW list — never .append() on plain JSON column
+            locked_list = list(row.locked_fields or [])
+            if lock and field not in locked_list:
+                locked_list.append(field)
+                row.locked_fields = locked_list  # reassignment = dirty-tracked
+            elif not lock and field in locked_list:
+                locked_list.remove(field)
+                row.locked_fields = locked_list
+
+            # D-32: audit event in the same transaction
+            evt = BibleEvent(
+                series_id=series_id,
+                episode_key=None,
+                entity_type="term_dictionary",
+                entity_id=row.id,
+                field=field,
+                old_value=old_value,
+                new_value=new_value,
+                source="lock",
+            )
+            session.add(evt)
+
+        # expire_on_commit=False: attributes accessible post-commit (Pitfall 2)
+        return (
+            TermDTO.model_validate(row, from_attributes=True),
+            BibleEventDTO.model_validate(evt, from_attributes=True),
+        )
+
+
+async def apply_human_edit_series(
+    session_factory: async_sessionmaker[AsyncSession],
+    *,
+    series_id: int,
+    field: str,
+    new_value: Any,
+    lock: bool = False,
+) -> tuple[SeriesDTO, BibleEventDTO]:
+    """Apply a human edit (and optional lock) to a Series field (D-80).
+
+    Primary use case: field="register" (CR-02: the ORM attribute is Series.register;
+    the DTO serializes it with alias "register" per CR-02). Validates field against
+    MERGEABLE_FIELDS["series"] before opening any session (T-08-01 defence). Inside one
+    session.begin() transaction: re-reads the row (WR-01), sets the new value, reassigns
+    locked_fields as a new list (D-80), emits BibleEvent (D-32). NEVER routes through
+    merge_inferred (D-80). Returns DTOs (D-39).
+
+    Args:
+        session_factory: Async session factory.
+        series_id:       PK of the Series row to edit.
+        field:           Field to modify (must be in MERGEABLE_FIELDS["series"]).
+        new_value:       New value to set.
+        lock:            If True, add field to locked_fields.
+
+    Returns:
+        (SeriesDTO, BibleEventDTO) for the updated row and the audit event.
+
+    Raises:
+        ValueError: If field is not in MERGEABLE_FIELDS["series"].
+        ValueError: If series_id not found.
+    """
+    # Pre-session validation — field whitelist security defence (T-08-01)
+    allowed = MERGEABLE_FIELDS.get("series", frozenset())
+    if field not in allowed:
+        raise ValueError(
+            f"Field '{field}' is not editable for series. Editable fields: {allowed}"
+        )
+
+    async with session_factory() as session:
+        async with session.begin():
+            # WR-01: re-read INSIDE the transaction off the SQLA row
+            row = await session.get(Series, series_id)
+            if row is None:
+                raise ValueError(f"Series {series_id} not found")
+
+            old_value = getattr(row, field)
+            setattr(row, field, new_value)
+
+            # D-80: reassign NEW list — never .append() on plain JSON column
+            locked_list = list(row.locked_fields or [])
+            if lock and field not in locked_list:
+                locked_list.append(field)
+                row.locked_fields = locked_list  # reassignment = dirty-tracked
+            elif not lock and field in locked_list:
+                locked_list.remove(field)
+                row.locked_fields = locked_list
+
+            # D-32: audit event in the same transaction
+            evt = BibleEvent(
+                series_id=series_id,
+                episode_key=None,
+                entity_type="series",
+                entity_id=series_id,
+                field=field,
+                old_value=old_value,
+                new_value=new_value,
+                source="lock",
+            )
+            session.add(evt)
+
+        # expire_on_commit=False: attributes accessible post-commit (Pitfall 2)
+        return (
+            SeriesDTO.model_validate(row, from_attributes=True),
+            BibleEventDTO.model_validate(evt, from_attributes=True),
+        )
+
+
+async def delete_address_pair(
+    session_factory: async_sessionmaker[AsyncSession],
+    *,
+    address_map_id: int,
+    series_id: int,
+) -> dict[str, int]:
+    """Delete an AddressMap row (D-83).
+
+    One session.begin() transaction. Guards that the row belongs to series_id
+    (T-08-05 cross-series delete defence). No BibleEvent emitted (delete is not
+    a lock operation). No SQLAlchemy model escapes this function (D-39).
+
+    Args:
+        session_factory:  Async session factory.
+        address_map_id:   PK of the AddressMap row to delete.
+        series_id:        Series the pair must belong to (guard).
+
+    Returns:
+        {"deleted": address_map_id}
+
+    Raises:
+        ValueError: If row not found or series_id mismatch.
+    """
+    async with session_factory() as session:
+        async with session.begin():
+            row = await session.get(AddressMap, address_map_id)
+            if row is None or row.series_id != series_id:
+                raise ValueError(
+                    f"AddressMap {address_map_id} not found in series {series_id}"
+                )
+            session.delete(row)
+    return {"deleted": address_map_id}
+
+
+async def delete_term(
+    session_factory: async_sessionmaker[AsyncSession],
+    *,
+    term_id: int,
+    series_id: int,
+) -> dict[str, int]:
+    """Delete a TermDictionary row (D-83).
+
+    One session.begin() transaction. Guards that the row belongs to series_id
+    (T-08-05 cross-series delete defence). No BibleEvent emitted (delete is not
+    a lock operation). No SQLAlchemy model escapes this function (D-39).
+
+    Args:
+        session_factory: Async session factory.
+        term_id:         PK of the TermDictionary row to delete.
+        series_id:       Series the term must belong to (guard).
+
+    Returns:
+        {"deleted": term_id}
+
+    Raises:
+        ValueError: If row not found or series_id mismatch.
+    """
+    async with session_factory() as session:
+        async with session.begin():
+            row = await session.get(TermDictionary, term_id)
+            if row is None or row.series_id != series_id:
+                raise ValueError(
+                    f"TermDictionary {term_id} not found in series {series_id}"
+                )
+            session.delete(row)
+    return {"deleted": term_id}
+
+
+async def load_field_history(
+    session_factory: async_sessionmaker[AsyncSession],
+    series_id: int,
+    entity_type: str,
+    entity_id: int,
+    field: str | None = None,
+    limit: int = 100,
+) -> list[BibleEventDTO]:
+    """Load BibleEvent history for a specific entity (D-82, T-08-02).
+
+    Read-only query — no session.begin() needed. Filtered by series_id, entity_type,
+    entity_id, and optionally field. Ordered by created_at DESC, limited to `limit`
+    rows (default 100 — T-08-02 DoS hardening).
+
+    Args:
+        session_factory: Async session factory.
+        series_id:       FK → series.id (scope guard).
+        entity_type:     Entity type string: "character"|"term_dictionary"|"series"|"address_map".
+        entity_id:       ID of the specific entity row.
+        field:           Optional field name filter.
+        limit:           Maximum number of events to return (default 100).
+
+    Returns:
+        list[BibleEventDTO] ordered by created_at DESC.
+    """
+    async with session_factory() as session:
+        stmt = select(BibleEvent).where(
+            BibleEvent.series_id == series_id,
+            BibleEvent.entity_type == entity_type,
+            BibleEvent.entity_id == entity_id,
+        )
+        if field is not None:
+            stmt = stmt.where(BibleEvent.field == field)
+        stmt = stmt.order_by(BibleEvent.created_at.desc()).limit(limit)
+        rows = (await session.execute(stmt)).scalars().all()
+        return [BibleEventDTO.model_validate(r, from_attributes=True) for r in rows]
+
+
+async def load_all_series(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> list[SeriesDTO]:
+    """Load all Series rows ordered by id (D-39).
+
+    Read-only query. Returns SeriesDTO (not SeriesBibleDTO — no eager-loading
+    needed for the list view). Uses SeriesDTO.model_validate with from_attributes=True
+    (CR-02: register_value alias handled by populate_by_name=True in SeriesDTO).
+
+    Args:
+        session_factory: Async session factory.
+
+    Returns:
+        list[SeriesDTO] ordered by Series.id.
+    """
+    async with session_factory() as session:
+        stmt = select(Series).order_by(Series.id)
+        rows = (await session.execute(stmt)).scalars().all()
+        return [SeriesDTO.model_validate(r, from_attributes=True) for r in rows]
+
+
 async def record_relationship_event(
     session_factory: async_sessionmaker[AsyncSession],
     *,
