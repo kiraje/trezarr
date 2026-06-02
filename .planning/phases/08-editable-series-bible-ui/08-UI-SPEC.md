@@ -1,10 +1,11 @@
 ---
 phase: 8
 slug: editable-series-bible-ui
-status: draft
+status: approved
 shadcn_initialized: false
 preset: none
 created: 2026-06-02
+reviewed_at: 2026-06-02
 ---
 
 # Phase 8 — UI Design Contract
@@ -67,7 +68,7 @@ Inherited from Phase 7 (07-UI-SPEC.md §Typography). No new sizes or weights are
 | Body | 14px | 400 | 1.5 | `text-sm font-normal leading-normal` | Table cells, character/term fields, history entries |
 | Label / meta | 12px | 400 | 1.4 | `text-xs font-normal leading-snug` | Column headers, provenance text, field labels, tab labels, badge text |
 | Heading | 18px | 600 | 1.2 | `text-lg font-semibold leading-tight` | Page title ("Bible"), section headings ("Characters", "Address Map") |
-| Mono | 13px | 400 | 1.6 | `text-[13px] font-mono leading-relaxed` | Not used in Bible editor; inherited for completeness |
+| Mono | ~~13px~~ | — | — | — | **Suppressed — not used in Phase 8.** The 13px mono size exists in Phase 7 for log output; no log display exists in the Bible editor. Active type scale for this phase is 12/14/18px only. |
 
 Two declared weights only: 400 (regular) and 600 (semibold). No third weight.
 
@@ -90,7 +91,7 @@ Inherited verbatim from Phase 7. All tokens are already in `tailwind.config.js`.
 
 **Accent (`#3b82f6`) reserved exclusively for:**
 1. Active nav item ("Bible" when on Bible pages)
-2. Primary action buttons: "Save Changes", "Lock", "Add Character", "Add Term", "Add Pair"
+2. Primary action buttons: "Save Register", "Lock", "Add Character", "Add Term", "Add Pair"
 3. "Unlock" toggle (the action to change lock state)
 4. Focus rings on all interactive elements (`outline: 2px solid #3b82f6; outline-offset: 2px`)
 
@@ -120,6 +121,18 @@ Used for: reciprocal incoherence, pair not in kinship table, intimate term on lo
 | block | `#f87171` | `#ef4444` X icon |
 
 Used only for: attempting to lock an AddressMap pair with an empty/whitespace term (D-87). Inline below the lock button, 12px regular. Does not use the warning banner background — stands as a standalone error message.
+
+---
+
+## Visual Focal Point
+
+**BibleEditor screen primary visual anchor:** The series title (18px semibold, `text-text-primary`) is the primary visual anchor on the BibleEditor page. It is the only heading at 18px semibold in the viewport, giving the operator immediate context for which series they are editing.
+
+**Secondary anchor:** The BibleTabBar, sitting directly below the header, is the secondary anchor — its 2px accent-colored active-tab indicator draws the eye to the current working section (Characters, Address Map, Terms, or Register).
+
+**Working surface:** The active section's table (or Register card) is the working surface. It occupies the remaining vertical space and carries no competing visual weight — all interactive affordances (edit icons, lock toggles, badges) are muted until activated.
+
+This hierarchy ensures the operator can orient (series title), navigate (tab bar), and act (table) in a single top-to-bottom scan. No decorative elements compete with these three anchors.
 
 ---
 
@@ -268,11 +281,11 @@ Characters table (same table primitives as Phase-7):
 | History | 7% | Clock icon trigger |
 | Actions | 7% | Edit icon only (no delete — D-83) |
 
-Row editing: clicking the edit icon (lucide `Pencil`, 14px, muted) puts the entire row into edit mode — fields become inputs in-place. "Save" and "Cancel" appear as text links (accent / muted, 12px) to the right of the row.
+Row editing: clicking the edit icon (lucide `Pencil`, 14px, muted) puts the entire row into edit mode — fields become inputs in-place. "Save character" and "Discard changes" appear as text links (accent / muted, 12px) to the right of the row.
 
 Lock scope for Characters: the Lock toggle applies to the entire character row (all fields). The LockBadge shows "Locked" if ANY field is in `locked_fields`; shows "Inference" if none are locked. (Simplification for v1 — per-field locking within a character is over-engineered for the operator UX; the whole-character lock is sufficient and matches the "lock the character identity" mental model.)
 
-**Add Character flow:** Clicking "Add Character" opens an inline form row at the top of the table (above existing characters). Same fields as the edit row. "Add" button (accent, sm) + "Cancel" text link. On success: row appears in the table; toast "Character added." On error: toast "Failed to add character."
+**Add Character flow:** Clicking "Add Character" opens an inline form row at the top of the table (above existing characters). Same fields as the edit row. "Add Character" button (accent, sm) + "Discard" text link. On success: row appears in the table; toast "Character added." On error: toast "Failed to add character."
 
 No character delete affordance appears in the UI (D-83).
 
@@ -294,7 +307,7 @@ Address Map table:
 | History | 5% | Clock icon |
 | Actions | 5% | Edit icon; Delete icon (lucide `Trash2`, destructive color, only shown for unlocked pairs) |
 
-Row editing: edit icon puts row into edit mode. Speaker and Addressee become `<select>` dropdowns populated from the characters list (not free-text — D-83 FK constraint). Self term and Address term become PronounCombo inputs. On edit, the ReciprocaldSuggestionPanel auto-renders below the row.
+Row editing: edit icon puts row into edit mode. Speaker and Addressee become `<select>` dropdowns populated from the characters list (not free-text — D-83 FK constraint). Self term and Address term become PronounCombo inputs. On edit, the ReciprocaldSuggestionPanel auto-renders below the row. "Save pair" and "Discard changes" appear as text links (accent / muted, 12px) to the right of the row.
 
 **Lock behavior for Address-Map rows:**
 - Lock toggle is separate from the Save button. Clicking the LockToggleButton while in edit mode: if either `self_term` or `address_term` is empty/whitespace, the hard-block error appears inline below the lock button: "Both terms must be non-empty before locking a pair." The lock toggle stays disabled (`opacity-50 cursor-not-allowed`) until both terms are filled (D-87).
@@ -305,9 +318,9 @@ Row editing: edit icon puts row into edit mode. Speaker and Addressee become `<s
 
 **"Lock to pin" affordance:** When a pair is UNLOCKED and in edit mode, show a callout banner above the pair form (not a warning — just a blue-tinted info strip using the Running badge background `#1e3a5f`, text `#60a5fa`): "This pair is not locked. An upcoming analysis pass may update these terms. Lock to pin your edit permanently."
 
-**Add Pair flow:** "Add Pair" button opens an inline form at the top of the table. Speaker and Addressee are `<select>` dropdowns (character pickers). Self term and Address term are PronounCombo inputs. ReciprocaldSuggestionPanel appears as soon as both terms are filled. "Add" (accent) + "Cancel" text link. HTTP 422 on empty terms: inline error below the button. Toast on success/failure.
+**Add Pair flow:** "Add Pair" button opens an inline form at the top of the table. Speaker and Addressee are `<select>` dropdowns (character pickers). Self term and Address term are PronounCombo inputs. ReciprocaldSuggestionPanel appears as soon as both terms are filled. "Add Pair" (accent) + "Discard" text link. HTTP 422 on empty terms: inline error below the button. Toast on success/failure.
 
-**Delete pair:** Trash2 icon, destructive color (`text-[#f87171]`), appears only on unlocked pairs (locked pairs show no delete affordance). On click: inline confirmation replaces the icon row: "Delete this pair? [Delete] [Cancel]". Delete button uses destructive background. On confirm: row disappears, toast "Pair deleted."
+**Delete pair:** Trash2 icon, destructive color (`text-[#f87171]`), appears only on unlocked pairs (locked pairs show no delete affordance). On click: inline confirmation replaces the icon row: "Delete this pair? [Delete pair] [Keep pair]". Delete pair button uses destructive background. On confirm: row disappears, toast "Pair deleted."
 
 **Term Dictionary Section:**
 
@@ -326,11 +339,11 @@ Terms table:
 
 **Case-sensitivity note:** A helper note below the section heading (12px muted italic): "Source terms are case-sensitive. 'Minh' and 'minh' are stored separately." This is a correctness cue (D-80 pattern 6 anti-pattern defense).
 
-Row editing: same inline edit-mode pattern as Characters. Category becomes a `<select>` with the four options. Lock toggle is per-row (all fields of one term together).
+Row editing: same inline edit-mode pattern as Characters. Category becomes a `<select>` with the four options. Lock toggle is per-row (all fields of one term together). "Save term" and "Discard changes" appear as text links (accent / muted, 12px) to the right of the row.
 
-Delete term: same destructive inline-confirmation pattern as delete pair.
+Delete term: Trash2 icon, destructive color, appears on unlocked terms. On click: inline confirmation replaces the icon row: "Delete this term? [Delete term] [Keep term]". Delete term button uses destructive background. On confirm: row disappears, toast "Term deleted."
 
-Add Term: inline form at top of table. Source term is a text input. Vietnamese rendering is a text input. Category is a `<select>`. "Add" + "Cancel". On HTTP 422: inline error.
+Add Term: inline form at top of table. Source term is a text input. Vietnamese rendering is a text input. Category is a `<select>`. "Add Term" (accent) + "Discard" text link. On HTTP 422: inline error.
 
 ---
 
@@ -359,18 +372,25 @@ Tone: inherited from Phase 7 — terse, operator-facing, present tense, no marke
 | LockBadge: inference | "Inference" |
 | Hard-block error (empty term on lock) | "Both terms must be non-empty before locking a pair." |
 | Save register CTA | "Save Register" |
-| Save character CTA | "Save" |
-| Save pair CTA | "Save" |
-| Save term CTA | "Save" |
-| Cancel edit link | "Cancel" |
-| Add character CTA | "Add Character" |
-| Add pair CTA | "Add Pair" |
-| Add term CTA | "Add Term" |
-| Add confirm button | "Add" |
+| Save character CTA (row edit) | "Save character" |
+| Save pair CTA (row edit) | "Save pair" |
+| Save term CTA (row edit) | "Save term" |
+| Cancel row-edit link (all sections) | "Discard changes" |
+| Add character CTA (section button) | "Add Character" |
+| Add character confirm button (inline form) | "Add Character" |
+| Add character form cancel link | "Discard" |
+| Add pair CTA (section button) | "Add Pair" |
+| Add pair confirm button (inline form) | "Add Pair" |
+| Add pair form cancel link | "Discard" |
+| Add term CTA (section button) | "Add Term" |
+| Add term confirm button (inline form) | "Add Term" |
+| Add term form cancel link | "Discard" |
 | Delete pair confirm prompt | "Delete this pair?" |
+| Delete pair confirm button | "Delete pair" |
+| Delete pair cancel button | "Keep pair" |
 | Delete term confirm prompt | "Delete this term?" |
-| Delete confirm button | "Delete" |
-| Delete cancel button | "Cancel" |
+| Delete term confirm button | "Delete term" |
+| Delete term cancel button | "Keep term" |
 | Character added toast | "Character added." |
 | Character saved toast | "Changes saved." |
 | Term added toast | "Term added." |
@@ -406,8 +426,8 @@ Tone: inherited from Phase 7 — terse, operator-facing, present tense, no marke
 | Terms table: no records | "No terms. Click Add Term to add the first one." |
 
 **Destructive actions in this phase:**
-- **Delete pair** (Address-Map row): inline `"Delete this pair? [Delete] [Cancel]"`. No modal. Delete is allowed only on unlocked pairs (locked pairs have no delete affordance). Irreversible.
-- **Delete term** (Term Dictionary row): same inline confirmation pattern.
+- **Delete pair** (Address-Map row): inline `"Delete this pair? [Delete pair] [Keep pair]"`. No modal. Delete is allowed only on unlocked pairs (locked pairs have no delete affordance). Irreversible.
+- **Delete term** (Term Dictionary row): inline `"Delete this term? [Delete term] [Keep term]"`. Same pattern.
 - **Unlock a field** (LockToggleButton on a locked row): not treated as destructive — no confirmation required. It loosens the pin but does not change the value.
 - No character delete exists in v1.
 
@@ -424,17 +444,17 @@ Tone: inherited from Phase 7 — terse, operator-facing, present tense, no marke
 ### Edit lifecycle
 
 1. User clicks the Edit icon on a row → row enters edit mode in-place (inputs appear). All other rows remain read-only.
-2. Only one row can be in edit mode at a time per section. Clicking Edit on a second row while the first is dirty: show inline prompt "You have unsaved changes. Discard and edit this row? [Yes] [Cancel]" (no toast — inline text link pattern, same muted-amber inline callout as warning stripe but smaller).
-3. User modifies values → dirty state tracked locally. Save/Cancel text links are visible.
-4. User clicks Save: `PATCH /api/series/{id}/characters/{cid}` (or equivalent endpoint per entity type). On success: row exits edit mode, LockBadge updates from API response. Toast "Changes saved." On error: toast "Failed to save changes. Check the server logs." Row stays in edit mode.
-5. User clicks Cancel: row exits edit mode, all changes discarded. No confirmation (changes are not persisted; Cancel is safe).
+2. Only one row can be in edit mode at a time per section. Clicking Edit on a second row while the first is dirty: show inline prompt "You have unsaved changes. Discard and edit this row? [Yes] [Discard changes]" (no toast — inline text link pattern, same muted-amber inline callout as warning stripe but smaller).
+3. User modifies values → dirty state tracked locally. "Save [entity]" and "Discard changes" text links are visible.
+4. User clicks "Save [entity]": `PATCH /api/series/{id}/characters/{cid}` (or equivalent endpoint per entity type). On success: row exits edit mode, LockBadge updates from API response. Toast "Changes saved." On error: toast "Failed to save changes. Check the server logs." Row stays in edit mode.
+5. User clicks "Discard changes": row exits edit mode, all changes discarded. No confirmation (changes are not persisted; discarding is safe).
 
 ### Lock toggle lifecycle
 
 - LockToggleButton is available in BOTH view mode and edit mode.
 - In view mode (no edit): clicking Lock → sends `PATCH` with current stored value + `lock: true`. On success: LockBadge updates to "Locked". Toast "Field locked."
 - In view mode: clicking Unlock → sends `PATCH` with current stored value + `lock: false`. On success: LockBadge updates to "Inference". Toast "Field unlocked."
-- In edit mode (Address-Map only): the hard-block check runs client-side before the lock request. If either term is empty, the LockToggleButton is `disabled`. The error message "Both terms must be non-empty before locking a pair." appears inline below the lock button. The Save button (without locking) remains enabled.
+- In edit mode (Address-Map only): the hard-block check runs client-side before the lock request. If either term is empty, the LockToggleButton is `disabled`. The error message "Both terms must be non-empty before locking a pair." appears inline below the lock button. The "Save pair" button (without locking) remains enabled.
 
 ### Reciprocal suggestion trigger
 
@@ -543,6 +563,8 @@ No new npm packages are introduced in this phase. All SPA code uses existing dep
 
 10. **BibleTabBar uses `<button>` elements, not `<a>` elements.** Tab switching is client-side state (`useState<Tab>`), not routing. The URL does not change when switching tabs within a series Bible.
 
+11. **CTA label discipline.** All save text links are section-specific: "Save character", "Save pair", "Save term". All row-edit cancel text links are "Discard changes". All add-form cancel text links are "Discard". Inline delete cancel buttons are noun-qualified: "Keep pair" or "Keep term". Never use the bare word "Cancel" or "Save" alone in this phase.
+
 ---
 
 ## Checker Sign-Off
@@ -560,5 +582,6 @@ No new npm packages are introduced in this phase. All SPA code uses existing dep
 
 *Phase: 08-editable-series-bible-ui*
 *UI-SPEC created: 2026-06-02*
+*UI-SPEC revised: 2026-06-02 — checker revision: ban "Cancel" → context-specific labels; single-word CTAs → noun-qualified; focal point declared; 13px suppressed for Phase 8*
 *Source decisions: CONTEXT.md D-79…D-90 (all pre-populated, none re-asked)*
 *Design system: inherited from Phase 7 (07-UI-SPEC.md); no new tokens introduced*
