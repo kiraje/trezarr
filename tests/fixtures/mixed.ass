@@ -1,0 +1,17 @@
+[Script Info]
+ScriptType: v4.00+
+PlayResX: 1920
+PlayResY: 1080
+
+[V4+ Styles]
+Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
+Style: Default,Arial,40,&H00FFFFFF,&H000000FF,&H00000000,&H00000000,0,0,0,0,100,100,0,0,1,2,2,2,10,10,10,1
+Style: Top,Arial,36,&H0000FFFF,&H000000FF,&H00000000,&H00000000,0,0,0,0,100,100,0,0,1,2,2,8,10,10,10,1
+
+[Events]
+Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
+Comment: 0,0:00:00.00,0:00:00.00,Default,,0,0,0,,Scene marker — do not translate
+Dialogue: 0,0:00:01.00,0:00:03.00,Default,,0,0,0,,Normal dialogue line
+Dialogue: 0,0:00:04.00,0:00:07.00,Default,,0,0,0,,Multi-line text\NSecond line here
+Dialogue: 0,0:01:00.00,0:01:05.00,Default,,0,0,0,,{\k50}syl{\k60}la{\k70}ble
+Dialogue: 0,0:02:00.00,0:02:10.00,Top,,0,0,0,,{\p1}m 0 0 l 100 0 100 100 0 100{\p0}

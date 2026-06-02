@@ -1,0 +1,10 @@
+WEBVTT
+
+00:00:01.000 --> 00:00:03.000 position:50% align:center
+Centered at midscreen
+
+00:00:04.000 --> 00:00:06.000 line:90% align:start
+Bottom-left aligned text
+
+00:00:07.000 --> 00:00:09.000 size:50%
+Half-width cue text
