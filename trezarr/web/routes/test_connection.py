@@ -25,6 +25,7 @@ from pyarr import Radarr, Sonarr
 from pyarr.exceptions import PyarrError
 
 from trezarr.arr import _normalize_arr_host
+from trezarr.web.config_writer import SENTINEL
 
 logger = logging.getLogger(__name__)
 
@@ -49,6 +50,44 @@ class LLMTestParams(BaseModel):
     model: str
 
 
+# ── Stored-credential fallback ───────────────────────────────────────────────
+
+def _resolve_api_key(request: Request, field_name: str, provided: str) -> str:
+    """Reuse the stored credential when the UI sends a blank/masked key (D-71).
+
+    The Settings UI shows an already-saved key masked as "set" (MaskedSecretInput)
+    and sends an EMPTY api_key when the operator clicks Test Connection without
+    re-typing it — the sentinel is also treated as "unchanged" defensively. In
+    that case fall back to the server-side stored secret (settings.{field_name})
+    so the test reflects the saved configuration rather than an empty key.
+
+    The stored key is read ONLY here to build the client and is NEVER echoed back
+    or logged (the response/log discipline in each handler still holds).
+
+    Args:
+        request: FastAPI request (reads app.state.settings; falls back to a fresh
+            TrezarrSettings() in test environments without lifespan).
+        field_name: TrezarrSettings SecretStr attribute name (e.g. "llm_api_key").
+        provided: The api_key from the request body.
+
+    Returns:
+        The provided key when the operator typed a new one; otherwise the stored
+        secret's plaintext value (empty string if nothing is stored).
+    """
+    if provided and provided != SENTINEL:
+        return provided
+    try:
+        settings = request.app.state.settings
+    except AttributeError:
+        from trezarr.config import TrezarrSettings  # noqa: PLC0415
+
+        settings = TrezarrSettings()
+    secret = getattr(settings, field_name, None)
+    if secret is None:
+        return provided
+    return secret.get_secret_value() if hasattr(secret, "get_secret_value") else str(secret)
+
+
 # ── Route handlers ─────────────────────────────────────────────────────────────
 
 @router.post("/test/sonarr")
@@ -69,7 +108,7 @@ async def test_sonarr(body: ArrTestParams, request: Request) -> JSONResponse:
     try:
         client = Sonarr(
             host=_normalize_arr_host(body.host),
-            api_key=body.api_key,
+            api_key=_resolve_api_key(request, "sonarr_api_key", body.api_key),
             port=body.port,
             tls=False,
             api_ver="v3",
@@ -110,7 +149,7 @@ async def test_radarr(body: ArrTestParams, request: Request) -> JSONResponse:
     try:
         client = Radarr(
             host=_normalize_arr_host(body.host),
-            api_key=body.api_key,
+            api_key=_resolve_api_key(request, "radarr_api_key", body.api_key),
             port=body.port,
             tls=False,
             api_ver="v3",
@@ -156,8 +195,9 @@ async def test_bazarr(body: ArrTestParams, request: Request) -> JSONResponse:
 
     try:
         url = f"http://{_normalize_arr_host(body.host)}:{body.port}/api/system/status"
+        api_key = _resolve_api_key(request, "bazarr_api_key", body.api_key)
         async with httpx.AsyncClient(timeout=5.0) as client:
-            r = await client.get(url, headers={"X-Api-Key": body.api_key})
+            r = await client.get(url, headers={"X-Api-Key": api_key})
         if r.status_code == 200:
             return JSONResponse({"ok": True})
         else:
@@ -193,7 +233,7 @@ async def test_llm(body: LLMTestParams, request: Request) -> JSONResponse:
 
         client = AsyncOpenAI(
             base_url=body.base_url,
-            api_key=body.api_key,
+            api_key=_resolve_api_key(request, "llm_api_key", body.api_key),
             max_retries=1,
             timeout=15.0,
         )

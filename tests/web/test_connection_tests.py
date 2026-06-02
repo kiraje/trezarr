@@ -73,7 +73,6 @@ def test_sonarr_connection_error(httpx_mock):
 def test_llm_connection_ok(httpx_mock):
     """POST /api/test/llm returns {ok: true} when the LLM endpoint responds (SVC-02)."""
     import asyncio  # noqa: PLC0415
-    import json as json_mod  # noqa: PLC0415
     from trezarr.web.app import create_app  # noqa: PLC0415
     from httpx import AsyncClient, ASGITransport  # noqa: PLC0415
 
@@ -148,7 +147,7 @@ def test_secret_not_in_connection_error(httpx_mock):
     # The raw secret must never appear in the response body
     response_text = json_mod.dumps(data)
     assert secret_key not in response_text, (
-        f"D-71 violation: API key value leaked into connection error response"
+        "D-71 violation: API key value leaked into connection error response"
     )
 
 
@@ -239,3 +238,140 @@ def test_llm_accepts_deprefixed_payload(httpx_mock):
     resp = asyncio.run(_run())
     assert resp.status_code == 200
     assert resp.json().get("ok") is True
+
+
+# ── Regression: masked-key reuse (test reuses stored credential when key blank) ──
+
+
+def test_llm_empty_key_falls_back_to_stored(httpx_mock):
+    """Empty api_key -> the test reuses the server-side stored LLM key (D-71).
+
+    When the operator clicks Test Connection without re-typing the masked ("set")
+    key, the Settings UI sends api_key="". The endpoint must fall back to the
+    stored secret so the test reflects the saved configuration — and the stored
+    key must travel only on the outbound request, never back in the response.
+    """
+    import asyncio  # noqa: PLC0415
+    from pydantic import SecretStr  # noqa: PLC0415
+    from trezarr.config import TrezarrSettings  # noqa: PLC0415
+    from trezarr.web.app import create_app  # noqa: PLC0415
+    from httpx import AsyncClient, ASGITransport  # noqa: PLC0415
+
+    httpx_mock.add_response(
+        url="https://api.tlemons.com/v1/chat/completions",
+        json={
+            "id": "chatcmpl-test",
+            "object": "chat.completion",
+            "created": 1700000000,
+            "model": "ds/deepseek-v4-pro",
+            "choices": [
+                {"index": 0, "message": {"role": "assistant", "content": "p"}, "finish_reason": "stop"}
+            ],
+            "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
+        },
+        status_code=200,
+    )
+
+    app = create_app()
+    app.state.settings = TrezarrSettings(
+        llm_base_url="https://api.tlemons.com/v1",
+        llm_model="ds/deepseek-v4-pro",
+        llm_api_key=SecretStr("stored-llm-key"),
+    )
+
+    async def _run():
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            return await client.post(
+                "/api/test/llm",
+                json={"base_url": "https://api.tlemons.com/v1", "model": "ds/deepseek-v4-pro", "api_key": ""},
+            )
+
+    resp = asyncio.run(_run())
+    assert resp.status_code == 200
+    assert resp.json().get("ok") is True
+    # The stored key authenticated the probe (OpenAI SDK -> Authorization: Bearer <key>)
+    req = httpx_mock.get_request(url="https://api.tlemons.com/v1/chat/completions")
+    assert req.headers.get("authorization") == "Bearer stored-llm-key"
+    # D-71: the stored key must never appear in the response body
+    assert "stored-llm-key" not in resp.text
+
+
+def test_sonarr_empty_key_falls_back_to_stored(httpx_mock):
+    """Empty api_key -> the Sonarr test reuses the stored key (X-Api-Key header)."""
+    import asyncio  # noqa: PLC0415
+    from pydantic import SecretStr  # noqa: PLC0415
+    from trezarr.config import TrezarrSettings  # noqa: PLC0415
+    from trezarr.web.app import create_app  # noqa: PLC0415
+    from httpx import AsyncClient, ASGITransport  # noqa: PLC0415
+
+    httpx_mock.add_response(
+        url="http://192.168.1.100:8989/api/v3/system/status",
+        json={"version": "3.0.9.1549"},
+        status_code=200,
+    )
+
+    app = create_app()
+    app.state.settings = TrezarrSettings(sonarr_api_key=SecretStr("stored-sonarr-key"))
+
+    async def _run():
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            return await client.post(
+                "/api/test/sonarr",
+                json={"host": "192.168.1.100", "port": 8989, "api_key": ""},
+            )
+
+    resp = asyncio.run(_run())
+    assert resp.status_code == 200
+    assert resp.json().get("ok") is True
+    req = httpx_mock.get_request(url="http://192.168.1.100:8989/api/v3/system/status")
+    assert req.headers.get("x-api-key") == "stored-sonarr-key"
+    assert "stored-sonarr-key" not in resp.text
+
+
+def test_typed_key_overrides_stored(httpx_mock):
+    """A freshly-typed key wins over the stored one — fallback only fires when blank.
+
+    Guards against the fallback masking a deliberately-entered new key: the
+    operator typed "fresh-typed-key", which must authenticate the probe instead
+    of the stored "stored-llm-key".
+    """
+    import asyncio  # noqa: PLC0415
+    from pydantic import SecretStr  # noqa: PLC0415
+    from trezarr.config import TrezarrSettings  # noqa: PLC0415
+    from trezarr.web.app import create_app  # noqa: PLC0415
+    from httpx import AsyncClient, ASGITransport  # noqa: PLC0415
+
+    httpx_mock.add_response(
+        url="https://api.tlemons.com/v1/chat/completions",
+        json={
+            "id": "chatcmpl-test",
+            "object": "chat.completion",
+            "created": 1700000000,
+            "model": "ds/deepseek-v4-pro",
+            "choices": [
+                {"index": 0, "message": {"role": "assistant", "content": "p"}, "finish_reason": "stop"}
+            ],
+            "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
+        },
+        status_code=200,
+    )
+
+    app = create_app()
+    app.state.settings = TrezarrSettings(llm_api_key=SecretStr("stored-llm-key"))
+
+    async def _run():
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            return await client.post(
+                "/api/test/llm",
+                json={
+                    "base_url": "https://api.tlemons.com/v1",
+                    "model": "ds/deepseek-v4-pro",
+                    "api_key": "fresh-typed-key",
+                },
+            )
+
+    resp = asyncio.run(_run())
+    assert resp.status_code == 200
+    assert resp.json().get("ok") is True
+    req = httpx_mock.get_request(url="https://api.tlemons.com/v1/chat/completions")
+    assert req.headers.get("authorization") == "Bearer fresh-typed-key"
