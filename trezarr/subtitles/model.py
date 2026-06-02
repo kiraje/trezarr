@@ -84,3 +84,11 @@ class SubDoc:
     separators: list[str]
     leading: str = ""
     trailer: str = ""
+    envelope: object = None
+    """Format-specific document envelope (AssDoc, VttDoc); None for SRT.
+
+    The pipeline (batching, sentinel, gate, engine) never reads ``envelope``;
+    only the codec that wrote it reads it back at ``write_subtitle`` time.
+    Codecs set this field at read time (AssDoc, VttDoc); SRT leaves it None.
+    Typed as ``object`` to avoid circular imports between model.py and codec modules.
+    """
