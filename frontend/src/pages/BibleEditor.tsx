@@ -309,18 +309,34 @@ function CharactersSection({
 
   async function saveCharacter(char: CharacterDTO) {
     setSaving(true);
+    // WR-05: track committed state outside try/catch so partial-save errors can
+    // update the UI to the last authoritative server response before showing toast.
+    let updatedChar: CharacterDTO = char;
+    let partialSave = false;
     try {
-      // Save all modified fields
-      let updatedChar = char;
       for (const [field, value] of Object.entries(editFields)) {
         if (value !== (char[field as keyof CharacterDTO] ?? "")) {
+          // Each PATCH may throw — catch below shows the error toast and stops the loop.
           const result = await patchCharacter(seriesId, char.id, {
             field,
             value,
           });
+          // Track the latest server-authoritative response so the UI reflects committed state.
           updatedChar = result;
         }
       }
+    } catch {
+      // WR-05: partial save — surface the error and keep the edit form open for retry.
+      partialSave = true;
+      showToast({
+        message: "Some fields failed to save. Successfully-saved fields are shown; retry remaining changes.",
+        variant: "error",
+      });
+    } finally {
+      setSaving(false);
+    }
+    // Always update the UI to the last committed server response (works for both full and partial saves).
+    if (updatedChar !== char) {
       setBible((prev) => {
         if (!prev) return prev;
         return {
@@ -330,15 +346,10 @@ function CharactersSection({
           ),
         };
       });
+    }
+    if (!partialSave) {
       setEditingId(null);
       showToast({ message: "Changes saved.", variant: "success" });
-    } catch {
-      showToast({
-        message: "Failed to save changes. Check the server logs.",
-        variant: "error",
-      });
-    } finally {
-      setSaving(false);
     }
   }
 
