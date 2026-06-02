@@ -652,9 +652,22 @@ async def translate_file(
     entry = await ledger.check(str(path))
 
     # Foreign file: dest exists but source_path not in ledger → skip + log (T-02-03-04)
+    # WR-02 / D-110 Case 1.5: before skipping, check if Trezarr owns this vi sidecar
+    # via a DIFFERENT (lower-priority) source path. If so, this is a richer-source
+    # upgrade approved by gap.is_eligible — proceed instead of skipping.
+    # Only skip when check_by_output_path also returns None (truly foreign vi, D-26).
     if entry is None and dest.exists():
-        logger.info("foreign vi sidecar at %s, not ours — skipping %s", dest, path)
-        return TranslationResult(status="skipped")
+        prior_entry = await ledger.check_by_output_path(str(dest))
+        if prior_entry is None:
+            # Truly foreign vi sidecar — not written by Trezarr. D-26: never clobber.
+            logger.info("foreign vi sidecar at %s, not ours — skipping %s", dest, path)
+            return TranslationResult(status="skipped")
+        # Trezarr wrote this vi from a different source (prior_entry.source_path).
+        # The current path is a richer source — proceed with the upgrade (D-110).
+        logger.info(
+            "richer source upgrade: re-translating %s (prior source: %s)",
+            path, prior_entry.source_path,
+        )
 
     # Already done + dest exists + hash matches → idempotent skip
     if (
