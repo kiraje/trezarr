@@ -73,6 +73,11 @@ KINSHIP_RECIPROCAL.update({
 # Split into self_terms and address_terms for gender-aware picker hints.
 KNOWN_PRONOUN_TERMS_SELF: list[str] = [
     "tôi", "con", "em", "anh", "chị", "cháu", "mày", "tao", "bạn",
+    # WR-06: parental/elder self-terms that appear as speaker-side terms in KINSHIP_RECIPROCAL
+    # (bố/mẹ/cha address "con"; ông/bà address "cháu"/"con"; bác/chú/cô/thầy address "cháu"/"em").
+    # Absent from the dropdown forces the user to the "custom…" escape hatch, bypassing the D-86
+    # typo guard for the most common parental pronouns.
+    "bố", "mẹ", "cha", "ông", "bà", "bác", "chú", "cô", "thầy",
 ]
 KNOWN_PRONOUN_TERMS_ADDRESS: list[str] = [
     "bạn", "anh", "chị", "em", "con", "cháu", "ông", "bà", "bố", "mẹ",
