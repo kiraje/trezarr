@@ -2,9 +2,9 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: verifying
-stopped_at: Phase 8 executed — automated verification 9/10 PASSED; HOLDING for human browser UAT (08-HUMAN-UAT.md). Do NOT advance to Phase 9 until the walkthrough is confirmed.
-last_updated: "2026-06-02T03:44:05.490Z"
+status: ready_to_plan
+stopped_at: Phase 08 complete (4/4) — ready to discuss Phase 9
+last_updated: 2026-06-02T04:11:15.037Z
 last_activity: 2026-06-02
 progress:
   total_phases: 10
@@ -21,13 +21,13 @@ progress:
 See: .planning/PROJECT.md (updated 2026-05-31)
 
 **Core value:** Vietnamese subtitles that stay consistent and relationally correct (right pronoun pair, stable names/terms) across an entire series — produced automatically.
-**Current focus:** Phase 08 — editable-series-bible-ui
+**Current focus:** Phase 9 — multi format — ass/ssa + vtt
 
 ## Current Position
 
-Phase: 08 (editable-series-bible-ui) — EXECUTING
-Plan: 4 of 4
-Status: Phase complete — ready for verification
+Phase: 9
+Plan: Not started
+Status: Ready to plan
 Last activity: 2026-06-02
 
 Progress: [██████████] 100%
@@ -36,7 +36,7 @@ Progress: [██████████] 100%
 
 **Velocity:**
 
-- Total plans completed: 31
+- Total plans completed: 35
 - Average duration: 6 min
 - Total execution time: 0.1 hours
 
@@ -51,6 +51,7 @@ Progress: [██████████] 100%
 | 05 | 6 | - | - |
 | 6 | 3 | - | - |
 | 7 | 6 | - | - |
+| 08 | 4 | - | - |
 
 **Recent Trend:**
 
