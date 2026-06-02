@@ -195,7 +195,7 @@ class BazarrClient:
         except httpx.RequestError as exc:
             raise BazarrError(
                 f"Bazarr inventory fetch failed at {display_host}: "
-                f"{type(exc).__name__}: {exc}"
+                f"{type(exc).__name__}"
             ) from exc
 
     async def fetch_movies(self, radarr_movie_id: int | None = None) -> list[SubtitleEntry]:
@@ -239,7 +239,7 @@ class BazarrClient:
         except httpx.RequestError as exc:
             raise BazarrError(
                 f"Bazarr inventory fetch failed at {display_host}: "
-                f"{type(exc).__name__}: {exc}"
+                f"{type(exc).__name__}"
             ) from exc
 
     def _parse_subtitle_entry(self, sub: dict) -> SubtitleEntry:
@@ -315,7 +315,7 @@ class BazarrClient:
         except httpx.RequestError as exc:
             raise BazarrError(
                 f"Bazarr inventory fetch failed at {display_host}: "
-                f"{type(exc).__name__}: {exc}"
+                f"{type(exc).__name__}"
             ) from exc
 
     async def fetch_movie_inventory(self, radarr_movie_id: int) -> list[BazarrInventoryItem]:
@@ -349,5 +349,5 @@ class BazarrClient:
         except httpx.RequestError as exc:
             raise BazarrError(
                 f"Bazarr inventory fetch failed at {display_host}: "
-                f"{type(exc).__name__}: {exc}"
+                f"{type(exc).__name__}"
             ) from exc
