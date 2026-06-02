@@ -1144,15 +1144,17 @@ async def apply_human_edit_term(
     session_factory: async_sessionmaker[AsyncSession],
     *,
     series_id: int,
-    source_term: str,
+    source_term: str | None = None,
+    term_id: int | None = None,
     field: str,
     new_value: Any,
     lock: bool = False,
 ) -> tuple[TermDTO, BibleEventDTO]:
     """Apply a human edit (and optional lock) to a TermDictionary field (D-80).
 
-    Looks up the term by source_term; creates it if it does not exist (using new_value
-    as the initial vietnamese_rendering when field="vietnamese_rendering").
+    Looks up the term by term_id (PK, preferred — used by the PATCH route) or by
+    source_term (fallback — used for the new-row creation path, e.g. from tests).
+    At least one of term_id or source_term must be provided.
     Validates field against MERGEABLE_FIELDS["term_dictionary"] before opening any session
     (T-08-01 defence). Inside one session.begin() transaction: re-reads the row (WR-01),
     sets the new value, reassigns locked_fields as a new list (D-80), emits BibleEvent
@@ -1161,7 +1163,8 @@ async def apply_human_edit_term(
     Args:
         session_factory: Async session factory.
         series_id:       Series the term belongs to.
-        source_term:     Source-language identity key for the term.
+        term_id:         PK of the TermDictionary row (authoritative — used by PATCH route).
+        source_term:     Source-language identity key for the term (used for new-row creation).
         field:           Field to modify (must be in MERGEABLE_FIELDS["term_dictionary"]).
         new_value:       New value to set.
         lock:            If True, add field to locked_fields.
@@ -1171,7 +1174,12 @@ async def apply_human_edit_term(
 
     Raises:
         ValueError: If field is not in MERGEABLE_FIELDS["term_dictionary"].
+        ValueError: If neither term_id nor source_term is provided.
+        ValueError: If term_id is given but the row is not found or belongs to a different series.
     """
+    if term_id is None and source_term is None:
+        raise ValueError("Either term_id or source_term must be provided")
+
     # Pre-session validation — field whitelist security defence (T-08-01)
     allowed = MERGEABLE_FIELDS.get("term_dictionary", frozenset())
     if field not in allowed:
@@ -1181,12 +1189,21 @@ async def apply_human_edit_term(
 
     async with session_factory() as session:
         async with session.begin():
-            # Look up the term by source_term identity key
-            stmt = select(TermDictionary).where(
-                TermDictionary.series_id == series_id,
-                TermDictionary.source_term == source_term,
-            )
-            row = (await session.execute(stmt)).scalar_one_or_none()
+            if term_id is not None:
+                # CR-02: look up by PK (authoritative when called from the PATCH route)
+                row = await session.get(TermDictionary, term_id)
+                if row is None or row.series_id != series_id:
+                    raise ValueError(
+                        f"TermDictionary {term_id} not found in series {series_id}"
+                    )
+                source_term = row.source_term  # ensure error messages are informative
+            else:
+                # Fallback: look up by source_term identity key (creation path)
+                stmt = select(TermDictionary).where(
+                    TermDictionary.series_id == series_id,
+                    TermDictionary.source_term == source_term,
+                )
+                row = (await session.execute(stmt)).scalar_one_or_none()
 
             if row is None:
                 # Create the term row (require vietnamese_rendering for INSERT)

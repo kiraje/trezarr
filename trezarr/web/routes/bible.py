@@ -250,8 +250,9 @@ async def delete_address_map(
 async def patch_term(series_id: int, term_id: int, request: Request) -> JSONResponse:
     """D-80 / BIBLE-08 c2: Edit and optionally lock a term field.
 
-    Note: apply_human_edit_term uses source_term as lookup key (Plan 08-02 contract).
-    The route requires either 'source_term' or 'field'+'value' in the request body.
+    CR-02: The URL term_id path parameter is the authoritative identity key — the store
+    looks up the term by PK (term_id) scoped to series_id. Any source_term in the body
+    is ignored (preventing cross-term writes via a mismatched body identity).
     """
     body = await request.json()
     # T-08-01: validate field against whitelist BEFORE touching DB or acquiring lock
@@ -263,10 +264,6 @@ async def patch_term(series_id: int, term_id: int, request: Request) -> JSONResp
             status_code=422, detail=f"Field '{field}' is not editable for term_dictionary."
         )
 
-    source_term = body.get("source_term")
-    if not source_term:
-        raise HTTPException(status_code=422, detail="source_term is required to identify the term")
-
     session_factory = _get_session_factory(request)
     if session_factory is None:
         raise HTTPException(status_code=503, detail="No DB session available")
@@ -276,10 +273,11 @@ async def patch_term(series_id: int, term_id: int, request: Request) -> JSONResp
 
     async with get_series_lock(series_id):  # D-81: outermost CM
         try:
+            # CR-02: term_id (URL path) is authoritative — look up by PK, not body source_term
             dto, _evt = await apply_human_edit_term(
                 session_factory,
                 series_id=series_id,
-                source_term=source_term,
+                term_id=term_id,
                 field=field,
                 new_value=body.get("value"),
                 lock=body.get("lock", False),
