@@ -303,7 +303,21 @@ Decimal phases appear between their surrounding integers in numeric order.
   3. When multiple sources exist, Trezarr selects the relationally-richest source (prefers Chinese/Korean/Japanese/Thai for East-Asian content over English) and falls back to whatever is available
   4. A user can set per-series overrides for source-language preference, register, and model
 
-**Plans**: TBD
+**Plans:** 4 plans
+
+**Wave 0**
+
+- [ ] 10-01-PLAN.md — Wave 0: RED test scaffold — Bazarr client stubs, source_selection package, gap Case 1.5 / D-110, migration 0003, model override, PATCH overrides route, original_language capture (INTG-02, SRC-01, SRC-02, SVC-05)
+
+**Wave 1** *(blocked on Wave 0 completion — plans 10-02 and 10-03 run in parallel)*
+
+- [ ] 10-02-PLAN.md — Wave 1A: BazarrClient + source_selection/rank.py + source_selection/resolve.py + original_language capture + ledger check_by_output_path + gap.py Case 1.5 + scan.py extensions (INTG-02, SRC-01, SRC-02)
+- [ ] 10-03-PLAN.md — Wave 1B: Migration 0003 + Series ORM override columns + DTOs + set_series_overrides store writer + PATCH /overrides route + LLMClient model-per-call + engine.py threading + cli.py/worker.py wiring (SVC-05)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [ ] 10-04-PLAN.md — Wave 2: BibleEditor Overrides tab (SourcePriorityEditor + model field + register sub-section) + client.ts wrappers + human-verify checkpoint (SVC-05)
+
 **UI hint**: yes
 
 ## Progress
@@ -322,4 +336,4 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 7. Web UI & Service Hardening | 6/6 | Complete    | 2026-06-01 |
 | 8. Editable Series Bible UI | 4/4 | Complete   | 2026-06-02 |
 | 9. Multi-Format — ASS/SSA + VTT | 0/6 | Planning complete | - |
-| 10. Source Selection & Per-Series Overrides | 0/TBD | Not started | - |
+| 10. Source Selection & Per-Series Overrides | 0/4 | Planning complete | - |
