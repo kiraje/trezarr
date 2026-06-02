@@ -4,13 +4,13 @@ milestone: v1.0
 milestone_name: milestone
 status: executing
 stopped_at: Phase 8 UI-SPEC approved
-last_updated: "2026-06-02T02:09:49.348Z"
-last_activity: 2026-06-02 -- Phase 08 planning complete
+last_updated: "2026-06-02T02:16:04.493Z"
+last_activity: 2026-06-02
 progress:
   total_phases: 10
   completed_phases: 7
   total_plans: 34
-  completed_plans: 30
+  completed_plans: 31
   percent: 70
 ---
 
@@ -21,16 +21,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-05-31)
 
 **Core value:** Vietnamese subtitles that stay consistent and relationally correct (right pronoun pair, stable names/terms) across an entire series — produced automatically.
-**Current focus:** Phase 8 — editable series bible ui
+**Current focus:** Phase 08 — editable-series-bible-ui
 
 ## Current Position
 
-Phase: 8
-Plan: Not started
+Phase: 08 (editable-series-bible-ui) — EXECUTING
+Plan: 2 of 4
 Status: Ready to execute
-Last activity: 2026-06-02 -- Phase 08 planning complete
+Last activity: 2026-06-02
 
-Progress: [██████████] 100%
+Progress: [█████████░] 91%
 
 ## Performance Metrics
 
@@ -77,6 +77,7 @@ Progress: [██████████] 100%
 | Phase 07-web-ui-service-hardening P01 | 3 minutes | 2 tasks | 9 files |
 | Phase 07 P02 | 13min | 2 tasks | 13 files |
 | Phase 07-web-ui-service-hardening P06 | 12 | 3 tasks | 6 files |
+| Phase 08 P01 | 5 | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -114,6 +115,7 @@ Recent decisions affecting current work:
 - [Phase ?]: D-67 two-arm crash-resume: reconcile_in_progress (Job rows) + reconcile_in_progress_from_ledger (ProcessedFile rows with no matching Job) as separate functions
 - [Phase ?]: D-68 per-series asyncio.Lock (not Semaphore) serializes same-series episodes; distinct series run concurrently; zero asyncio.Semaphore in worker.py
 - [Phase ?]: Starlette ASGITransport passes inner Router app to lifespan not outer FastAPI instance; engine stored in mutable cell closure for test accessibility
+- [Phase ?]: Phase 08-01: xfail(strict=False) with raises=(ImportError, AssertionError, TypeError) for new-module stubs prevents FAILED when module not yet created
 
 ### Pending Todos
 
@@ -140,6 +142,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-06-02T01:34:40.155Z
+Last session: 2026-06-02T02:15:59.412Z
 Stopped at: Phase 8 UI-SPEC approved
-Resume file: .planning/phases/08-editable-series-bible-ui/08-UI-SPEC.md
+Resume file: None

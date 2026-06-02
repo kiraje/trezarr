@@ -233,11 +233,11 @@ Decimal phases appear between their surrounding integers in numeric order.
   2. An edited field can be locked; locked fields are read-only to Pass-1 merges and survive re-analysis unchanged
   3. A locked correction propagates forward — it appears in subsequent episode translations for at least the next several episodes without reverting
 
-**Plans:** 4 plans
+**Plans:** 1/4 plans executed
 
 **Wave 1**
 
-- [ ] 08-01-PLAN.md — Wave 0: RED test scaffold — tests/bible/test_human_edit.py, tests/web/test_bible_api.py, test_reconcile.py D-90 stub (BIBLE-08, BIBLE-09)
+- [x] 08-01-PLAN.md — Wave 0: RED test scaffold — tests/bible/test_human_edit.py, tests/web/test_bible_api.py, test_reconcile.py D-90 stub (BIBLE-08, BIBLE-09)
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
@@ -298,6 +298,6 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 5. Three-Pass Pronoun Engine | 6/6 | Complete   | 2026-06-01 |
 | 6. Relationship Evolution + Self-Review | 3/3 | Complete    | 2026-06-01 |
 | 7. Web UI & Service Hardening | 6/6 | Complete    | 2026-06-01 |
-| 8. Editable Series Bible UI | 0/4 | Not started | - |
+| 8. Editable Series Bible UI | 1/4 | In Progress|  |
 | 9. Multi-Format — ASS/SSA + VTT | 0/TBD | Not started | - |
 | 10. Source Selection & Per-Series Overrides | 0/TBD | Not started | - |

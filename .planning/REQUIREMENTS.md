@@ -49,8 +49,8 @@ Requirements for initial release. Each maps to roadmap phases.
 - [ ] **BIBLE-05**: The Bible records a Register/tone per series, grounded in media metadata (genre/plot/era from Sonarr/Radarr/TMDB)
 - [ ] **BIBLE-06**: The Bible is carried forward across episodes so a character is addressed consistently from S01E01 to the finale
 - [x] **BIBLE-07**: Trezarr tracks relationship evolution across episodes (e.g. strangers→lovers, enemies→rivals) with episode markers so pronoun choices change correctly over the series
-- [ ] **BIBLE-08**: User can view and edit the Series Bible (characters, address map, term dictionary, register); edits are lockable and survive re-analysis
-- [ ] **BIBLE-09**: Locked corrections propagate forward to all subsequent episode translations (the human override valve)
+- [x] **BIBLE-08**: User can view and edit the Series Bible (characters, address map, term dictionary, register); edits are lockable and survive re-analysis
+- [x] **BIBLE-09**: Locked corrections propagate forward to all subsequent episode translations (the human override valve)
 
 ### Pronoun Attribution
 
@@ -135,8 +135,8 @@ Which phases cover which requirements. Populated during roadmap creation.
 | BIBLE-05 | Phase 4 | Pending |
 | BIBLE-06 | Phase 4 | Pending |
 | BIBLE-07 | Phase 6 | Complete |
-| BIBLE-08 | Phase 8 | Pending |
-| BIBLE-09 | Phase 8 | Pending |
+| BIBLE-08 | Phase 8 | Complete |
+| BIBLE-09 | Phase 8 | Complete |
 | PRON-01 | Phase 5 | Complete |
 | PRON-02 | Phase 5 | Complete |
 | PRON-03 | Phase 5 | Complete |
