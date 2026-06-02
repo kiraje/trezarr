@@ -60,16 +60,43 @@ WORKDIR /app
 # Copy dependency manifests first (layer cache)
 COPY pyproject.toml uv.lock ./
 
-# Install production dependencies only (no dev extras, editable install)
-RUN uv sync --frozen --no-dev --no-editable
+# Phase 1 — install ONLY third-party dependencies (NOT the project itself), so
+# this expensive layer stays cached when only app source changes. The trezarr
+# package is installed in phase 2 below, once its source has been copied in.
+RUN uv sync --frozen --no-dev --no-install-project
+
+# Put the uv-created virtualenv on PATH so the `trezarr` console script
+# (created by the phase-2 sync at /app/.venv/bin/trezarr) is resolvable. Without
+# this the entrypoint's `gosu … trezarr serve` fails with
+# `exec: "trezarr": executable file not found in $PATH`.
+ENV PATH="/app/.venv/bin:$PATH"
 
 # Copy application source
 COPY trezarr/ ./trezarr/
 COPY alembic/ ./alembic/
 COPY alembic.ini ./
 
-# Copy built SPA from node-builder stage (FastAPI serves via StaticFiles)
+# Copy built SPA from node-builder stage (FastAPI serves via StaticFiles).
+# Copied BEFORE the phase-2 sync so the SPA ships inside the package tree.
 COPY --from=node-builder /app/trezarr/web/static ./trezarr/web/static
+
+# Phase 2 — now that the source (and built SPA) are present, install the trezarr
+# project itself into the venv. This creates the `trezarr` console script and
+# makes `import trezarr` resolve at runtime; without it the daemon dies with
+# `ModuleNotFoundError: No module named 'trezarr'`. The editable install points
+# at /app/trezarr, so the SPA is served from the real tree (StaticFiles resolves
+# static/ relative to trezarr/web/app.py's __file__) — no wheel-data or
+# gitignore packaging surprises.
+RUN uv sync --frozen --no-dev
+
+# Normalize permissions: the entrypoint drops to an ARBITRARY runtime UID/GID
+# (PUID/PGID, default 1000) via gosu, so every file under /app must be readable
+# and every directory traversable by that user. COPY preserves the build
+# context's source modes — on some hosts a package dir lands mode 700/root,
+# which makes the non-root runtime fail with `ModuleNotFoundError` when it
+# can't traverse it. `a+rX` adds read for all + traverse on directories (app
+# code is not secret), keeping the privilege-drop design intact.
+RUN chmod -R a+rX /app
 
 # Copy PUID/PGID entrypoint
 COPY entrypoint.sh /entrypoint.sh
