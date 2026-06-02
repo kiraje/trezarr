@@ -294,6 +294,10 @@ def create_app(settings: TrezarrSettings | None = None) -> FastAPI:
     from trezarr.web.routes.jobs import router as jobs_router  # noqa: PLC0415
     app.include_router(jobs_router, prefix="/api")
 
+    # Bible editor endpoints (BIBLE-08) — registered before StaticFiles (Pitfall E)
+    from trezarr.web.routes.bible import router as bible_router  # noqa: PLC0415
+    app.include_router(bible_router, prefix="/api")
+
     # POST /webhook — Sonarr/Radarr/Bazarr inbound webhooks (AUTO-02, D-66)
     # Registered BEFORE StaticFiles (Pitfall E: StaticFiles matches all remaining paths)
     from trezarr.web.routes.webhook import router as webhook_router  # noqa: PLC0415
