@@ -1715,6 +1715,12 @@ async def set_series_overrides(
             if row is None:
                 raise ValueError(f"Series {series_id} not found")
 
+            # WR-04: capture the prior override values off the live in-txn row
+            # BEFORE reassigning, so the audit trail records what actually changed
+            # (D-32 audit-trail completeness — old_value must not be hardcoded None).
+            old_src = row.source_lang_override
+            old_mdl = row.model_override
+
             # Normalize: empty list [] treated as NULL (cleared override)
             src_override = source_lang_override if source_lang_override else None
             mdl_override = model_override or None
@@ -1729,7 +1735,10 @@ async def set_series_overrides(
                 entity_type="series",
                 entity_id=series_id,
                 field="overrides",
-                old_value=None,
+                old_value={
+                    "source_lang_override": old_src,
+                    "model_override": old_mdl,
+                },
                 new_value={
                     "source_lang_override": src_override,
                     "model_override": mdl_override,

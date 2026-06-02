@@ -13,7 +13,12 @@ from __future__ import annotations
 from sqlalchemy import select
 
 from trezarr.bible.models import BibleEvent
-from trezarr.bible.store import get_character, merge_inferred, upsert_character
+from trezarr.bible.store import (
+    get_character,
+    merge_inferred,
+    set_series_overrides,
+    upsert_character,
+)
 
 
 async def _create_series(session_factory, arr_series_id=1):
@@ -159,3 +164,66 @@ async def test_bible_event_is_append_only_never_mutated_by_merge(session_factory
     second_row = next(e for e in all_events if e.id == second_event_id)
     assert second_row.old_value == "spy"
     assert second_row.new_value == "double_agent"
+
+
+# ---------------------------------------------------------------------------
+# Test 17 (WR-04): set_series_overrides records the ACTUAL prior override value
+# in the bible_event audit row — not a hardcoded None.
+# ---------------------------------------------------------------------------
+
+async def test_set_series_overrides_records_prior_value_on_second_update(session_factory):
+    """WR-04: a second override update audits the prior values, not None.
+
+    The first update's bible_event old_value is the unset state (None/None); the
+    second update's old_value must reflect the FIRST update's persisted values so
+    the append-only audit trail is complete (D-32 audit-trail completeness).
+    """
+    series_id = await _create_series(session_factory, arr_series_id=410)
+
+    # First update — prior override values are unset (None / None)
+    await set_series_overrides(
+        session_factory,
+        series_id=series_id,
+        source_lang_override=["ko", "en"],
+        model_override="gpt-4o-mini",
+    )
+
+    # Second update — prior values should be the first update's values
+    await set_series_overrides(
+        session_factory,
+        series_id=series_id,
+        source_lang_override=["ja"],
+        model_override="gpt-4o",
+    )
+
+    async with session_factory() as session:
+        events = (
+            await session.execute(
+                select(BibleEvent)
+                .where(
+                    BibleEvent.entity_id == series_id,
+                    BibleEvent.field == "overrides",
+                )
+                .order_by(BibleEvent.id)
+            )
+        ).scalars().all()
+
+    assert len(events) == 2, f"expected 2 override audit events, found {len(events)}"
+    first, second = events[0], events[1]
+
+    # First event: prior state was unset
+    assert first.old_value == {"source_lang_override": None, "model_override": None}
+    assert first.new_value == {
+        "source_lang_override": ["ko", "en"],
+        "model_override": "gpt-4o-mini",
+    }
+
+    # Second event: old_value reflects the FIRST update's values (WR-04 — not None)
+    assert second.old_value == {
+        "source_lang_override": ["ko", "en"],
+        "model_override": "gpt-4o-mini",
+    }
+    assert second.new_value == {
+        "source_lang_override": ["ja"],
+        "model_override": "gpt-4o",
+    }
