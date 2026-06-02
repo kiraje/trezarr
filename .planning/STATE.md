@@ -2,9 +2,9 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: milestone_complete
-stopped_at: Milestone complete (Phase 10 was final phase)
-last_updated: 2026-06-02T12:46:33.650Z
+status: in_progress
+stopped_at: Phase 9 code blockers (CR-01/CR-02/WR-01) fixed & merged (4052d90); awaiting re-verify + 2 human visual UATs
+last_updated: 2026-06-02T16:13:14Z
 last_activity: 2026-06-02
 progress:
   total_phases: 10
@@ -21,16 +21,18 @@ progress:
 See: .planning/PROJECT.md (updated 2026-05-31)
 
 **Core value:** Vietnamese subtitles that stay consistent and relationally correct (right pronoun pair, stable names/terms) across an entire series — produced automatically.
-**Current focus:** Milestone complete
+**Current focus:** Phase 9 — Multi-Format ASS/SSA + VTT (code blockers fixed; pending re-verify + human visual UAT)
 
 ## Current Position
 
-Phase: 10
-Plan: Not started
-Status: Milestone complete
+Phase: 9
+Plan: 09-06 — human visual UAT (final gate)
+Status: Code blockers CR-01/CR-02/WR-01 fixed & merged (4052d90); awaiting re-verify + 2 visual UATs
 Last activity: 2026-06-02
 
-Progress: [██████████] 98%
+Progress: [█████████░] 90%
+
+> NOTE (2026-06-02): A prior `status: milestone_complete` here was a concurrent-write artifact — the Phase 10 `--auto` run (treating itself as the final phase) overwrote shared STATE while Phase 9 was still `gaps_found`. Milestone is 9/10 (90%): Phase 9's 3 code blockers are now fixed, leaving re-verification + the 2 human visual UATs (artifacts staged at /tmp/trezarr_uat/).
 
 ## Performance Metrics
 
