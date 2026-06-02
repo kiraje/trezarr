@@ -36,6 +36,14 @@ VN_DIACRITIC_RE = re.compile(r'[Ḁ-ỿƠơƯư]')
 # the Vietnamese diacritic ratio denominator (D-17).
 ALLOWLIST_RE = re.compile(r'^[\W\d\s♪♫…\.]+$')
 
+# Lines that consist entirely of sentinel placeholder tokens after tag extraction
+# have no natural-language content and must not count toward the VI diacritic ratio
+# denominator.  A pure-tag cue (e.g. "{\an8}{\pos(960,50)}") becomes "<<T0>><<T1>>"
+# after sentinel extraction — SENTINEL_ONLY_RE matches that form.
+# Anchored (^ and $) and applied per-line to short strings; no catastrophic
+# backtracking path (T-09-03-C, ASVS L1 V5).
+SENTINEL_ONLY_RE = re.compile(r'^(<<T\d+>>\s*)*$')
+
 # Backstop check for orphan sentinel tokens that were not reinserted (D-12/D-16 check 6)
 SENTINEL_RE = re.compile(r'<<T\d+>>')
 
@@ -82,11 +90,18 @@ def _check_untranslated(
     vi_count = 0
 
     for i, (trn_line, src_line) in enumerate(zip(translated.lines, source.lines)):
+        # D-99/D-98: opaque pass-through cues (karaoke, drawing) — intentionally
+        # untranslated.  SubLine.raw is set by the codec at parse time to signal
+        # verbatim write-back.  These cues must never count toward the VI ratio.
+        if trn_line.raw is not None:
+            continue
         text = trn_line.text.strip()
         if not text:
             continue  # caught by check 2 before this; defensive skip
         if ALLOWLIST_RE.match(text):
             continue  # legitimately unchanged — excluded from ratio
+        if SENTINEL_ONLY_RE.match(text):
+            continue  # pure-tag cue — no natural language after sentinel extraction
         translatable_indices.append(i)
         if VN_DIACRITIC_RE.search(text):
             vi_count += 1
@@ -196,6 +211,12 @@ def validate_subdoc(
 
     # Check 2: no empty/whitespace-only translated lines
     for i, sl in enumerate(translated.lines):
+        # D-99/D-98: opaque pass-through cues have SubLine.raw set; the codec
+        # guarantees they are non-empty by construction.  Skip to avoid any
+        # accidental false-alarm if a future codec bug accidentally sets an empty
+        # text alongside a non-None raw.
+        if sl.raw is not None:
+            continue
         if not sl.text.strip():
             raise GateError(GateFailure(
                 2,

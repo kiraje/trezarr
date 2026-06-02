@@ -1,7 +1,4 @@
-"""Wave 0 RED stubs: gate allowlist extension tests for karaoke, drawing, and tag-only cues (D-102).
-
-All tests are xfail stubs — the validate_subdoc extension (skip raw-set cues and
-SENTINEL_ONLY_RE) lands in Wave 1. Tests will go GREEN in Wave 1.
+"""Gate allowlist extension tests for karaoke, drawing, and tag-only cues (D-102).
 
 Covers:
   D-102 — Karaoke cue (SubLine.raw set) does not raise GateError at check 3
@@ -57,14 +54,10 @@ def _settings():
 
 
 # ---------------------------------------------------------------------------
-# Allowlist tests (xfail until Wave 1 extension)
+# Allowlist tests
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(
-    strict=False,
-    reason="validate_subdoc raw-cue skip (D-102) not yet implemented (Wave 1)",
-)
 def test_karaoke_cue_allowlisted():
     r"""Karaoke SubLine (raw set) must pass check 3 without GateError (D-102 / D-99).
 
@@ -94,10 +87,6 @@ def test_karaoke_cue_allowlisted():
         )
 
 
-@pytest.mark.xfail(
-    strict=False,
-    reason="validate_subdoc raw-cue skip (D-102) not yet implemented (Wave 1)",
-)
 def test_drawing_cue_allowlisted():
     r"""Drawing-run SubLine (raw set) must pass check 3 without GateError (D-102 / D-98).
 
@@ -124,10 +113,6 @@ def test_drawing_cue_allowlisted():
         )
 
 
-@pytest.mark.xfail(
-    strict=False,
-    reason="SENTINEL_ONLY_RE allowlist (D-102) not yet implemented (Wave 1)",
-)
 def test_pure_tag_cue_allowlisted():
     """SubLine.text = '<<T0>><<T1>>' (pure sentinel tokens) must be allowlisted at check 3 (D-102).
 
@@ -159,10 +144,6 @@ def test_pure_tag_cue_allowlisted():
             )
 
 
-@pytest.mark.xfail(
-    strict=False,
-    reason="validate_subdoc check 2 raw-cue skip (D-102) not yet implemented (Wave 1)",
-)
 def test_check2_skips_raw_lines():
     """Check 2 (no empty text) must not raise for a raw-set SubLine with non-empty text (D-102).
 
