@@ -20,7 +20,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 5: Three-Pass Pronoun Engine** - Analyze → translate with the directed Address Map + speaker/addressee attribution to apply correct Vietnamese pronouns (completed 2026-06-01)
 - [x] **Phase 6: Relationship Evolution + Self-Review** - Track relationship shifts across episodes and run an LLM self-critique pass before finalizing (completed 2026-06-01)
 - [x] **Phase 7: Web UI & Service Hardening** - Dockerized long-running service with config/queue/history/logs/retry, monitoring, and crash-safe resumption (completed 2026-06-01)
-- [ ] **Phase 8: Editable Series Bible UI** - View, correct, and lock Bible fields so human overrides propagate forward (the override valve)
+- [x] **Phase 8: Editable Series Bible UI** - View, correct, and lock Bible fields so human overrides propagate forward (the override valve) (completed 2026-06-02)
 - [ ] **Phase 9: Multi-Format — ASS/SSA + VTT** - Translate ASS/SSA and VTT while preserving styling, tags, positioning, and cue settings byte-identical
 - [ ] **Phase 10: Source Selection & Per-Series Overrides** - Read Bazarr's subtitle inventory and pick the source language whose relational system best serves Vietnamese; per-series tuning
 
@@ -233,7 +233,7 @@ Decimal phases appear between their surrounding integers in numeric order.
   2. An edited field can be locked; locked fields are read-only to Pass-1 merges and survive re-analysis unchanged
   3. A locked correction propagates forward — it appears in subsequent episode translations for at least the next several episodes without reverting
 
-**Plans:** 3/4 plans executed
+**Plans:** 4/4 plans complete
 
 **Wave 1**
 
@@ -249,7 +249,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 
 **Wave 4** *(blocked on Wave 3 completion)*
 
-- [ ] 08-04-PLAN.md — Wave 3: SPA layer — api/client.ts wrappers, LockBadge, LockToggleButton, PronounCombo, FieldHistoryPanel, ReciprocalSuggestionPanel, BibleList, BibleEditor, App.tsx + AppShell.tsx (D-84, D-85, D-86, D-87, D-88) + human-verify checkpoint (BIBLE-08)
+- [x] 08-04-PLAN.md — Wave 3: SPA layer — api/client.ts wrappers, LockBadge, LockToggleButton, PronounCombo, FieldHistoryPanel, ReciprocalSuggestionPanel, BibleList, BibleEditor, App.tsx + AppShell.tsx (D-84, D-85, D-86, D-87, D-88) + human-verify checkpoint (BIBLE-08)
 
 **UI hint**: yes
 
@@ -298,6 +298,6 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 5. Three-Pass Pronoun Engine | 6/6 | Complete   | 2026-06-01 |
 | 6. Relationship Evolution + Self-Review | 3/3 | Complete    | 2026-06-01 |
 | 7. Web UI & Service Hardening | 6/6 | Complete    | 2026-06-01 |
-| 8. Editable Series Bible UI | 3/4 | In Progress|  |
+| 8. Editable Series Bible UI | 4/4 | Complete   | 2026-06-02 |
 | 9. Multi-Format — ASS/SSA + VTT | 0/TBD | Not started | - |
 | 10. Source Selection & Per-Series Overrides | 0/TBD | Not started | - |
