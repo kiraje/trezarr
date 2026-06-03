@@ -437,7 +437,7 @@ Plans:
 
 **Wave 3** *(blocked on Wave 1 + Wave 2 completion)*
 
-- [ ] 14-05-PLAN.md — Wave 3: SubtitleBadge.tsx (audio/source/vi badges, aria-label, shape cue) + SeriesDetail.tsx real page (Accordion seasons, episode table, badges, Translate episode + season, bazarr suppression, useParams guard) (LIB-03, LIB-04, LIB-05)
+- [x] 14-05-PLAN.md — Wave 3: SubtitleBadge.tsx (audio/source/vi badges, aria-label, shape cue) + SeriesDetail.tsx real page (Accordion seasons, episode table, badges, Translate episode + season, bazarr suppression, useParams guard) (LIB-03, LIB-04, LIB-05)
 
 **Wave 4** *(blocked on Wave 3 completion)*
 
@@ -495,6 +495,6 @@ v1.1 phases execute in numeric order: 11 → 12 → 13 (parallel-eligible with 1
 | 11. shadcn Foundation & Purple Theme | 3/3 | Complete    | 2026-06-03 |
 | 12. App Shell + Route Restructure | 1/1 | Complete    | 2026-06-03 |
 | 13. Backend Episodes Enrichment | 3/3 | Complete    | 2026-06-03 |
-| 14. New Library Pages + Nav Badge Wiring | 4/6 | In Progress|  |
+| 14. New Library Pages + Nav Badge Wiring | 5/6 | In Progress|  |
 | 15. Reskin Existing Pages | 0/TBD | Not started | - |
 | 16. Docker Rebuild + Live Smoke Test | 0/TBD | Not started | - |
