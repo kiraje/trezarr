@@ -11,6 +11,7 @@
  */
 import { useEffect, useRef, useState } from "react";
 import PronounCombo from "./PronounCombo";
+import { Button } from "./ui/button";
 
 interface ReciprocalPair {
   self_term: string;
@@ -50,12 +51,12 @@ export default function ReciprocalSuggestionPanel({
   return (
     <div
       role="complementary"
-      className="bg-bg-surface border border-[#2d3148] rounded p-4 mt-2"
+      className="bg-card border border-border rounded p-4 mt-2"
     >
       <h3
         ref={headingRef}
         tabIndex={-1}
-        className="text-xs font-semibold text-text-primary mb-3 focus:outline-none"
+        className="text-xs font-semibold text-foreground mb-3 focus:outline-none"
       >
         Reciprocal pair (auto-suggested)
       </h3>
@@ -64,7 +65,7 @@ export default function ReciprocalSuggestionPanel({
         <div className="flex flex-col gap-3">
           <div className="flex gap-3 items-center">
             <div className="flex-1">
-              <label className="text-xs text-text-muted block mb-1">
+              <label className="text-xs text-muted-foreground block mb-1">
                 Self term (reverse)
               </label>
               <PronounCombo
@@ -75,7 +76,7 @@ export default function ReciprocalSuggestionPanel({
               />
             </div>
             <div className="flex-1">
-              <label className="text-xs text-text-muted block mb-1">
+              <label className="text-xs text-muted-foreground block mb-1">
                 Address term (reverse)
               </label>
               <PronounCombo
@@ -87,9 +88,10 @@ export default function ReciprocalSuggestionPanel({
             </div>
           </div>
           <div className="flex items-center gap-4">
-            <button
+            <Button
               type="button"
-              className="text-xs text-accent"
+              variant="default"
+              size="sm"
               onClick={() =>
                 onConfirm({
                   self_term: recSelfTerm,
@@ -98,28 +100,31 @@ export default function ReciprocalSuggestionPanel({
               }
             >
               Confirm reciprocal
-            </button>
-            <button
+            </Button>
+            <Button
               type="button"
-              className="text-xs text-text-muted"
+              variant="ghost"
+              size="sm"
               onClick={onDismiss}
             >
               Skip — set manually later
-            </button>
+            </Button>
           </div>
         </div>
       ) : (
         <div className="flex flex-col gap-2">
-          <p className="text-xs text-text-muted">
+          <p className="text-xs text-muted-foreground">
             No known reciprocal for this pair. Set the reverse pair manually.
           </p>
-          <button
+          <Button
             type="button"
-            className="text-xs text-text-muted self-start"
+            variant="ghost"
+            size="sm"
+            className="self-start"
             onClick={onDismiss}
           >
             Dismiss
-          </button>
+          </Button>
         </div>
       )}
     </div>

@@ -1022,24 +1022,24 @@ function AddressMapSection({
   }
 
   return (
-    <SectionCard>
-      <div className="flex items-center justify-between">
-        <h2 className="text-base font-semibold text-text-primary">
-          Address Map
-        </h2>
-        <button
+    <Card>
+      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-4">
+        <CardTitle>Address Map</CardTitle>
+        <Button
           type="button"
-          className="text-sm text-accent px-3 py-1 rounded border border-[#3b82f6] hover:bg-[#1e3a5f]"
+          variant="outline"
+          size="sm"
           onClick={() => setShowAddForm(true)}
         >
           Add Pair
-        </button>
-      </div>
+        </Button>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-4">
 
       {showAddForm && (
-        <div className="bg-bg-base border border-[#2d3148] rounded p-3 flex flex-wrap gap-3 items-end">
+        <div className="border border-border rounded p-3 flex flex-wrap gap-3 items-end">
           <div>
-            <label className="text-xs text-text-muted block mb-1">
+            <label className="text-xs text-muted-foreground block mb-1">
               Speaker
             </label>
             <select
@@ -1050,7 +1050,7 @@ function AddressMapSection({
                   speaker_character_id: e.target.value,
                 }))
               }
-              className="h-9 bg-bg-surface border border-[#2d3148] rounded px-2 text-sm text-text-primary focus:outline-[#3b82f6] focus:outline-2 focus:outline-offset-2"
+              className="h-9 rounded-md border border-border bg-background px-3 text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
               <option value="">—</option>
               {bible.characters.map((c) => (
@@ -1061,7 +1061,7 @@ function AddressMapSection({
             </select>
           </div>
           <div>
-            <label className="text-xs text-text-muted block mb-1">
+            <label className="text-xs text-muted-foreground block mb-1">
               Addressee
             </label>
             <select
@@ -1072,7 +1072,7 @@ function AddressMapSection({
                   addressee_character_id: e.target.value,
                 }))
               }
-              className="h-9 bg-bg-surface border border-[#2d3148] rounded px-2 text-sm text-text-primary focus:outline-[#3b82f6] focus:outline-2 focus:outline-offset-2"
+              className="h-9 rounded-md border border-border bg-background px-3 text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
               <option value="">—</option>
               {bible.characters.map((c) => (
@@ -1083,7 +1083,7 @@ function AddressMapSection({
             </select>
           </div>
           <div>
-            <label className="text-xs text-text-muted block mb-1">
+            <label className="text-xs text-muted-foreground block mb-1">
               Self term
             </label>
             <PronounCombo
@@ -1093,7 +1093,7 @@ function AddressMapSection({
             />
           </div>
           <div>
-            <label className="text-xs text-text-muted block mb-1">
+            <label className="text-xs text-muted-foreground block mb-1">
               Address term
             </label>
             <PronounCombo
@@ -1105,46 +1105,48 @@ function AddressMapSection({
             />
           </div>
           <div className="flex gap-2">
-            <button
+            <Button
               type="button"
-              className="text-sm text-accent"
+              variant="default"
+              size="sm"
               onClick={handleAddPair}
             >
               Add Pair
-            </button>
-            <button
+            </Button>
+            <Button
               type="button"
-              className="text-sm text-text-muted"
+              variant="ghost"
+              size="sm"
               onClick={() => setShowAddForm(false)}
             >
               Discard
-            </button>
+            </Button>
           </div>
         </div>
       )}
 
       {bible.address_map.length === 0 ? (
-        <p className="text-xs text-text-muted">
+        <p className="text-xs text-muted-foreground">
           No address pairs. Click Add Pair to add the first one.
         </p>
       ) : (
         <div className="overflow-x-auto">
           <table className="w-full">
             <thead>
-              <tr className="border-b border-[#2d3148]">
-                <th scope="col" className="px-3 py-2 text-left text-xs text-text-muted font-normal" style={{ width: "18%" }}>Speaker</th>
-                <th scope="col" className="px-3 py-2 text-left text-xs text-text-muted font-normal" style={{ width: "18%" }}>Addressee</th>
-                <th scope="col" className="px-3 py-2 text-left text-xs text-text-muted font-normal" style={{ width: "12%" }}>Self term</th>
-                <th scope="col" className="px-3 py-2 text-left text-xs text-text-muted font-normal" style={{ width: "12%" }}>Address term</th>
-                <th scope="col" className="px-3 py-2 text-left text-xs text-text-muted font-normal" style={{ width: "10%" }}>Lock</th>
-                <th scope="col" className="px-3 py-2 text-left text-xs text-text-muted font-normal" style={{ width: "10%" }}>Events</th>
-                <th scope="col" className="px-3 py-2 text-left text-xs text-text-muted font-normal" style={{ width: "10%" }}>From</th>
-                <th scope="col" className="px-3 py-2 text-left text-xs text-text-muted font-normal" style={{ width: "5%" }}>History</th>
-                <th scope="col" className="px-3 py-2 text-left text-xs text-text-muted font-normal" style={{ width: "5%" }}>Actions</th>
+              <tr className="border-b border-border">
+                <th scope="col" className="px-3 py-2 text-left text-xs text-muted-foreground font-normal" style={{ width: "18%" }}>Speaker</th>
+                <th scope="col" className="px-3 py-2 text-left text-xs text-muted-foreground font-normal" style={{ width: "18%" }}>Addressee</th>
+                <th scope="col" className="px-3 py-2 text-left text-xs text-muted-foreground font-normal" style={{ width: "12%" }}>Self term</th>
+                <th scope="col" className="px-3 py-2 text-left text-xs text-muted-foreground font-normal" style={{ width: "12%" }}>Address term</th>
+                <th scope="col" className="px-3 py-2 text-left text-xs text-muted-foreground font-normal" style={{ width: "10%" }}>Lock</th>
+                <th scope="col" className="px-3 py-2 text-left text-xs text-muted-foreground font-normal" style={{ width: "10%" }}>Events</th>
+                <th scope="col" className="px-3 py-2 text-left text-xs text-muted-foreground font-normal" style={{ width: "10%" }}>From</th>
+                <th scope="col" className="px-3 py-2 text-left text-xs text-muted-foreground font-normal" style={{ width: "5%" }}>History</th>
+                <th scope="col" className="px-3 py-2 text-left text-xs text-muted-foreground font-normal" style={{ width: "5%" }}>Actions</th>
               </tr>
             </thead>
             <tbody>
-              {bible.address_map.map((pair, idx) => {
+              {bible.address_map.map((pair) => {
                 const isLocked =
                   pair.locked_fields.includes("self_term") ||
                   pair.locked_fields.includes("address_term");
@@ -1166,19 +1168,14 @@ function AddressMapSection({
                   <>
                     <tr
                       key={pair.id}
-                      className={[
-                        "h-10 border-b border-[#2d3148]",
-                        idx % 2 === 1 ? "bg-bg-stripe" : "",
-                      ]
-                        .filter(Boolean)
-                        .join(" ")}
+                      className="h-10 border-b border-border"
                     >
                       {isEditing ? (
                         <>
-                          <td className="px-3 text-sm text-text-primary">
+                          <td className="px-3 text-sm text-foreground">
                             {characterName(pair.speaker_character_id)}
                           </td>
-                          <td className="px-3 text-sm text-text-primary">
+                          <td className="px-3 text-sm text-foreground">
                             {characterName(pair.addressee_character_id)}
                           </td>
                           <td className="px-2">
@@ -1211,7 +1208,7 @@ function AddressMapSection({
                               disabled={hardBlocked}
                             />
                           </td>
-                          <td className="px-3 text-xs text-text-muted">
+                          <td className="px-3 text-xs text-muted-foreground">
                             {bible.relationship_events.filter(
                               (e) =>
                                 (e.character_a_id ===
@@ -1224,81 +1221,87 @@ function AddressMapSection({
                                     pair.addressee_character_id),
                             ).length}
                           </td>
-                          <td className="px-3 text-xs text-text-muted">
+                          <td className="px-3 text-xs text-muted-foreground">
                             {pair.valid_from_episode ?? "—"}
                           </td>
                           <td className="px-3">
-                            <button
+                            <Button
                               type="button"
+                              variant="ghost"
+                              size="icon"
                               aria-label="View field history"
                               onClick={() =>
                                 setHistoryOpenId(
                                   historyOpenId === pair.id ? null : pair.id,
                                 )
                               }
-                              className="text-text-muted hover:text-accent"
                             >
                               <Clock size={14} />
-                            </button>
+                            </Button>
                           </td>
                           <td className="px-3 flex items-center gap-1 h-10 flex-wrap">
-                            <button
+                            <Button
                               type="button"
-                              className="text-xs text-accent whitespace-nowrap"
+                              variant="default"
+                              size="sm"
                               disabled={saving}
                               onClick={() => savePair(pair)}
                             >
-                              {saving ? "Saving…" : "Save pair"}
-                            </button>
-                            <button
+                              {saving ? "Saving…" : "Save"}
+                            </Button>
+                            <Button
                               type="button"
-                              className="text-xs text-text-muted whitespace-nowrap"
+                              variant="ghost"
+                              size="sm"
                               onClick={discardEditPair}
                             >
-                              Discard changes
-                            </button>
+                              Discard
+                            </Button>
                           </td>
                         </>
                       ) : deleteConfirmId === pair.id ? (
                         <>
                           <td
                             colSpan={7}
-                            className="px-3 text-xs text-text-primary"
+                            className="px-3 text-xs text-foreground"
                           >
                             Delete this pair?
                           </td>
                           <td colSpan={2} className="px-3">
                             <div className="flex gap-2">
-                              <button
+                              <Button
                                 type="button"
+                                variant="ghost"
+                                size="sm"
                                 aria-label="Confirm delete"
-                                className="text-xs text-[#f87171]"
+                                className="text-destructive hover:text-destructive"
                                 onClick={() => handleDeletePair(pair.id)}
                               >
                                 Delete pair
-                              </button>
-                              <button
+                              </Button>
+                              <Button
                                 type="button"
-                                className="text-xs text-text-muted"
+                                variant="ghost"
+                                size="sm"
                                 onClick={() => setDeleteConfirmId(null)}
                               >
                                 Keep pair
-                              </button>
+                              </Button>
                             </div>
                           </td>
                         </>
                       ) : (
                         <>
-                          <td className="px-3 text-sm text-text-primary">
+                          <td className="px-3 text-sm text-foreground">
                             {characterName(pair.speaker_character_id)}
                           </td>
-                          <td className="px-3 text-sm text-text-primary">
+                          <td className="px-3 text-sm text-foreground">
                             {characterName(pair.addressee_character_id)}
                           </td>
-                          <td className="px-3 text-xs text-text-primary">
+                          <td className="px-3 text-xs text-foreground">
                             {pair.self_term ?? "—"}
                           </td>
-                          <td className="px-3 text-xs text-text-primary">
+                          <td className="px-3 text-xs text-foreground">
                             {pair.address_term ?? "—"}
                           </td>
                           <td className="px-3">
@@ -1310,7 +1313,7 @@ function AddressMapSection({
                               />
                             </div>
                           </td>
-                          <td className="px-3 text-xs text-text-muted">
+                          <td className="px-3 text-xs text-muted-foreground">
                             {bible.relationship_events.filter(
                               (e) =>
                                 (e.character_a_id ===
@@ -1323,42 +1326,46 @@ function AddressMapSection({
                                     pair.addressee_character_id),
                             ).length}
                           </td>
-                          <td className="px-3 text-xs text-text-muted">
+                          <td className="px-3 text-xs text-muted-foreground">
                             {pair.valid_from_episode ?? "—"}
                           </td>
                           <td className="px-3">
-                            <button
+                            <Button
                               type="button"
+                              variant="ghost"
+                              size="icon"
                               aria-label="View field history"
                               onClick={() =>
                                 setHistoryOpenId(
                                   historyOpenId === pair.id ? null : pair.id,
                                 )
                               }
-                              className="text-text-muted hover:text-accent"
                             >
                               <Clock size={14} />
-                            </button>
+                            </Button>
                           </td>
                           <td className="px-3">
                             <div className="flex items-center gap-1">
-                              <button
+                              <Button
                                 type="button"
+                                variant="ghost"
+                                size="icon"
                                 aria-label="Edit pair"
                                 onClick={() => startEditPair(pair)}
-                                className="text-text-muted hover:text-accent"
                               >
                                 <Pencil size={14} />
-                              </button>
+                              </Button>
                               {!isLocked && (
-                                <button
+                                <Button
                                   type="button"
+                                  variant="ghost"
+                                  size="icon"
                                   aria-label="Delete pair"
+                                  className="text-destructive hover:text-destructive"
                                   onClick={() => setDeleteConfirmId(pair.id)}
-                                  className="text-[#f87171] hover:text-[#ef4444]"
                                 >
                                   <Trash2 size={14} />
-                                </button>
+                                </Button>
                               )}
                             </div>
                           </td>
@@ -1372,7 +1379,7 @@ function AddressMapSection({
                           <p
                             role="alert"
                             aria-live="polite"
-                            className="text-xs text-[#f87171]"
+                            className="text-xs text-destructive"
                           >
                             Both terms must be non-empty before locking a pair.
                           </p>
@@ -1383,13 +1390,7 @@ function AddressMapSection({
                     {isEditing && !isLocked && !hardBlocked && (
                       <tr key={`${pair.id}-lockstrip`}>
                         <td colSpan={9} className="px-3 pb-1">
-                          <div
-                            className="text-xs px-2 py-1 rounded"
-                            style={{
-                              backgroundColor: "#1e3a5f",
-                              color: "#60a5fa",
-                            }}
-                          >
+                          <div className="text-xs px-2 py-1 rounded bg-primary/15 text-primary">
                             This pair is not locked. An upcoming analysis pass
                             may update these terms. Lock to pin your edit
                             permanently.
@@ -1435,7 +1436,8 @@ function AddressMapSection({
           </table>
         </div>
       )}
-    </SectionCard>
+      </CardContent>
+    </Card>
   );
 }
 
