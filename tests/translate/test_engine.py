@@ -441,3 +441,84 @@ async def test_reassembly_preserves_raw_cues_at_original_positions(settings_fact
     assert out_doc.lines[2].text == "Tạm biệt thế giới", (
         f"Third cue should be translated, got {out_doc.lines[2].text!r}"
     )
+
+
+# ── Phase 13 RED stub (Wave 0, D-06) ─────────────────────────────────────────
+
+
+@pytest.mark.xfail(
+    strict=False,
+    reason="D-06 fix: engine.py Step 11 series_id — translate_file must record "
+    "series_id=str(arr_series_id) in LedgerEntry when eligible_item is not None — "
+    "implemented in Phase 13 plan 02",
+)
+async def test_ledger_records_series_id_on_success(tmp_path):
+    """D-06: translate_file success path records series_id in LedgerEntry (Phase 13).
+
+    Verifies that the LedgerEntry passed to ledger.record() at Step 11 carries
+    series_id == "42" (str) when eligible_item is not None with arr_series_id=42.
+
+    Setup:
+    - Minimal 2-line SRT source file on disk
+    - mock_ledger.check returns None (not yet translated)
+    - mock_ledger.record captures the LedgerEntry argument
+    - mock_llm_client.call returns a valid numbered-line response
+
+    Assert:
+    - recorded_entries has exactly 1 entry
+    - recorded_entries[0].series_id == "42"
+    """
+    from unittest.mock import AsyncMock, MagicMock, patch  # noqa: PLC0415
+    from trezarr.output.ledger import LedgerEntry  # noqa: PLC0415
+
+    engine_mod = pytest.importorskip("trezarr.translate.engine")
+    translate_file = engine_mod.translate_file
+
+    # Minimal 2-line SRT
+    src = tmp_path / "Show.S01E01.en.srt"
+    src.write_text(
+        "1\n00:00:01,000 --> 00:00:03,000\nHello\n\n"
+        "2\n00:00:04,000 --> 00:00:06,000\nWorld\n",
+        encoding="utf-8",
+    )
+
+    recorded_entries: list[LedgerEntry] = []
+
+    mock_ledger = MagicMock()
+    mock_ledger.record = AsyncMock(side_effect=lambda e: recorded_entries.append(e))
+    mock_ledger.check = AsyncMock(return_value=None)
+    mock_ledger.content_hash = MagicMock(return_value="abc123")
+
+    # Build a settings object (uses defaults — no real *arr or LLM)
+    from trezarr.config import TrezarrSettings  # noqa: PLC0415
+    settings = TrezarrSettings()
+
+    # Mock LLM client to return a valid numbered response for 2 lines
+    from trezarr.llm.client import LLMClient  # noqa: PLC0415
+    llm_client = LLMClient(settings)
+
+    async def _fake_call(messages, response_model=None, model=None):
+        return "[1] Xin chào\n[2] Thế giới"
+
+    with patch.object(llm_client, "call", side_effect=_fake_call):
+        # eligible_item with series_id / arr_series_id = 42
+        mock_eligible_item = MagicMock()
+        mock_eligible_item.media_item = MagicMock()
+        mock_eligible_item.media_item.series_id = 42
+
+        result = await translate_file(
+            src,
+            settings,
+            llm_client,
+            mock_ledger,
+            eligible_item=mock_eligible_item,
+        )
+
+    assert result.status == "done", f"Expected status='done', got {result.status!r}"
+    assert len(recorded_entries) >= 1, "ledger.record must be called at least once on success"
+    # D-06: the final 'done' entry must carry series_id as a string
+    done_entries = [e for e in recorded_entries if getattr(e, "status", None) == "done"]
+    assert len(done_entries) == 1, f"Expected 1 done entry, got {done_entries!r}"
+    assert done_entries[0].series_id == "42", (
+        f"Expected series_id='42' (str), got {done_entries[0].series_id!r}"
+    )
