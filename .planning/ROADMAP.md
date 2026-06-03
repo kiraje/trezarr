@@ -30,7 +30,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 
 ### v1.1 Phases (UI v2: shadcn dashboard)
 
-- [ ] **Phase 11: shadcn Foundation & Purple Theme** - Install shadcn@2.10.0 + jolly-ui on Tailwind v3, wire the `@/` alias, establish the HSL CSS-variable purple dark theme, and verify a green build with no page content changes
+- [x] **Phase 11: shadcn Foundation & Purple Theme** - Install shadcn@2.10.0 + jolly-ui on Tailwind v3, wire the `@/` alias, establish the HSL CSS-variable purple dark theme, and verify a green build with no page content changes (completed 2026-06-03)
 - [ ] **Phase 12: App Shell + Route Restructure** - Replace the current AppShell with SidebarProvider + AppSidebar + Outlet, restructure routes so `/library` → `/series` + `/movies` + `/series/:id` and `/` → `/series`
 - [ ] **Phase 13: Backend Episodes Enrichment** - Rewrite `GET /api/library/series/{id}/episodes` to return season-grouped episode records from Sonarr with audio languages and Bazarr subtitle inventory (fail-soft); expose `translated_count`/`total_count` on list endpoints
 - [ ] **Phase 14: New Library Pages + Nav Badge Wiring** - Build Series list, Series detail (season-grouped Accordion with audio/subtitle badges, translate actions, search/filter/sort), Movies list, and wire the sidebar count+LIVE badges to live API data
@@ -361,7 +361,7 @@ Plans:
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
-- [ ] 11-03-PLAN.md — Wave 3: bulk shadcn add + jolly-ui Table + D-09 human visual UAT gate
+- [x] 11-03-PLAN.md — Wave 3: bulk shadcn add + jolly-ui Table + D-09 human visual UAT gate
 
 **UI hint**: yes
 
@@ -381,7 +381,7 @@ Plans:
 Plans:
 
 - [x] 11-01-PLAN.md — Wave 1: .npmrc + deps + @/ alias + shadcn@2.10.0 init (pre-theme baseline)
-- [ ] 11-02-PLAN.md — Wave 2: tailwind.config.js + src/index.css + index.html (purple theme tokens)
+- [x] 11-02-PLAN.md — Wave 2: tailwind.config.js + src/index.css + index.html (purple theme tokens)
 - [ ] 11-03-PLAN.md — Wave 3: bulk shadcn add + jolly-ui Table + D-09 human visual UAT gate
 
 **UI hint**: yes
@@ -401,7 +401,7 @@ Plans:
 **Plans**: 3 plans
 Plans:
 
-- [ ] 11-01-PLAN.md — Wave 1: .npmrc + deps + @/ alias + shadcn@2.10.0 init (pre-theme baseline)
+- [x] 11-01-PLAN.md — Wave 1: .npmrc + deps + @/ alias + shadcn@2.10.0 init (pre-theme baseline)
 - [ ] 11-02-PLAN.md — Wave 2: tailwind.config.js + src/index.css + index.html (purple theme tokens)
 - [ ] 11-03-PLAN.md — Wave 3: bulk shadcn add + jolly-ui Table + D-09 human visual UAT gate
 
@@ -484,7 +484,7 @@ v1.1 phases execute in numeric order: 11 → 12 → 13 (parallel-eligible with 1
 | 8. Editable Series Bible UI | 4/4 | Complete | 2026-06-02 |
 | 9. Multi-Format — ASS/SSA + VTT | 5/6 | In Progress | |
 | 10. Source Selection & Per-Series Overrides | 4/4 | Complete | 2026-06-02 |
-| 11. shadcn Foundation & Purple Theme | 2/3 | In Progress|  |
+| 11. shadcn Foundation & Purple Theme | 3/3 | Complete   | 2026-06-03 |
 | 12. App Shell + Route Restructure | 0/TBD | Not started | - |
 | 13. Backend Episodes Enrichment | 0/TBD | Not started | - |
 | 14. New Library Pages + Nav Badge Wiring | 0/TBD | Not started | - |
