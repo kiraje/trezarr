@@ -1,19 +1,20 @@
 /**
  * LogViewer — monochrome terminal aesthetic for per-job log display.
  *
- * Conforms to 07-UI-SPEC.md §LogViewer:
+ * Conforms to 07-UI-SPEC.md §LogViewer and 15-UI-SPEC.md §LogViewer reskin:
  * - 13px monospace text, dark terminal aesthetic
  * - Colored per log level: INFO=#4ade80, ERROR=#f87171, WARNING=#fb923c, DEBUG=#94a3b8
  * - Lines are <div> elements (NOT pre/innerHTML — renders as textContent to prevent XSS, T-07-05-05)
- * - Scroll-to-bottom button (ChevronsDown) when user scrolls up
+ * - Scroll-to-bottom button (ChevronsDown) — shadcn Button variant="ghost" size="icon"
  * - max-height calc(100vh - 200px), overflow-y auto
  * - No word-wrap; overflow hidden with horizontal scroll
- * - Timestamp HH:MM:SS prefix per line in muted color
+ * - Timestamp HH:MM:SS prefix per line in text-muted-foreground
  * - Level prefix [INFO] etc. 5-char fixed width with space padding
  */
 import { useRef, useEffect, useState, useCallback } from "react";
 import { ChevronsDown } from "lucide-react";
 import type { JobLogEntry } from "../api/client";
+import { Button } from "./ui/button";
 
 const LEVEL_COLORS: Record<string, string> = {
   INFO: "#4ade80",
@@ -72,7 +73,7 @@ export default function LogViewer({ entries }: LogViewerProps) {
 
   if (entries.length === 0) {
     return (
-      <div className="flex items-center justify-center py-12 text-xs text-[#6b7280]">
+      <div className="flex items-center justify-center py-12 text-xs text-muted-foreground">
         No log entries recorded for this job.
       </div>
     );
@@ -83,7 +84,7 @@ export default function LogViewer({ entries }: LogViewerProps) {
       <div
         ref={scrollRef}
         onScroll={handleScroll}
-        className="bg-bg-base overflow-y-auto overflow-x-auto"
+        className="bg-background border border-border rounded overflow-y-auto overflow-x-auto"
         style={{ maxHeight: "calc(100vh - 200px)" }}
         role="log"
         aria-label="Job execution log"
@@ -109,7 +110,7 @@ export default function LogViewer({ entries }: LogViewerProps) {
               }}
             >
               {/* Timestamp in muted color */}
-              <span style={{ color: "#6b7280" }}>{ts} </span>
+              <span className="text-muted-foreground">{ts} </span>
               {/* Level prefix 7-char fixed width */}
               <span>{levelLabel} </span>
               {/* Message rendered as text content — never innerHTML (T-07-05-05 XSS prevention) */}
@@ -121,14 +122,16 @@ export default function LogViewer({ entries }: LogViewerProps) {
 
       {/* Scroll-to-bottom button — appears when user has scrolled up */}
       {showScrollBtn && (
-        <button
+        <Button
           type="button"
+          variant="ghost"
+          size="icon"
           onClick={scrollToBottom}
-          className="absolute bottom-4 right-4 flex items-center justify-center w-8 h-8 bg-bg-surface border border-[#2d3148] rounded text-[#6b7280] hover:text-accent focus:outline-[#3b82f6] focus:outline-2 focus:outline-offset-2 transition-colors duration-150"
+          className="absolute bottom-4 right-4"
           aria-label="Scroll to bottom"
         >
           <ChevronsDown size={16} aria-hidden="true" />
-        </button>
+        </Button>
       )}
     </div>
   );
