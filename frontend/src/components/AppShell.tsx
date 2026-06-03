@@ -1,112 +1,33 @@
 /**
- * AppShell — TopBar + Sidebar + Content area layout.
+ * AppShell — thin SidebarProvider + AppSidebar + Outlet layout host.
  *
- * Conforms to 07-UI-SPEC.md §App Shell:
- * - TopBar: 48px, bg-surface, "Trezarr" wordmark, service status dot
- * - Sidebar: 192px (w-48), nav items Settings/Queue/History + Bible placeholder
- * - Content area: flex-1, base background, xl horizontal padding
+ * Conforms to 12-UI-SPEC.md Interaction Contract 1 and decisions:
+ * - D-02: 48px TopBar dropped; green status dot moved to AppSidebar SidebarFooter
+ * - D-04: layout-route element (<Route path="/" element={<AppShell/>}>);
+ *         renders routed pages through react-router-dom <Outlet/>
  *
- * Active nav item: left 2px accent border + bg-stripe background.
- * "Bible" nav item is muted/non-functional (Phase 8 placeholder).
+ * Shell composition:
+ *   <SidebarProvider>      // whole-document context: open/collapsed state + cookie + Cmd/Ctrl+B
+ *     <AppSidebar />       // hand-written nav (brand, 6 items, accent bar, footer status)
+ *     <main ...>
+ *       <Outlet />         // routed page renders here (replaces legacy children prop)
+ *     </main>
+ *   </SidebarProvider>
+ *
+ * main uses bg-background (purple-tinted root per Wiring Invariant) and p-6 (lg=24px spacing).
+ * No children prop, no AppShellProps, no w-48, no TopBar.
  */
-import { ReactNode } from "react";
-import { NavLink } from "react-router-dom";
-import { Settings, List, History, BookOpen, Film } from "lucide-react";
+import { Outlet } from "react-router-dom";
+import { SidebarProvider } from "./ui/sidebar";
+import { AppSidebar } from "./app-sidebar";
 
-interface AppShellProps {
-  children: ReactNode;
-}
-
-interface NavItemProps {
-  to: string;
-  icon: ReactNode;
-  label: string;
-  disabled?: boolean;
-}
-
-function NavItem({ to, icon, label, disabled = false }: NavItemProps) {
-  if (disabled) {
-    return (
-      <div
-        className="flex items-center gap-2 px-4 min-h-10 text-sm text-[#6b7280] cursor-default"
-        title="Available in a future release"
-      >
-        {icon}
-        <span>{label}</span>
-      </div>
-    );
-  }
-
+export default function AppShell() {
   return (
-    <NavLink
-      to={to}
-      className={({ isActive }) =>
-        [
-          "flex items-center gap-2 px-4 min-h-10 text-sm no-underline transition-colors duration-150",
-          isActive
-            ? "border-l-2 border-accent bg-bg-stripe text-[#e2e6f0] pl-[14px]"
-            : "text-[#e2e6f0] hover:bg-[#1e2130] border-l-2 border-transparent pl-[14px]",
-        ].join(" ")
-      }
-    >
-      {icon}
-      <span>{label}</span>
-    </NavLink>
-  );
-}
-
-export default function AppShell({ children }: AppShellProps) {
-  return (
-    <div className="flex flex-col min-h-screen bg-bg-base">
-      {/* TopBar: 48px, bg-surface */}
-      <header className="h-12 bg-bg-surface border-b border-[#2d3148] flex items-center justify-between px-4 flex-shrink-0">
-        <span className="text-base font-semibold text-[#e2e6f0]">Trezarr</span>
-        {/* Service status dot — green = running (the server is serving this page) */}
-        <div
-          className="w-2 h-2 rounded-full bg-[#22c55e]"
-          aria-label="Service status: running"
-          title="Service running"
-        />
-      </header>
-
-      <div className="flex flex-1">
-        {/* Sidebar: 192px (w-48), bg-surface */}
-        <nav
-          className="w-48 bg-bg-surface border-r border-[#2d3148] flex flex-col py-2 flex-shrink-0"
-          aria-label="Primary navigation"
-        >
-          <NavItem
-            to="/settings"
-            icon={<Settings size={16} />}
-            label="Settings"
-          />
-          <NavItem
-            to="/queue"
-            icon={<List size={16} />}
-            label="Queue"
-          />
-          <NavItem
-            to="/library"
-            icon={<Film size={16} />}
-            label="Library"
-          />
-          <NavItem
-            to="/history"
-            icon={<History size={16} />}
-            label="History"
-          />
-          <NavItem
-            to="/bible"
-            icon={<BookOpen size={16} />}
-            label="Bible"
-          />
-        </nav>
-
-        {/* Content area: flex-1, xl horizontal padding, lg vertical padding */}
-        <main className="flex-1 bg-bg-base px-8 py-6 overflow-auto">
-          {children}
-        </main>
-      </div>
-    </div>
+    <SidebarProvider>
+      <AppSidebar />
+      <main className="flex-1 overflow-auto bg-background p-6">
+        <Outlet />
+      </main>
+    </SidebarProvider>
   );
 }
