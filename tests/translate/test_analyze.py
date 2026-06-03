@@ -19,6 +19,7 @@ from trezarr.bible.analyze import (
     BibleAnalysisError,
     CharacterInference,
     AddressMapInference,
+    RelationshipEventInference,
 )
 from trezarr.bible.store import get_or_create_series, load_series_bible
 from trezarr.config import TrezarrSettings
@@ -199,4 +200,98 @@ async def test_pass1_failure_quarantines(session_factory):
     )
     assert len(post_bible.address_map) == 0, (
         f"Expected no address pairs after failed analyze_file, got: {post_bible.address_map}"
+    )
+
+
+async def test_cjk_script_name_address_pair_resolves(session_factory):
+    """CJK address pair and relationship_event using original-script names must be persisted.
+
+    Regression test for the CJK name-resolution bug: the LLM infers characters with a
+    romanized original_latin_name but writes address_map / relationship_events using the
+    on-screen script name (e.g. '樱'). Before the fix, name_to_id was keyed only on the
+    Latin name, so script-name references resolved to None and were silently skipped.
+
+    Verifies:
+    - merge_bible_analysis persists the address pair when speaker_name/addressee_name are
+      CJK script names (the previously failing case).
+    - merge_bible_analysis persists the relationship_event when character_a_name /
+      character_b_name are CJK script names.
+    - CR-01 contract: .strip().lower() normalisation is applied to CJK keys (CJK .lower()
+      is a no-op, which is correct behaviour).
+    """
+    from trezarr.bible.analyze import merge_bible_analysis
+
+    # Create a distinct series so this test is isolated from other test series
+    series_dto = await get_or_create_series(
+        session_factory,
+        arr_kind="sonarr",
+        arr_instance="default",
+        arr_series_id=3003,
+        arr_metadata_snapshot={"title": "CJK Test Show"},
+    )
+
+    # Build a BibleAnalysis with two CJK characters that have both Latin and script names.
+    # The address_map and relationship_event reference them by the CJK script name only —
+    # the bug case that previously caused silent skips.
+    mock_analysis = BibleAnalysis(
+        characters=[
+            CharacterInference(
+                original_latin_name="Sakura",
+                gender="female",
+                original_script_name="樱",
+            ),
+            CharacterInference(
+                original_latin_name="Daisy",
+                gender="female",
+                original_script_name="雏菊",
+            ),
+        ],
+        address_map=[
+            AddressMapInference(
+                speaker_name="樱",       # CJK script name — the previously-failing form
+                addressee_name="雏菊",   # CJK script name
+                self_term="em",
+                address_term="chị",
+                confidence=0.85,
+            ),
+        ],
+        relationship_events=[
+            RelationshipEventInference(
+                character_a_name="樱",   # CJK script name
+                character_b_name="雏菊",
+                episode_marker="S01E01",
+                description="They meet for the first time and form a close friendship.",
+            ),
+        ],
+    )
+
+    settings = _make_settings(enable_relationship_events=True)
+
+    await merge_bible_analysis(
+        session_factory=session_factory,
+        series_dto=series_dto,
+        analysis=mock_analysis,
+        episode_key="S01E01",
+        settings=settings,
+    )
+
+    updated_bible = await load_series_bible(session_factory, series_dto.id)
+
+    # The address pair must be persisted — not skipped
+    assert len(updated_bible.address_map) == 1, (
+        "CJK script-name address pair must be persisted, not skipped. "
+        f"Got address_map={[(a.self_term, a.address_term) for a in updated_bible.address_map]}"
+    )
+    assert updated_bible.address_map[0].self_term == "em", (
+        f"Expected self_term='em', got: {updated_bible.address_map[0].self_term!r}"
+    )
+    assert updated_bible.address_map[0].address_term == "chị", (
+        f"Expected address_term='chị', got: {updated_bible.address_map[0].address_term!r}"
+    )
+
+    # The relationship_event must also be persisted — not skipped
+    rel_events = updated_bible.relationship_events or []
+    assert len(rel_events) == 1, (
+        "CJK script-name relationship_event must be persisted, not skipped. "
+        f"Got relationship_events={rel_events}"
     )
