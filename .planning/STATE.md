@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: in_progress
-stopped_at: Phase 9 code blockers (CR-01/CR-02/WR-01) fixed & merged (4052d90); awaiting re-verify + 2 human visual UATs
-last_updated: 2026-06-02T16:13:14Z
-last_activity: 2026-06-02
+stopped_at: All 10 phases complete — Phase 9 human visual UAT PASSED (2026-06-03, 12/12). Milestone 10/10; pending /gsd-verify-work + /gsd-complete-milestone.
+last_updated: 2026-06-03T00:00:00Z
+last_activity: 2026-06-03
 progress:
   total_phases: 10
-  completed_phases: 9
+  completed_phases: 10
   total_plans: 44
-  completed_plans: 43
-  percent: 90
+  completed_plans: 44
+  percent: 100
 ---
 
 # Project State
@@ -21,18 +21,18 @@ progress:
 See: .planning/PROJECT.md (updated 2026-05-31)
 
 **Core value:** Vietnamese subtitles that stay consistent and relationally correct (right pronoun pair, stable names/terms) across an entire series — produced automatically.
-**Current focus:** Phase 9 — Multi-Format ASS/SSA + VTT (code blockers fixed; pending re-verify + human visual UAT)
+**Current focus:** All 10 phases complete — milestone v1.0 ready for verify-work + complete-milestone.
 
 ## Current Position
 
-Phase: 9
-Plan: 09-06 — human visual UAT (final gate)
-Status: Code blockers CR-01/CR-02/WR-01 fixed & merged (4052d90); awaiting re-verify + 2 visual UATs
-Last activity: 2026-06-02
+Phase: 9 (COMPLETE — last phase)
+Plan: 09-06 — human visual UAT (final gate) PASSED
+Status: All 10 phases complete. Phase 9 visual UAT signed off 2026-06-03 (12/12); ASS via JASSUB/libass-wasm + VTT via native browser <track>. Milestone 10/10 — pending /gsd-verify-work + /gsd-complete-milestone.
+Last activity: 2026-06-03
 
-Progress: [█████████░] 90%
+Progress: [██████████] 100%
 
-> NOTE (2026-06-02): A prior `status: milestone_complete` here was a concurrent-write artifact — the Phase 10 `--auto` run (treating itself as the final phase) overwrote shared STATE while Phase 9 was still `gaps_found`. Milestone is 9/10 (90%): Phase 9's 3 code blockers are now fixed, leaving re-verification + the 2 human visual UATs (artifacts staged at /tmp/trezarr_uat/).
+> NOTE (2026-06-03): Phase 9 closed cleanly — the human visual UAT (truth #12) passed, so 09-VERIFICATION.md is now `status: complete` (12/12) and 09-06-SUMMARY.md records the sign-off. The earlier 2026-06-02 `milestone_complete` write was a concurrent-write artifact and was correctly reverted; the milestone is now *legitimately* 10/10 with every phase verified. Next: run /gsd-verify-work, then /gsd-complete-milestone to archive v1.0.
 
 ## Performance Metrics
 
@@ -149,6 +149,7 @@ None yet.
 |---|-------------|------|--------|-----------|
 | 260602-3zg | Fix Phase-5 review findings B1 (reconcile.py name match missing .strip) and M1 (character identity key normalization) | 2026-06-01 | 754292f | [260602-3zg-fix-phase-5-review-findings-b1-reconcile](./quick/260602-3zg-fix-phase-5-review-findings-b1-reconcile/) |
 | 260602-g9z | Create README.md for Trezarr | 2026-06-02 | 09890e3 | [260602-g9z-create-readme-md-for-trezarr](./quick/260602-g9z-create-readme-md-for-trezarr/) |
+| 260603-laj | Fix CJK character-name resolution in Series Bible analyze (dual-key name_to_id on original_script_name + prompt tightening + CJK regression test) | 2026-06-03 | 66a47ba | [260603-laj-fix-cjk-character-name-resolution-in-ser](./quick/260603-laj-fix-cjk-character-name-resolution-in-ser/) |
 
 ## Deferred Items
 
