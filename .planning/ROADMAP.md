@@ -396,7 +396,19 @@ Plans:
   3. `GET /api/library` series and movies list items include `translated_count` and `total_count` fields
   4. Backend tests cover the Bazarr fail-soft path, the correct `episode.id` (not `episodeFile.id`) join to Bazarr inventory, and the `audioLanguages` full-name-to-ISO lookup
 
-**Plans**: TBD
+**Plans**: 3 plans
+
+**Wave 0**
+
+- [ ] 13-01-PLAN.md — Wave 0: RED test scaffold — 8 new xfail stubs in test_library_api.py + 1 xfail stub in test_engine.py (API-01, API-02, D-06)
+
+**Wave 1** *(blocked on Wave 0 completion)*
+
+- [ ] 13-02-PLAN.md — Wave 1: D-06 engine fix (series_id on success-path LedgerEntry) + translated_counts_for_series bulk helper in ledger_sqla.py (API-02)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [ ] 13-03-PLAN.md — Wave 2: Rewrite get_series_episodes (season-grouped envelope, asyncio.to_thread, Bazarr fail-soft, audio normalization via _ORIG_LANG_NAME_TO_CODE2) + extend get_library with translated_count/total_count (API-01, API-02)
 
 ### Phase 14: New Library Pages + Nav Badge Wiring
 
@@ -463,8 +475,8 @@ v1.1 phases execute in numeric order: 11 → 12 → 13 (parallel-eligible with 1
 | 9. Multi-Format — ASS/SSA + VTT | 5/6 | In Progress | |
 | 10. Source Selection & Per-Series Overrides | 4/4 | Complete | 2026-06-02 |
 | 11. shadcn Foundation & Purple Theme | 3/3 | Complete    | 2026-06-03 |
-| 12. App Shell + Route Restructure | 0/TBD | Not started | - |
-| 13. Backend Episodes Enrichment | 0/TBD | Not started | - |
+| 12. App Shell + Route Restructure | 0/1 | Not started | - |
+| 13. Backend Episodes Enrichment | 0/3 | Not started | - |
 | 14. New Library Pages + Nav Badge Wiring | 0/TBD | Not started | - |
 | 15. Reskin Existing Pages | 0/TBD | Not started | - |
 | 16. Docker Rebuild + Live Smoke Test | 0/TBD | Not started | - |
