@@ -14,6 +14,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useParams, Link } from "react-router-dom";
 import { Clock, Pencil, Trash2 } from "lucide-react";
+import { toast } from "sonner";
 import {
   getSeriesBible,
   getPronouns,
@@ -39,16 +40,26 @@ import LockToggleButton from "../components/LockToggleButton";
 import FieldHistoryPanel from "../components/FieldHistoryPanel";
 import PronounCombo from "../components/PronounCombo";
 import ReciprocalSuggestionPanel from "../components/ReciprocalSuggestionPanel";
-import Toast from "../components/Toast";
-import type { ToastState } from "../components/Toast";
+import {
+  Tabs,
+  TabsList,
+  TabsTrigger,
+  TabsContent,
+} from "../components/ui/tabs";
+import { Skeleton } from "../components/ui/skeleton";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
+
+// ToastState kept for section component prop compatibility (showToast signature)
+interface ToastState {
+  message: string;
+  variant: "success" | "error";
+}
 
 function UnreachableBanner({ message }: { message: string }) {
   return (
     <div
-      className="w-full mb-4 px-4 py-3 text-sm rounded"
-      style={{ backgroundColor: "#451a03", color: "#fbbf24" }}
+      className="w-full mb-4 px-4 py-3 text-sm rounded bg-amber-900/30 border border-amber-800 text-amber-400"
       role="alert"
     >
       {message}
@@ -116,10 +127,10 @@ export default function BibleEditor() {
   const [unreachable, setUnreachable] = useState(false);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<Tab>("characters");
-  const [toast, setToast] = useState<ToastState | null>(null);
 
   const showToast = useCallback((t: Omit<ToastState, "id">) => {
-    setToast({ ...t, id: Date.now() });
+    if (t.variant === "success") toast.success(t.message);
+    else toast.error(t.message);
   }, []);
 
   useEffect(() => {
@@ -152,8 +163,10 @@ export default function BibleEditor() {
 
   if (loading) {
     return (
-      <div>
-        <p className="text-sm text-text-muted">Loading…</p>
+      <div className="flex flex-col gap-2">
+        <Skeleton className="h-8 w-48" />
+        <Skeleton className="h-10 w-full" />
+        <Skeleton className="h-64 w-full" />
       </div>
     );
   }
@@ -172,16 +185,16 @@ export default function BibleEditor() {
     <div className="max-w-5xl">
       {/* Breadcrumb + header */}
       <div className="mb-2">
-        <Link to="/bible" className="text-xs text-accent no-underline">
+        <Link to="/bible" className="text-xs text-primary no-underline">
           ← Bible
         </Link>
       </div>
       <div className="flex items-center gap-3 mb-4">
-        <h1 className="text-lg font-semibold text-text-primary">
+        <h1 className="text-xl font-semibold text-foreground">
           {bible.arr_kind}/{bible.arr_series_id}
         </h1>
         {bible.register && (
-          <span className="text-xs text-text-muted">{bible.register}</span>
+          <span className="text-xs text-muted-foreground">{bible.register}</span>
         )}
       </div>
 
@@ -189,49 +202,24 @@ export default function BibleEditor() {
         <UnreachableBanner message="Could not load Bible for this series. Check the server logs." />
       )}
 
-      {/* BibleTabBar */}
-      <nav
-        role="tablist"
-        className="flex border-b border-[#2d3148] mb-4"
-        aria-label="Bible sections"
-      >
-        {(
-          [
-            ["characters", "Characters"],
-            ["address_map", "Address Map"],
-            ["terms", "Terms"],
-            ["register", "Register"],
-            ["overrides", "Overrides"],
-          ] as [Tab, string][]
-        ).map(([tab, label]) => (
-          <button
-            key={tab}
-            role="tab"
-            aria-selected={activeTab === tab}
-            onClick={() => setActiveTab(tab)}
-            className={[
-              "h-10 px-4 text-sm focus:outline-none",
-              activeTab === tab
-                ? "text-text-primary border-b-2 border-[#3b82f6]"
-                : "text-text-muted hover:text-text-primary border-b-2 border-transparent",
-            ].join(" ")}
-          >
-            {label}
-          </button>
-        ))}
-      </nav>
-
-      {/* Tab content */}
-      <div role="tabpanel">
-        {activeTab === "characters" && (
+      {/* BibleTabBar — shadcn Tabs primitive */}
+      <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as Tab)}>
+        <TabsList className="mb-4">
+          <TabsTrigger value="characters">Characters</TabsTrigger>
+          <TabsTrigger value="address_map">Address Map</TabsTrigger>
+          <TabsTrigger value="terms">Terms</TabsTrigger>
+          <TabsTrigger value="register">Register</TabsTrigger>
+          <TabsTrigger value="overrides">Overrides</TabsTrigger>
+        </TabsList>
+        <TabsContent value="characters">
           <CharactersSection
             seriesId={seriesId}
             bible={bible}
             setBible={setBible}
             showToast={showToast}
           />
-        )}
-        {activeTab === "address_map" && (
+        </TabsContent>
+        <TabsContent value="address_map">
           <AddressMapSection
             seriesId={seriesId}
             bible={bible}
@@ -239,34 +227,32 @@ export default function BibleEditor() {
             pronounsData={pronounsData}
             showToast={showToast}
           />
-        )}
-        {activeTab === "terms" && (
+        </TabsContent>
+        <TabsContent value="terms">
           <TermsSection
             seriesId={seriesId}
             bible={bible}
             setBible={setBible}
             showToast={showToast}
           />
-        )}
-        {activeTab === "register" && (
+        </TabsContent>
+        <TabsContent value="register">
           <RegisterSection
             seriesId={seriesId}
             bible={bible}
             setBible={setBible}
             showToast={showToast}
           />
-        )}
-        {activeTab === "overrides" && (
+        </TabsContent>
+        <TabsContent value="overrides">
           <OverridesSection
             seriesId={seriesId}
             bible={bible}
             setBible={setBible}
             showToast={showToast}
           />
-        )}
-      </div>
-
-      <Toast toast={toast} onDismiss={() => setToast(null)} />
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }

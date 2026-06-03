@@ -35,8 +35,8 @@ export default function LockToggleButton({
       disabled={disabled}
       className={[
         "w-8 h-8 flex items-center justify-center rounded",
-        "text-text-muted hover:text-accent",
-        "focus:outline-none focus:ring-2 focus:ring-[#3b82f6] focus:ring-offset-2",
+        "text-muted-foreground hover:text-primary",
+        "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
         disabled ? "opacity-50 cursor-not-allowed" : "",
       ]
         .filter(Boolean)
