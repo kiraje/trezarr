@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: "UI v2: shadcn dashboard"
-status: ready_to_plan
-stopped_at: Phase 14 complete (6/6) — ready to discuss Phase 15
-last_updated: 2026-06-03T19:17:21.171Z
+status: executing
+stopped_at: Completed 14-02-PLAN.md
+last_updated: "2026-06-03T19:38:26.461Z"
 last_activity: 2026-06-03
 progress:
   total_phases: 16
   completed_phases: 14
-  total_plans: 57
-  completed_plans: 57
+  total_plans: 64
+  completed_plans: 58
   percent: 88
 ---
 
@@ -21,13 +21,13 @@ progress:
 See: .planning/PROJECT.md (updated 2026-06-03)
 
 **Core value:** Vietnamese subtitles that stay consistent and relationally correct (right pronoun pair, stable names/terms) across an entire series — produced automatically.
-**Current focus:** Phase 15 — reskin existing pages
+**Current focus:** Phase 15 — reskin-existing-pages
 
 ## Current Position
 
-Phase: 15
-Plan: Not started
-Status: Ready to plan
+Phase: 15 (reskin-existing-pages) — EXECUTING
+Plan: 2 of 7
+Status: Ready to execute
 Last activity: 2026-06-03
 
 ```
@@ -108,6 +108,7 @@ Phase 15: [ ] Reskin       Phase 16: [ ] Docker/Smoke
 | Phase 14 P01 | 148s | 2 tasks | 4 files |
 | Phase 14 P02 | 8m | 2 tasks | 3 files |
 | Phase 14 P05 | 2min | 2 tasks | 2 files |
+| Phase 15-reskin-existing-pages P01 | 139 | 3 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -189,6 +190,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-06-03T19:00:41.613Z
+Last session: 2026-06-03T19:38:26.455Z
 Stopped at: Completed 14-02-PLAN.md
 Resume file: None

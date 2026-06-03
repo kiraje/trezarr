@@ -459,7 +459,7 @@ Plans:
 **Plans**: 7 plans
 
 Plans:
-- [ ] 15-01-PLAN.md — Reskin JobLogs.tsx + shared StatusBadge, LogViewer
+- [x] 15-01-PLAN.md — Reskin JobLogs.tsx + shared StatusBadge, LogViewer
 - [ ] 15-02-PLAN.md — Reskin Queue.tsx + shared JobTable
 - [ ] 15-03-PLAN.md — Reskin History.tsx + shared RetryButton; Sonner migration (first call-site)
 - [ ] 15-04-PLAN.md — Reskin Settings.tsx + shared MaskedSecretInput, ConnectionTestButton; Sonner migration
@@ -505,5 +505,5 @@ v1.1 phases execute in numeric order: 11 → 12 → 13 (parallel-eligible with 1
 | 12. App Shell + Route Restructure | 1/1 | Complete    | 2026-06-03 |
 | 13. Backend Episodes Enrichment | 3/3 | Complete    | 2026-06-03 |
 | 14. New Library Pages + Nav Badge Wiring | 6/6 | Complete    | 2026-06-03 |
-| 15. Reskin Existing Pages | 0/TBD | Not started | - |
+| 15. Reskin Existing Pages | 1/7 | In Progress|  |
 | 16. Docker Rebuild + Live Smoke Test | 0/TBD | Not started | - |
