@@ -423,7 +423,25 @@ Plans:
   4. The Movies page shows all Radarr movies with source-subtitle status and a Translate button
   5. The Series and Movies lists support search by title, filter by subtitle status, and sort; the sidebar Series and Movies nav rows show a count badge of items needing a Vietnamese subtitle (auto-hidden at zero) and a LIVE badge when the backing *arr service is connected
 
-**Plans**: TBD
+**Plans**: 6 plans
+
+**Wave 1**
+
+- [ ] 14-01-PLAN.md — Wave 1: client.ts Phase-13 types (SeriesItem, MovieItem, SeriesEpisodesResponse, etc.) + LibraryContext (shared GET /api/library state; LIVE + count badge derivation helpers) (LIB-01, LIB-02, LIB-03, LIB-04, LIB-05, LIB-06, LIB-07, NAV-03)
+
+**Wave 2** *(blocked on Wave 1 completion — plans 14-02, 14-03, 14-04 run in parallel)*
+
+- [ ] 14-02-PLAN.md — Wave 2: app-sidebar.tsx SidebarGroup wrapper (WR-01) + LIVE/count badge wiring + NotFound.tsx + App.tsx catch-all route (NAV-03)
+- [ ] 14-03-PLAN.md — Wave 2: Series.tsx real list page — dense table, progress bar, search/filter/sort, row click to /series/:id, setLibraryData (LIB-01, LIB-06, LIB-07, NAV-03)
+- [ ] 14-04-PLAN.md — Wave 2: Movies.tsx real list page — dense table, source-sub badge, progress bar, Translate button, search/filter/sort, setLibraryData (LIB-02, LIB-06, LIB-07, NAV-03)
+
+**Wave 3** *(blocked on Wave 1 + Wave 2 completion)*
+
+- [ ] 14-05-PLAN.md — Wave 3: SubtitleBadge.tsx (audio/source/vi badges, aria-label, shape cue) + SeriesDetail.tsx real page (Accordion seasons, episode table, badges, Translate episode + season, bazarr suppression, useParams guard) (LIB-03, LIB-04, LIB-05)
+
+**Wave 4** *(blocked on Wave 3 completion)*
+
+- [ ] 14-06-PLAN.md — Wave 4: Delete Library.tsx, remove /library route + import from App.tsx, remove deprecated types from client.ts (D-11 cleanup) (LIB-01, LIB-02, LIB-03, LIB-05, NAV-03)
 
 **UI hint**: yes
 
