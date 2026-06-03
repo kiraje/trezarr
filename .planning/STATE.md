@@ -150,6 +150,7 @@ None yet.
 | 260602-3zg | Fix Phase-5 review findings B1 (reconcile.py name match missing .strip) and M1 (character identity key normalization) | 2026-06-01 | 754292f | [260602-3zg-fix-phase-5-review-findings-b1-reconcile](./quick/260602-3zg-fix-phase-5-review-findings-b1-reconcile/) |
 | 260602-g9z | Create README.md for Trezarr | 2026-06-02 | 09890e3 | [260602-g9z-create-readme-md-for-trezarr](./quick/260602-g9z-create-readme-md-for-trezarr/) |
 | 260603-laj | Fix CJK character-name resolution in Series Bible analyze (dual-key name_to_id on original_script_name + prompt tightening + CJK regression test) | 2026-06-03 | 66a47ba | [260603-laj-fix-cjk-character-name-resolution-in-ser](./quick/260603-laj-fix-cjk-character-name-resolution-in-ser/) |
+| 260603-l8g | Library browser UI + manual single-item translate (arr-themed) + auto_translate poller safety gate; Bug 2 (alembic loggers) + Bug 3 (auto-enable *_enabled on save) | 2026-06-03 | 2fd17c7 | [260603-l8g-library-browser-manual-translate](./quick/260603-l8g-library-browser-manual-translate/) |
 
 ## Deferred Items
 
