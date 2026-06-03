@@ -116,7 +116,8 @@ async def get_library(request: Request) -> JSONResponse:
     (D-04 from statistics.episodeFileCount). Movie items include translated_count
     (filesystem vi-sidecar check) and total_count (1 if hasFile else 0).
     """
-    from trezarr.arr import DiscoveryError  # noqa: PLC0415
+    import asyncio  # noqa: PLC0415
+    from trezarr.arr import DiscoveryError, _normalize_arr_host  # noqa: PLC0415
     from trezarr.arr.radarr import build_radarr_client  # noqa: PLC0415
     from trezarr.arr.sonarr import build_sonarr_client  # noqa: PLC0415
     from trezarr.config import TrezarrSettings  # noqa: PLC0415
@@ -137,7 +138,7 @@ async def get_library(request: Request) -> JSONResponse:
     if settings.sonarr_enabled:
         try:
             client = build_sonarr_client(settings)
-            raw_series = client.series.get()
+            raw_series = await asyncio.to_thread(client.series.get)
             if isinstance(raw_series, dict):
                 raw_series = [raw_series]
             for s in raw_series:
@@ -156,17 +157,18 @@ async def get_library(request: Request) -> JSONResponse:
                     "poster_url": poster_url,
                 })
         except (PyarrError, DiscoveryError, Exception) as exc:  # noqa: BLE001
-            logger.warning("get_library: Sonarr error — %s", exc)
+            display = _normalize_arr_host(settings.sonarr_host)
+            logger.warning("get_library: Sonarr error at %s — %s", display, type(exc).__name__)
             series_list = []
             raw_series = []
-            errors.append({"source": "sonarr", "error": str(exc)})
+            errors.append({"source": "sonarr", "error": f"{type(exc).__name__} at {display}"})
 
     # D-05: bulk translated count — one aggregate DB query, not N queries
     if series_list:
         session_factory = getattr(request.app.state, "session_factory", None)
         if session_factory:
             from trezarr.output.ledger_sqla import translated_counts_for_series  # noqa: PLC0415
-            _s_ids = [s.get("id") for s in raw_series if s.get("id") is not None]
+            _s_ids = [item.get("id") for item in series_list if item.get("id") is not None]
             t_counts = await translated_counts_for_series(session_factory, _s_ids)
         else:
             t_counts: dict[str, int] = {}
@@ -183,7 +185,7 @@ async def get_library(request: Request) -> JSONResponse:
     if settings.radarr_enabled:
         try:
             client = build_radarr_client(settings)
-            raw_movies = client.movie.get()
+            raw_movies = await asyncio.to_thread(client.movie.get)
             if isinstance(raw_movies, dict):
                 raw_movies = [raw_movies]
             for m in raw_movies:
@@ -216,9 +218,10 @@ async def get_library(request: Request) -> JSONResponse:
                     "total_count": 1 if m.get("hasFile", False) else 0,
                 })
         except (PyarrError, DiscoveryError, Exception) as exc:  # noqa: BLE001
-            logger.warning("get_library: Radarr error — %s", exc)
+            display = _normalize_arr_host(settings.radarr_host)
+            logger.warning("get_library: Radarr error at %s — %s", display, type(exc).__name__)
             movies_list = []
-            errors.append({"source": "radarr", "error": str(exc)})
+            errors.append({"source": "radarr", "error": f"{type(exc).__name__} at {display}"})
 
     return JSONResponse({"series": series_list, "movies": movies_list, "errors": errors})
 
@@ -279,11 +282,13 @@ async def get_series_episodes(series_id: int, request: Request) -> JSONResponse:
         ep_file_by_id: dict[int, dict] = {ef["id"]: ef for ef in ep_files_raw if ef.get("id")}
 
     except PyarrError as exc:
-        logger.error("get_series_episodes: Sonarr error for series_id=%d — %s", series_id, exc)
-        return JSONResponse({"error": str(exc)}, status_code=502)
+        from trezarr.arr import _normalize_arr_host as _nh  # noqa: PLC0415
+        display = _nh(settings.sonarr_host)
+        logger.error("get_series_episodes: Sonarr error at %s for series_id=%d — %s", display, series_id, type(exc).__name__)
+        return JSONResponse({"error": f"{type(exc).__name__} at {display}"}, status_code=502)
     except Exception as exc:  # noqa: BLE001
-        logger.error("get_series_episodes: unexpected error for series_id=%d — %s", series_id, exc)
-        return JSONResponse({"error": str(exc)}, status_code=502)
+        logger.error("get_series_episodes: unexpected error for series_id=%d — %s", series_id, type(exc).__name__)
+        return JSONResponse({"error": type(exc).__name__}, status_code=502)
 
     # ── Bazarr fail-soft block (D-08) ─────────────────────────────────────────
     # Disabled → bazarr_available=False, errors=[] (disabled is not an error).
@@ -297,9 +302,10 @@ async def get_series_episodes(series_id: int, request: Request) -> JSONResponse:
 
             bazarr_client = BazarrClient.from_settings(settings)
             # fetch_episode_inventory uses params=[("seriesid[]", id)] list form.
-            # If this returns empty on live Bazarr at 192.168.5.42, fall back to
-            # params={"seriesid": series_id} — ARCHITECTURE.md §8 known risk.
-            # TODO(phase-16): verify seriesid[] vs seriesid against live Bazarr.
+            # NOTE: No runtime fallback to plain "seriesid" is implemented here.
+            # If live Bazarr requires plain "seriesid" instead of "seriesid[]",
+            # the result will be silently empty (bazarr_available=True, subtitles=[]).
+            # TODO(phase-16): verify seriesid[] vs seriesid against live Bazarr at 192.168.5.42.
             bazarr_items = await bazarr_client.fetch_episode_inventory(series_id)
             # Build lookup: episode.id (arr_id / sonarrEpisodeId) → badge list (D-02)
             bazarr_by_ep_id = {
