@@ -1,78 +1,54 @@
 /**
- * StatusBadge — colored dot + text label for job status.
+ * StatusBadge — shadcn Badge-based status renderer for job status.
  *
- * Conforms to 07-UI-SPEC.md §StatusBadge and §Semantic status palette:
+ * Conforms to 15-UI-SPEC.md §StatusBadge reskin:
  * - Never color-only (accessibility requirement — always includes text label)
+ * - Maps each status to a shadcn Badge variant or semantic className
  * - Screen readers read the text label
- * - 4px dot + 12px regular text, height 20px
  */
+import { Badge } from "./ui/badge";
 
 export type JobStatus =
   | "queued"
+  | "in_progress"
   | "running"
   | "done"
+  | "translated"
   | "failed"
   | "quarantined";
-
-interface StatusConfig {
-  bg: string;
-  text: string;
-  dot: string;
-  label: string;
-}
-
-const STATUS_CONFIG: Record<JobStatus, StatusConfig> = {
-  queued: {
-    bg: "#1e293b",
-    text: "#94a3b8",
-    dot: "#64748b",
-    label: "Queued",
-  },
-  running: {
-    bg: "#1e3a5f",
-    text: "#60a5fa",
-    dot: "#3b82f6",
-    label: "Running",
-  },
-  done: {
-    bg: "#14291e",
-    text: "#4ade80",
-    dot: "#22c55e",
-    label: "Done",
-  },
-  failed: {
-    bg: "#2d1515",
-    text: "#f87171",
-    dot: "#ef4444",
-    label: "Failed",
-  },
-  quarantined: {
-    bg: "#2d1f0a",
-    text: "#fb923c",
-    dot: "#f97316",
-    label: "Quarantined",
-  },
-};
 
 interface StatusBadgeProps {
   status: JobStatus;
 }
 
 export default function StatusBadge({ status }: StatusBadgeProps) {
-  const config = STATUS_CONFIG[status] ?? STATUS_CONFIG.failed;
-
-  return (
-    <span
-      className="inline-flex items-center gap-1 h-5 px-1.5 rounded text-xs font-normal"
-      style={{ backgroundColor: config.bg, color: config.text }}
-    >
-      {/* 4px colored dot — accessibility: color is supplementary, not sole indicator */}
-      <span
-        className="inline-block w-1 h-1 rounded-full flex-shrink-0"
-        style={{ backgroundColor: config.dot }}
-        aria-hidden="true"
-      />
-      {config.label}
-    </span>
-  );
+  switch (status) {
+    case "done":
+    case "translated":
+      return (
+        <Badge className="bg-emerald-600/80 text-white border-transparent">
+          {status === "translated" ? "Translated" : "Done"}
+        </Badge>
+      );
+    case "failed":
+      return <Badge variant="destructive">Failed</Badge>;
+    case "queued":
+    case "in_progress":
+    case "running":
+      return (
+        <Badge variant="secondary">
+          {status === "in_progress"
+            ? "In Progress"
+            : status.charAt(0).toUpperCase() + status.slice(1)}
+        </Badge>
+      );
+    case "quarantined":
+      return (
+        <Badge className="bg-amber-600/80 text-white border-transparent">
+          Quarantined
+        </Badge>
+      );
+    default:
+      return <Badge variant="outline">{status}</Badge>;
+  }
 }
