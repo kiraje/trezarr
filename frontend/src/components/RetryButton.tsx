@@ -6,15 +6,22 @@
  * - On click: inline confirmation "Re-queue this item? [Re-queue] [Cancel]" — no modal
  * - On confirm: spinner; success/error Toast shown via callback
  * - Copywriting contract: "Re-queue this item?", "Re-queue", "Cancel"
+ *
+ * Reskinned Phase 15 plan 03: Button primitive + shadcn tokens.
  */
 import { useState } from "react";
 import { RefreshCw } from "lucide-react";
 import { retryJob } from "../api/client";
-import type { ToastState } from "./Toast";
+import { Button } from "./ui/button";
+
+interface ToastPayload {
+  message: string;
+  variant: "success" | "error";
+}
 
 interface RetryButtonProps {
   jobId: number;
-  onToast: (toast: Omit<ToastState, "id">) => void;
+  onToast: (toast: ToastPayload) => void;
   onRetried?: () => void;
 }
 
@@ -46,43 +53,49 @@ export default function RetryButton({
 
   if (state === "idle") {
     return (
-      <button
+      <Button
         type="button"
+        variant="ghost"
+        size="sm"
         onClick={() => setState("confirming")}
-        className="inline-flex items-center gap-1 text-sm text-accent hover:text-[#2563eb] focus:outline-[#3b82f6] focus:outline-2 focus:outline-offset-2 transition-colors duration-150"
+        className="text-primary"
         aria-label="Retry this job"
       >
         <RefreshCw size={14} aria-hidden="true" />
         Retry
-      </button>
+      </Button>
     );
   }
 
   if (state === "confirming") {
     return (
-      <span className="inline-flex items-center gap-2 text-xs text-[#e2e6f0]">
-        <span className="text-[#6b7280]">Re-queue this item?</span>
-        <button
+      <span className="inline-flex items-center gap-2 text-xs text-foreground">
+        <span className="text-muted-foreground">Re-queue this item?</span>
+        <Button
           type="button"
+          variant="ghost"
+          size="sm"
           onClick={handleConfirm}
-          className="text-accent hover:text-[#2563eb] focus:outline-[#3b82f6] focus:outline-2 focus:outline-offset-2"
+          className="text-primary"
         >
           Re-queue
-        </button>
-        <button
+        </Button>
+        <Button
           type="button"
+          variant="ghost"
+          size="sm"
           onClick={() => setState("idle")}
-          className="text-[#6b7280] hover:text-[#e2e6f0] focus:outline-[#3b82f6] focus:outline-2 focus:outline-offset-2"
+          className="text-muted-foreground"
         >
           Cancel
-        </button>
+        </Button>
       </span>
     );
   }
 
   // pending
   return (
-    <span className="inline-flex items-center gap-1 text-sm text-[#6b7280]">
+    <span className="inline-flex items-center gap-1 text-sm text-muted-foreground">
       <RefreshCw size={14} className="animate-spin" aria-hidden="true" />
       Re-queuing…
     </span>
