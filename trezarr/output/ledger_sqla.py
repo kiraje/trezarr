@@ -28,7 +28,7 @@ import hashlib
 import logging
 from pathlib import Path
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from trezarr.bible.models import ProcessedFile
@@ -171,6 +171,51 @@ class LedgerSQLA:
             A 16-character lowercase hex string (first 64 bits of SHA-256).
         """
         return hashlib.sha256(source_bytes).hexdigest()[:16]
+
+
+async def translated_counts_for_series(
+    session_factory: async_sessionmaker,
+    series_ids: list[int],
+) -> dict[str, int]:
+    """Return {str(series_id): count} of status='done' ProcessedFile rows (D-05).
+
+    Executes a single GROUP BY aggregate query rather than one query per series,
+    so the library list endpoint scales to large libraries without N round-trips.
+
+    Keys are ``str`` because ``ProcessedFile.series_id`` is ``Mapped[str | None]``;
+    Sonarr series IDs are ints, so callers must use ``str(series_id)`` as the key.
+    A series absent from the DB returns 0 via the caller's ``.get(key, 0)`` idiom.
+
+    Security (T-13-02): ``ProcessedFile.series_id.in_(str_ids)`` uses SQLAlchemy's
+    parameterised IN clause — values are never interpolated as raw SQL.
+
+    Args:
+        session_factory: Async session factory (``async_sessionmaker``).
+        series_ids:      List of Sonarr/Radarr series IDs (ints). Returns ``{}``
+                         immediately when the list is empty.
+
+    Returns:
+        Mapping of ``str(series_id)`` → count of ``status='done'`` rows.
+        Only series_ids that have at least one matching row appear in the result.
+    """
+    if not series_ids:
+        return {}
+
+    str_ids = [str(sid) for sid in series_ids]
+
+    async with session_factory() as session:
+        result = await session.execute(
+            select(
+                ProcessedFile.series_id,
+                func.count().label("n"),
+            )
+            .where(
+                ProcessedFile.series_id.in_(str_ids),
+                ProcessedFile.status == "done",
+            )
+            .group_by(ProcessedFile.series_id)
+        )
+        return {row.series_id: row.n for row in result}
 
 
 def _row_to_entry(row: ProcessedFile) -> LedgerEntry:

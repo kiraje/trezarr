@@ -352,9 +352,9 @@ async def test_translated_counts_for_series():
 
     async with SessionFactory() as session:
         session.add_all([
-            ProcessedFile(series_id="42", source_path="/a/1.srt", output_path="/a/1.vi.srt", status="done"),
-            ProcessedFile(series_id="42", source_path="/a/2.srt", output_path="/a/2.vi.srt", status="done"),
-            ProcessedFile(series_id="99", source_path="/b/1.srt", output_path="/b/1.vi.srt", status="done"),
+            ProcessedFile(series_id="42", source_path="/a/1.srt", output_path="/a/1.vi.srt", status="done", content_hash="a1b2c3d4e5f60001"),
+            ProcessedFile(series_id="42", source_path="/a/2.srt", output_path="/a/2.vi.srt", status="done", content_hash="a1b2c3d4e5f60002"),
+            ProcessedFile(series_id="99", source_path="/b/1.srt", output_path="/b/1.vi.srt", status="done", content_hash="a1b2c3d4e5f60003"),
         ])
         await session.commit()
 
