@@ -431,7 +431,7 @@ Plans:
 
 **Wave 2** *(blocked on Wave 1 completion — plans 14-02, 14-03, 14-04 run in parallel)*
 
-- [ ] 14-02-PLAN.md — Wave 2: app-sidebar.tsx SidebarGroup wrapper (WR-01) + LIVE/count badge wiring + NotFound.tsx + App.tsx catch-all route (NAV-03)
+- [x] 14-02-PLAN.md — Wave 2: app-sidebar.tsx SidebarGroup wrapper (WR-01) + LIVE/count badge wiring + NotFound.tsx + App.tsx catch-all route (NAV-03)
 - [ ] 14-03-PLAN.md — Wave 2: Series.tsx real list page — dense table, progress bar, search/filter/sort, row click to /series/:id, setLibraryData (LIB-01, LIB-06, LIB-07, NAV-03)
 - [ ] 14-04-PLAN.md — Wave 2: Movies.tsx real list page — dense table, source-sub badge, progress bar, Translate button, search/filter/sort, setLibraryData (LIB-02, LIB-06, LIB-07, NAV-03)
 
@@ -495,6 +495,6 @@ v1.1 phases execute in numeric order: 11 → 12 → 13 (parallel-eligible with 1
 | 11. shadcn Foundation & Purple Theme | 3/3 | Complete    | 2026-06-03 |
 | 12. App Shell + Route Restructure | 1/1 | Complete    | 2026-06-03 |
 | 13. Backend Episodes Enrichment | 3/3 | Complete    | 2026-06-03 |
-| 14. New Library Pages + Nav Badge Wiring | 1/6 | In Progress|  |
+| 14. New Library Pages + Nav Badge Wiring | 2/6 | In Progress|  |
 | 15. Reskin Existing Pages | 0/TBD | Not started | - |
 | 16. Docker Rebuild + Live Smoke Test | 0/TBD | Not started | - |

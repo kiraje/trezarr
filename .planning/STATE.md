@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: "UI v2: shadcn dashboard"
 status: executing
-stopped_at: Phase 16 context gathered (all v1.1 phases discussed)
-last_updated: "2026-06-03T18:42:48.365Z"
+stopped_at: Completed 14-02-PLAN.md
+last_updated: "2026-06-03T18:46:55.629Z"
 last_activity: 2026-06-03
 progress:
   total_phases: 16
   completed_phases: 13
   total_plans: 57
-  completed_plans: 52
+  completed_plans: 53
   percent: 81
 ---
 
@@ -26,7 +26,7 @@ See: .planning/PROJECT.md (updated 2026-06-03)
 ## Current Position
 
 Phase: 14 (new-library-pages-nav-badge-wiring) — EXECUTING
-Plan: 2 of 6
+Plan: 3 of 6
 Status: Ready to execute
 Last activity: 2026-06-03
 
@@ -105,6 +105,7 @@ Phase 15: [ ] Reskin       Phase 16: [ ] Docker/Smoke
 | Phase 13-backend-episodes-enrichment P02 | 6 min | 2 tasks | 4 files |
 | Phase 13 P03 | 5 min | 2 tasks | 2 files |
 | Phase 14 P01 | 148s | 2 tasks | 4 files |
+| Phase 14 P02 | 8m | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -151,6 +152,9 @@ Recent decisions affecting current work:
 - [v1.1 Roadmap]: Phase 13 (backend enrichment) is parallel-eligible with Phase 12 (shell) — no shared code; but Phase 14 (SeriesDetail) blocks on both Phase 12 (layout route / Outlet) and Phase 13 (stable API contract).
 - [v1.1 Roadmap]: BibleEditor reskin is Phase 15 (last page) — 88KB, 5 previously-fixed critical locking bugs; reskin-in-place only (token substitution, no logic changes); test suite must stay green after each of the four sections.
 - [v1.1 Roadmap]: Bridge period dual-token strategy — legacy hex tokens kept in tailwind.config.js until all pages are reskinned; removed atomically in Phase 15 (single commit after grep for `bg-[#` returns zero results).
+- [Phase ?]: SidebarGroup wrapper added (WR-01): SidebarContent > SidebarGroup > SidebarMenu pattern; adds p-2 inset
+- [Phase ?]: NavBadge slot uses flex items-center gap-1 wrapper for LIVE+count badges in SidebarMenuButton (14-02)
+- [Phase ?]: WR-03: Route path='*' catch-all as last child of layout route; NotFound.tsx static copy only no XSS surface (14-02)
 
 ### Pending Todos
 
@@ -183,6 +187,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-06-03T18:42:48.359Z
-Stopped at: Phase 16 context gathered (all v1.1 phases discussed)
+Last session: 2026-06-03T18:46:55.623Z
+Stopped at: Completed 14-02-PLAN.md
 Resume file: None
