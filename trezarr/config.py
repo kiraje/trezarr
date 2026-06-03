@@ -60,6 +60,14 @@ class TrezarrSettings(BaseSettings):
     # ── Structured-output tier (D-04) ──────────────────────────────────────────
     llm_structured_output_mode: str = "auto"  # auto | json_schema | json_object | text
 
+    # ── Reasoning / "thinking" mode toggle ─────────────────────────────────────
+    # When True, every LLM call carries extra_body={"thinking": {"type": "disabled"}}
+    # to switch off the model's reasoning pass. DeepSeek models (e.g. deepseek-v4-pro)
+    # enable thinking by DEFAULT, which adds latency and reasoning-token cost; flip
+    # this on for those endpoints. extra_body is merged verbatim into the request, so
+    # endpoints that don't recognise the key simply ignore it (safe for all backends).
+    llm_disable_thinking: bool = False
+
     # ── Context window (D-05 — used by Phase 2 batching) ──────────────────────
     llm_context_window: int = 32768
 
@@ -169,6 +177,12 @@ class TrezarrSettings(BaseSettings):
     # Phase 10: Bazarr inventory use (D-104)
     bazarr_use_inventory: bool = True   # When True: query Bazarr for subtitle inventory.
                                         # When False: degrade to filesystem glob (find_source_sub).
+
+    # ── Library browser / manual translate safety gate ────────────────────────
+    auto_translate_enabled: bool = False
+    # When False, the scheduler poller discovers items but never enqueues them.
+    # The user must flip this on explicitly to allow the daemon to auto-translate
+    # the whole library. This protects paid LLM endpoints from accidental mass-use.
 
     def __init__(self, _yaml_file: str | None = None, **data: Any) -> None:
         """Create settings.

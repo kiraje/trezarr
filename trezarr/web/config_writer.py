@@ -143,6 +143,23 @@ def write_settings_to_yaml(current: "TrezarrSettings", patch: dict) -> None:
             continue
         existing[key] = value
 
+    # Bug 3: when a *arr connection's host + api_key are both non-empty after applying
+    # the patch, auto-set the corresponding *_enabled = True so discovery/listing works
+    # without requiring the user to flip the toggle manually.
+    for svc in ("sonarr", "radarr", "bazarr"):
+        host_key = f"{svc}_host"
+        api_key_key = f"{svc}_api_key"
+        enabled_key = f"{svc}_enabled"
+        host_val = existing.get(host_key, "")
+        api_key_val = existing.get(api_key_key, "")
+        # Only auto-enable; never auto-disable (the user may have explicitly disabled).
+        if host_val and api_key_val and api_key_val != SENTINEL:
+            if not existing.get(enabled_key, False):
+                existing[enabled_key] = True
+                logger.debug(
+                    "write_settings_to_yaml: auto-enabled %s (host+key both set)", enabled_key
+                )
+
     # Ensure the parent directory exists (e.g., /config/ may not be mounted in tests).
     config_path = CONFIG_PATH
     import pathlib  # noqa: PLC0415

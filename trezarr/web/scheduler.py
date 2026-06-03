@@ -61,6 +61,12 @@ async def poll_and_enqueue(
         logger.debug("poll_and_enqueue: session_factory or settings is None — skipping")
         return
 
+    if not getattr(settings, "auto_translate_enabled", False):
+        logger.debug(
+            "poll_and_enqueue: auto_translate_enabled=False — skipping auto-translate sweep"
+        )
+        return
+
     from trezarr.arr import DiscoveryError  # noqa: PLC0415
     from trezarr.arr.radarr import discover_radarr_items  # noqa: PLC0415
     from trezarr.arr.sonarr import discover_sonarr_items  # noqa: PLC0415
