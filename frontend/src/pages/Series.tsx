@@ -293,7 +293,6 @@ export default function Series() {
             <thead>
               <tr className="border-b border-border text-muted-foreground">
                 <th className="text-left py-2 px-4">Title</th>
-                <th className="text-left py-2 px-4 w-[80px]">Year</th>
                 <th className="text-left py-2 px-4 w-[220px]">Progress</th>
                 <th className="text-right py-2 px-4 w-[120px]">Translated</th>
               </tr>
@@ -303,13 +302,22 @@ export default function Series() {
                 <tr
                   key={s.id}
                   className="border-b border-border cursor-pointer hover:bg-accent/50 transition-colors"
+                  tabIndex={0}
                   onClick={() => navigate("/series/" + s.id)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      navigate("/series/" + s.id);
+                    }
+                  }}
                 >
                   <td className="py-2 px-4">
                     <span className="font-medium">{s.title}</span>
-                  </td>
-                  <td className="py-2 px-4 text-muted-foreground">
-                    {s.year ?? "—"}
+                    {s.year !== null && (
+                      <span className="text-muted-foreground text-xs ml-1.5">
+                        ({s.year})
+                      </span>
+                    )}
                   </td>
                   <td className="py-2 px-4">
                     <ProgressBar item={s} />
