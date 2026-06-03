@@ -12,8 +12,13 @@ import { useNavigate } from "react-router-dom";
 import { FileText } from "lucide-react";
 import StatusBadge from "./StatusBadge";
 import type { JobStatus } from "./StatusBadge";
-import type { ToastState } from "./Toast";
 import RetryButton from "./RetryButton";
+
+/** Toast payload passed to onToast callbacks (matches RetryButton's local ToastPayload). */
+interface ToastPayload {
+  message: string;
+  variant: "success" | "error";
+}
 import { Button } from "./ui/button";
 
 // ── Shared helpers ────────────────────────────────────────────────────────────
@@ -188,7 +193,7 @@ export function QueueTable({ jobs, lastUpdated }: QueueTableProps) {
 interface HistoryTableProps {
   jobs: HistoryRow[];
   lastUpdated?: string;
-  onToast: (toast: Omit<ToastState, "id">) => void;
+  onToast: (toast: ToastPayload) => void;
   onRefresh?: () => void;
 }
 

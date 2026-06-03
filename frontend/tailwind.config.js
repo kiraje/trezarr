@@ -15,11 +15,6 @@ export default {
   	},
   	extend: {
   		colors: {
-  			'bg-base': '#0f1117',
-  			'bg-surface': '#1a1d27',
-  			'bg-stripe': '#1e2130',
-  			'text-primary': '#e2e6f0',
-  			'text-muted': '#6b7280',
   			border: 'hsl(var(--border))',
   			input: 'hsl(var(--input))',
   			ring: 'hsl(var(--ring))',

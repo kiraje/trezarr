@@ -20,6 +20,7 @@
 import { Outlet } from "react-router-dom";
 import { SidebarProvider } from "./ui/sidebar";
 import { AppSidebar } from "./app-sidebar";
+import { Toaster } from "./ui/sonner";
 
 export default function AppShell() {
   return (
@@ -28,6 +29,7 @@ export default function AppShell() {
       <main className="flex-1 overflow-auto bg-background p-6">
         <Outlet />
       </main>
+      <Toaster />
     </SidebarProvider>
   );
 }
