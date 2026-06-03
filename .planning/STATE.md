@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: "UI v2: shadcn dashboard"
-status: ready_to_plan
-stopped_at: Phase 13 complete (3/3) — ready to discuss Phase 14
-last_updated: 2026-06-03T18:21:00.439Z
+status: executing
+stopped_at: Phase 16 context gathered (all v1.1 phases discussed)
+last_updated: "2026-06-03T18:42:48.365Z"
 last_activity: 2026-06-03
 progress:
   total_phases: 16
   completed_phases: 13
-  total_plans: 51
-  completed_plans: 51
+  total_plans: 57
+  completed_plans: 52
   percent: 81
 ---
 
@@ -21,13 +21,13 @@ progress:
 See: .planning/PROJECT.md (updated 2026-06-03)
 
 **Core value:** Vietnamese subtitles that stay consistent and relationally correct (right pronoun pair, stable names/terms) across an entire series — produced automatically.
-**Current focus:** Phase 14 — new library pages nav badge wiring
+**Current focus:** Phase 14 — new-library-pages-nav-badge-wiring
 
 ## Current Position
 
-Phase: 14
-Plan: Not started
-Status: Ready to plan
+Phase: 14 (new-library-pages-nav-badge-wiring) — EXECUTING
+Plan: 2 of 6
+Status: Ready to execute
 Last activity: 2026-06-03
 
 ```
@@ -104,6 +104,7 @@ Phase 15: [ ] Reskin       Phase 16: [ ] Docker/Smoke
 | Phase 13 P01 | 149 | 2 tasks | 2 files |
 | Phase 13-backend-episodes-enrichment P02 | 6 min | 2 tasks | 4 files |
 | Phase 13 P03 | 5 min | 2 tasks | 2 files |
+| Phase 14 P01 | 148s | 2 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -182,6 +183,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-06-03T18:12:21.852Z
+Last session: 2026-06-03T18:42:48.359Z
 Stopped at: Phase 16 context gathered (all v1.1 phases discussed)
 Resume file: None

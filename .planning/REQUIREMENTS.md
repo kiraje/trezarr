@@ -84,17 +84,17 @@ Milestone v1.1 (defined 2026-06-03). Big-bang dashboard rework on a shadcn/ui + 
 
 - [x] **NAV-01**: User sees a full-height sidebar shell with brand (logo glyph + "TREZARR" pill); the active section is marked with a left purple accent bar
 - [x] **NAV-02**: Navigation exposes Series / Movies / Queue / History / Bible / Settings; the old `/library` splits into `/series` and `/movies`; `/` redirects to `/series`
-- [ ] **NAV-03**: Nav rows show a right-side count badge of items needing a Vietnamese subtitle (auto-hidden at zero) and a "LIVE" badge when the backing *arr service is connected
+- [x] **NAV-03**: Nav rows show a right-side count badge of items needing a Vietnamese subtitle (auto-hidden at zero) and a "LIVE" badge when the backing *arr service is connected
 
 ### LIB — Library Browsing
 
-- [ ] **LIB-01**: User can browse all Sonarr series on a Series list page
-- [ ] **LIB-02**: User can browse all Radarr movies on a Movies list page showing source-subtitle and Vietnamese-subtitle status
-- [ ] **LIB-03**: User can open a series and see its episodes grouped by season in collapsible sections (latest season auto-expanded)
-- [ ] **LIB-04**: Each episode row shows an Audio-language badge and its subtitle-language badges (`CODE2` uppercase, with `:HI`/`:Forced` markers), color-coded amber = source / purple = Vietnamese, with a non-color (shape + `aria-label`) distinction for accessibility
-- [ ] **LIB-05**: User can trigger translation for a single episode or an entire season from the Series detail view (enqueues via `POST /api/translate`)
-- [ ] **LIB-06**: User can search, filter by subtitle status, and sort the Series and Movies lists
-- [ ] **LIB-07**: Series and Movies list items show a Vietnamese-subtitle translation-progress indicator (translated / total)
+- [x] **LIB-01**: User can browse all Sonarr series on a Series list page
+- [x] **LIB-02**: User can browse all Radarr movies on a Movies list page showing source-subtitle and Vietnamese-subtitle status
+- [x] **LIB-03**: User can open a series and see its episodes grouped by season in collapsible sections (latest season auto-expanded)
+- [x] **LIB-04**: Each episode row shows an Audio-language badge and its subtitle-language badges (`CODE2` uppercase, with `:HI`/`:Forced` markers), color-coded amber = source / purple = Vietnamese, with a non-color (shape + `aria-label`) distinction for accessibility
+- [x] **LIB-05**: User can trigger translation for a single episode or an entire season from the Series detail view (enqueues via `POST /api/translate`)
+- [x] **LIB-06**: User can search, filter by subtitle status, and sort the Series and Movies lists
+- [x] **LIB-07**: Series and Movies list items show a Vietnamese-subtitle translation-progress indicator (translated / total)
 
 ### API — Backend Episode Data
 
@@ -204,16 +204,16 @@ Which phases cover which requirements. Populated during roadmap creation.
 | UI-02 | Phase 11 | Complete |
 | NAV-01 | Phase 12 | Complete |
 | NAV-02 | Phase 12 | Complete |
-| NAV-03 | Phase 14 | Pending |
+| NAV-03 | Phase 14 | Complete |
 | API-01 | Phase 13 | Complete |
 | API-02 | Phase 13 | Complete |
-| LIB-01 | Phase 14 | Pending |
-| LIB-02 | Phase 14 | Pending |
-| LIB-03 | Phase 14 | Pending |
-| LIB-04 | Phase 14 | Pending |
-| LIB-05 | Phase 14 | Pending |
-| LIB-06 | Phase 14 | Pending |
-| LIB-07 | Phase 14 | Pending |
+| LIB-01 | Phase 14 | Complete |
+| LIB-02 | Phase 14 | Complete |
+| LIB-03 | Phase 14 | Complete |
+| LIB-04 | Phase 14 | Complete |
+| LIB-05 | Phase 14 | Complete |
+| LIB-06 | Phase 14 | Complete |
+| LIB-07 | Phase 14 | Complete |
 | RSK-01 | Phase 15 | Pending |
 | RSK-02 | Phase 15 | Pending |
 | RSK-03 | Phase 16 | Pending |

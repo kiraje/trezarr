@@ -427,7 +427,7 @@ Plans:
 
 **Wave 1**
 
-- [ ] 14-01-PLAN.md — Wave 1: client.ts Phase-13 types (SeriesItem, MovieItem, SeriesEpisodesResponse, etc.) + LibraryContext (shared GET /api/library state; LIVE + count badge derivation helpers) (LIB-01, LIB-02, LIB-03, LIB-04, LIB-05, LIB-06, LIB-07, NAV-03)
+- [x] 14-01-PLAN.md — Wave 1: client.ts Phase-13 types (SeriesItem, MovieItem, SeriesEpisodesResponse, etc.) + LibraryContext (shared GET /api/library state; LIVE + count badge derivation helpers) (LIB-01, LIB-02, LIB-03, LIB-04, LIB-05, LIB-06, LIB-07, NAV-03)
 
 **Wave 2** *(blocked on Wave 1 completion — plans 14-02, 14-03, 14-04 run in parallel)*
 
@@ -495,6 +495,6 @@ v1.1 phases execute in numeric order: 11 → 12 → 13 (parallel-eligible with 1
 | 11. shadcn Foundation & Purple Theme | 3/3 | Complete    | 2026-06-03 |
 | 12. App Shell + Route Restructure | 1/1 | Complete    | 2026-06-03 |
 | 13. Backend Episodes Enrichment | 3/3 | Complete    | 2026-06-03 |
-| 14. New Library Pages + Nav Badge Wiring | 0/TBD | Not started | - |
+| 14. New Library Pages + Nav Badge Wiring | 1/6 | In Progress|  |
 | 15. Reskin Existing Pages | 0/TBD | Not started | - |
 | 16. Docker Rebuild + Live Smoke Test | 0/TBD | Not started | - |
