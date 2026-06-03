@@ -298,6 +298,11 @@ def create_app(settings: TrezarrSettings | None = None) -> FastAPI:
     from trezarr.web.routes.bible import router as bible_router  # noqa: PLC0415
     app.include_router(bible_router, prefix="/api")
 
+    # Library browser + manual translate (quick task 260603-l8g)
+    # GET /api/library, GET /api/library/series/{id}/episodes, POST /api/translate
+    from trezarr.web.routes.library import router as library_router  # noqa: PLC0415
+    app.include_router(library_router, prefix="/api")
+
     # POST /webhook — Sonarr/Radarr/Bazarr inbound webhooks (AUTO-02, D-66)
     # Registered BEFORE StaticFiles (Pitfall E: StaticFiles matches all remaining paths)
     from trezarr.web.routes.webhook import router as webhook_router  # noqa: PLC0415
