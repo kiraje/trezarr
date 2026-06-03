@@ -40,7 +40,7 @@ import {
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-type FilterStatus = "all" | "needs_vi" | "translated" | "no_source";
+type FilterStatus = "all" | "needs_vi" | "translated" | "no_files";
 type SortField = "title" | "progress";
 type SortDir = "asc" | "desc";
 
@@ -185,7 +185,7 @@ export default function Movies() {
     filtered = filtered.filter(
       (m) => m.translated_count >= m.total_count && m.total_count > 0,
     );
-  } else if (filterStatus === "no_source") {
+  } else if (filterStatus === "no_files") {
     filtered = filtered.filter((m) => m.total_count === 0);
   }
 
@@ -207,7 +207,7 @@ export default function Movies() {
     all: "All",
     needs_vi: "Needs VI",
     translated: "Translated",
-    no_source: "No source",
+    no_files: "No files",
   };
 
   // ── Normal state ───────────────────────────────────────────────────────────
@@ -240,8 +240,8 @@ export default function Movies() {
             <DropdownMenuItem onSelect={() => setFilterStatus("translated")}>
               Translated
             </DropdownMenuItem>
-            <DropdownMenuItem onSelect={() => setFilterStatus("no_source")}>
-              No source
+            <DropdownMenuItem onSelect={() => setFilterStatus("no_files")}>
+              No files
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>

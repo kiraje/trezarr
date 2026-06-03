@@ -28,7 +28,7 @@ import {
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-type FilterStatus = "all" | "needs_vi" | "translated" | "no_source";
+type FilterStatus = "all" | "needs_vi" | "translated" | "no_files";
 type SortField = "title" | "progress";
 type SortDir = "asc" | "desc";
 
@@ -173,7 +173,7 @@ export default function Series() {
     filtered = filtered.filter(
       (s) => s.translated_count >= s.total_count && s.total_count > 0,
     );
-  } else if (filterStatus === "no_source") {
+  } else if (filterStatus === "no_files") {
     filtered = filtered.filter((s) => s.total_count === 0);
   }
 
@@ -195,7 +195,7 @@ export default function Series() {
     all: "All",
     needs_vi: "Needs VI",
     translated: "Translated",
-    no_source: "No source",
+    no_files: "No files",
   };
 
   // ── Normal state ───────────────────────────────────────────────────────────
@@ -228,8 +228,8 @@ export default function Series() {
             <DropdownMenuItem onSelect={() => setFilterStatus("translated")}>
               Translated
             </DropdownMenuItem>
-            <DropdownMenuItem onSelect={() => setFilterStatus("no_source")}>
-              No source
+            <DropdownMenuItem onSelect={() => setFilterStatus("no_files")}>
+              No files
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
