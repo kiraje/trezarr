@@ -82,8 +82,8 @@ Milestone v1.1 (defined 2026-06-03). Big-bang dashboard rework on a shadcn/ui + 
 
 ### NAV — Navigation Shell
 
-- [ ] **NAV-01**: User sees a full-height sidebar shell with brand (logo glyph + "TREZARR" pill); the active section is marked with a left purple accent bar
-- [ ] **NAV-02**: Navigation exposes Series / Movies / Queue / History / Bible / Settings; the old `/library` splits into `/series` and `/movies`; `/` redirects to `/series`
+- [x] **NAV-01**: User sees a full-height sidebar shell with brand (logo glyph + "TREZARR" pill); the active section is marked with a left purple accent bar
+- [x] **NAV-02**: Navigation exposes Series / Movies / Queue / History / Bible / Settings; the old `/library` splits into `/series` and `/movies`; `/` redirects to `/series`
 - [ ] **NAV-03**: Nav rows show a right-side count badge of items needing a Vietnamese subtitle (auto-hidden at zero) and a "LIVE" badge when the backing *arr service is connected
 
 ### LIB — Library Browsing
@@ -202,8 +202,8 @@ Which phases cover which requirements. Populated during roadmap creation.
 |-------------|-------|--------|
 | UI-01 | Phase 11 | Complete |
 | UI-02 | Phase 11 | Complete |
-| NAV-01 | Phase 12 | Pending |
-| NAV-02 | Phase 12 | Pending |
+| NAV-01 | Phase 12 | Complete |
+| NAV-02 | Phase 12 | Complete |
 | NAV-03 | Phase 14 | Pending |
 | API-01 | Phase 13 | Pending |
 | API-02 | Phase 13 | Pending |

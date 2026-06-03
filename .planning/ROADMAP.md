@@ -31,7 +31,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 ### v1.1 Phases (UI v2: shadcn dashboard)
 
 - [x] **Phase 11: shadcn Foundation & Purple Theme** - Install shadcn@2.10.0 + jolly-ui on Tailwind v3, wire the `@/` alias, establish the HSL CSS-variable purple dark theme, and verify a green build with no page content changes (completed 2026-06-03)
-- [ ] **Phase 12: App Shell + Route Restructure** - Replace the current AppShell with SidebarProvider + AppSidebar + Outlet, restructure routes so `/library` → `/series` + `/movies` + `/series/:id` and `/` → `/series`
+- [x] **Phase 12: App Shell + Route Restructure** - Replace the current AppShell with SidebarProvider + AppSidebar + Outlet, restructure routes so `/library` → `/series` + `/movies` + `/series/:id` and `/` → `/series` (completed 2026-06-03)
 - [ ] **Phase 13: Backend Episodes Enrichment** - Rewrite `GET /api/library/series/{id}/episodes` to return season-grouped episode records from Sonarr with audio languages and Bazarr subtitle inventory (fail-soft); expose `translated_count`/`total_count` on list endpoints
 - [ ] **Phase 14: New Library Pages + Nav Badge Wiring** - Build Series list, Series detail (season-grouped Accordion with audio/subtitle badges, translate actions, search/filter/sort), Movies list, and wire the sidebar count+LIVE badges to live API data
 - [ ] **Phase 15: Reskin Existing Pages** - Reskin-in-place Queue, History, Settings, Bible List, JobLogs, and Bible Editor onto shadcn primitives; remove legacy bridge tokens after all pages pass
@@ -380,7 +380,7 @@ Plans:
 **Plans**: 1 plan
 
 Plans:
-- [ ] 12-01-PLAN.md — Replace AppShell with SidebarProvider + AppSidebar + Outlet shell, migrate App.tsx to the layout-route table (/library -> /series + /movies + /series/:seriesId; / -> /series), and add Series/SeriesDetail/Movies stub pages (NAV-01, NAV-02)
+- [x] 12-01-PLAN.md — Replace AppShell with SidebarProvider + AppSidebar + Outlet shell, migrate App.tsx to the layout-route table (/library -> /series + /movies + /series/:seriesId; / -> /series), and add Series/SeriesDetail/Movies stub pages (NAV-01, NAV-02)
 
 **UI hint**: yes
 
@@ -475,7 +475,7 @@ v1.1 phases execute in numeric order: 11 → 12 → 13 (parallel-eligible with 1
 | 9. Multi-Format — ASS/SSA + VTT | 5/6 | In Progress | |
 | 10. Source Selection & Per-Series Overrides | 4/4 | Complete | 2026-06-02 |
 | 11. shadcn Foundation & Purple Theme | 3/3 | Complete    | 2026-06-03 |
-| 12. App Shell + Route Restructure | 0/1 | Not started | - |
+| 12. App Shell + Route Restructure | 1/1 | Complete   | 2026-06-03 |
 | 13. Backend Episodes Enrichment | 0/3 | Not started | - |
 | 14. New Library Pages + Nav Badge Wiring | 0/TBD | Not started | - |
 | 15. Reskin Existing Pages | 0/TBD | Not started | - |
