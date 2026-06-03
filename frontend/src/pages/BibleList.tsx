@@ -14,12 +14,12 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { getSeriesList, type SeriesListItem } from "../api/client";
+import { Skeleton } from "../components/ui/skeleton";
 
 function UnreachableBanner() {
   return (
     <div
-      className="w-full mb-4 px-4 py-3 text-sm rounded"
-      style={{ backgroundColor: "#451a03", color: "#fbbf24" }}
+      className="w-full mb-4 px-4 py-3 text-sm rounded bg-amber-900/30 border border-amber-800 text-amber-400"
       role="alert"
     >
       Could not load series list. Check the server logs.
@@ -59,7 +59,7 @@ export default function BibleList() {
   return (
     <div>
       <div className="flex items-center gap-3 mb-4">
-        <h1 className="text-lg font-semibold text-text-primary">
+        <h1 className="text-xl font-semibold text-foreground">
           Series Bible
         </h1>
       </div>
@@ -70,30 +70,30 @@ export default function BibleList() {
         <div className="overflow-x-auto">
           <table className="w-full">
             <thead>
-              <tr className="border-b border-[#2d3148]">
+              <tr className="border-b border-border">
                 <th
                   scope="col"
-                  className="px-3 py-2 text-left text-xs text-text-muted font-normal w-1/2"
+                  className="px-3 py-2 text-left text-xs text-muted-foreground font-normal w-1/2"
                 >
                   Series
                 </th>
                 <th
                   scope="col"
-                  className="px-3 py-2 text-left text-xs text-text-muted font-normal"
+                  className="px-3 py-2 text-left text-xs text-muted-foreground font-normal"
                   style={{ width: "15%" }}
                 >
                   Characters
                 </th>
                 <th
                   scope="col"
-                  className="px-3 py-2 text-left text-xs text-text-muted font-normal"
+                  className="px-3 py-2 text-left text-xs text-muted-foreground font-normal"
                   style={{ width: "15%" }}
                 >
                   Terms
                 </th>
                 <th
                   scope="col"
-                  className="px-3 py-2 text-left text-xs text-text-muted font-normal"
+                  className="px-3 py-2 text-left text-xs text-muted-foreground font-normal"
                   style={{ width: "20%" }}
                 >
                   Register
@@ -102,18 +102,18 @@ export default function BibleList() {
             </thead>
             <tbody>
               {[0, 1, 2].map((i) => (
-                <tr key={i} className="h-10 border-b border-[#2d3148]">
+                <tr key={i} className="h-10 border-b border-border">
                   <td className="px-3">
-                    <div className="h-4 bg-bg-surface rounded w-48" />
+                    <Skeleton className="h-4 w-48" />
                   </td>
                   <td className="px-3">
-                    <div className="h-4 bg-bg-surface rounded w-8" />
+                    <Skeleton className="h-4 w-8" />
                   </td>
                   <td className="px-3">
-                    <div className="h-4 bg-bg-surface rounded w-8" />
+                    <Skeleton className="h-4 w-8" />
                   </td>
                   <td className="px-3">
-                    <div className="h-4 bg-bg-surface rounded w-16" />
+                    <Skeleton className="h-4 w-16" />
                   </td>
                 </tr>
               ))}
@@ -122,10 +122,10 @@ export default function BibleList() {
         </div>
       ) : series.length === 0 && !unreachable ? (
         <div className="py-12 flex flex-col items-center gap-2">
-          <p className="text-sm font-semibold text-text-primary">
+          <p className="text-sm font-semibold text-foreground">
             No series in Bible
           </p>
-          <p className="text-xs text-text-muted text-center max-w-sm">
+          <p className="text-xs text-muted-foreground text-center max-w-sm">
             Series Bibles are created automatically when Trezarr processes an
             episode. Run a translation to get started.
           </p>
@@ -134,30 +134,30 @@ export default function BibleList() {
         <div className="overflow-x-auto">
           <table className="w-full">
             <thead>
-              <tr className="border-b border-[#2d3148]">
+              <tr className="border-b border-border">
                 <th
                   scope="col"
-                  className="px-3 py-2 text-left text-xs text-text-muted font-normal w-1/2"
+                  className="px-3 py-2 text-left text-xs text-muted-foreground font-normal w-1/2"
                 >
                   Series
                 </th>
                 <th
                   scope="col"
-                  className="px-3 py-2 text-left text-xs text-text-muted font-normal"
+                  className="px-3 py-2 text-left text-xs text-muted-foreground font-normal"
                   style={{ width: "15%" }}
                 >
                   Characters
                 </th>
                 <th
                   scope="col"
-                  className="px-3 py-2 text-left text-xs text-text-muted font-normal"
+                  className="px-3 py-2 text-left text-xs text-muted-foreground font-normal"
                   style={{ width: "15%" }}
                 >
                   Terms
                 </th>
                 <th
                   scope="col"
-                  className="px-3 py-2 text-left text-xs text-text-muted font-normal"
+                  className="px-3 py-2 text-left text-xs text-muted-foreground font-normal"
                   style={{ width: "20%" }}
                 >
                   Register
@@ -165,25 +165,20 @@ export default function BibleList() {
               </tr>
             </thead>
             <tbody>
-              {series.map((s, idx) => (
+              {series.map((s) => (
                 <tr
                   key={s.id}
-                  className={[
-                    "h-10 border-b border-[#2d3148] cursor-pointer hover:bg-[#22263a]",
-                    idx % 2 === 1 ? "bg-bg-stripe" : "",
-                  ]
-                    .filter(Boolean)
-                    .join(" ")}
+                  className="h-10 border-b border-border cursor-pointer hover:bg-accent/50"
                   onClick={() => navigate(`/bible/${s.id}`)}
                 >
-                  <td className="px-3 text-sm text-text-primary">
+                  <td className="px-3 text-sm text-foreground">
                     {s.arr_kind}/{s.arr_series_id}
                   </td>
-                  <td className="px-3 text-xs text-text-muted">—</td>
-                  <td className="px-3 text-xs text-text-muted">—</td>
-                  <td className="px-3 text-xs text-text-primary">
+                  <td className="px-3 text-xs text-muted-foreground">—</td>
+                  <td className="px-3 text-xs text-muted-foreground">—</td>
+                  <td className="px-3 text-xs text-foreground">
                     {s.register ?? (
-                      <span className="text-text-muted">—</span>
+                      <span className="text-muted-foreground">—</span>
                     )}
                   </td>
                 </tr>
