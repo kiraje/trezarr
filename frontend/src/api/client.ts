@@ -542,6 +542,8 @@ export interface SeasonGroup {
 /** Response envelope from GET /api/library/series/:id/episodes (Phase-13). */
 export interface SeriesEpisodesResponse {
   series_id: number;
+  /** Series title from Sonarr — present when Sonarr responds successfully (UI#1). */
+  series_title?: string;
   /** False when Bazarr is disabled or errored — subtitle column suppressed (D-05/D-08). */
   bazarr_available: boolean;
   seasons: SeasonGroup[];

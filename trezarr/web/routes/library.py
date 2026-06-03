@@ -268,9 +268,18 @@ async def get_series_episodes(series_id: int, request: Request) -> JSONResponse:
         client = build_sonarr_client(settings)
 
         # asyncio.to_thread for both pyarr calls; gather for concurrency (D-01)
+        # Also fetch series record for series_title (UI#1 — heading needs the real name)
         episodes_coro = asyncio.to_thread(client.episode.get, series_id=series_id)
         ep_files_coro = asyncio.to_thread(client.episode_file.get, series_id=series_id)
-        episodes_raw, ep_files_raw = await asyncio.gather(episodes_coro, ep_files_coro)
+        series_coro = asyncio.to_thread(client.series.get, series_id)
+        episodes_raw, ep_files_raw, series_raw = await asyncio.gather(
+            episodes_coro, ep_files_coro, series_coro
+        )
+
+        # series.get(id_=...) may return a list or a dict; normalise to dict
+        if isinstance(series_raw, list):
+            series_raw = series_raw[0] if series_raw else {}
+        series_title: str | None = series_raw.get("title") if isinstance(series_raw, dict) else None
 
         # Pitfall 2: pyarr returns a single dict for a single result
         if isinstance(episodes_raw, dict):
@@ -289,6 +298,7 @@ async def get_series_episodes(series_id: int, request: Request) -> JSONResponse:
     except Exception as exc:  # noqa: BLE001
         logger.error("get_series_episodes: unexpected error for series_id=%d — %s", series_id, type(exc).__name__)
         return JSONResponse({"error": type(exc).__name__}, status_code=502)
+
 
     # ── Bazarr fail-soft block (D-08) ─────────────────────────────────────────
     # Disabled → bazarr_available=False, errors=[] (disabled is not an error).
@@ -394,6 +404,7 @@ async def get_series_episodes(series_id: int, request: Request) -> JSONResponse:
 
     return JSONResponse({
         "series_id": series_id,
+        "series_title": series_title,  # UI#1: real series name for SeriesDetail heading
         "bazarr_available": bazarr_available,
         "seasons": [{"season_number": sn, "episodes": seasons[sn]} for sn in sorted(seasons)],
         "errors": errors,

@@ -355,7 +355,9 @@ export default function SeriesDetail() {
     <div className="space-y-4">
       {/* Page header */}
       <div>
-        <h1 className="text-xl font-semibold">Series #{numericId}</h1>
+        <h1 className="text-xl font-semibold">
+          {data?.series_title ?? `Series #${numericId}`}
+        </h1>
         {data?.bazarr_available === false && (
           <p className="text-sm text-amber-500 mt-1">
             Bazarr unavailable — subtitle data suppressed
