@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-05-31)
 Phase: 9 (COMPLETE — last phase)
 Plan: 09-06 — human visual UAT (final gate) PASSED
 Status: All 10 phases complete. Phase 9 visual UAT signed off 2026-06-03 (12/12); ASS via JASSUB/libass-wasm + VTT via native browser <track>. Milestone 10/10 — pending /gsd-verify-work + /gsd-complete-milestone.
-Last activity: 2026-06-03
+Last activity: 2026-06-03 - Completed quick task 260603-mc3: selective SPA fallback for deep-link refresh
 
 Progress: [██████████] 100%
 
@@ -151,6 +151,7 @@ None yet.
 | 260602-g9z | Create README.md for Trezarr | 2026-06-02 | 09890e3 | [260602-g9z-create-readme-md-for-trezarr](./quick/260602-g9z-create-readme-md-for-trezarr/) |
 | 260603-laj | Fix CJK character-name resolution in Series Bible analyze (dual-key name_to_id on original_script_name + prompt tightening + CJK regression test) | 2026-06-03 | 66a47ba | [260603-laj-fix-cjk-character-name-resolution-in-ser](./quick/260603-laj-fix-cjk-character-name-resolution-in-ser/) |
 | 260603-l8g | Library browser UI + manual single-item translate (arr-themed) + auto_translate poller safety gate; Bug 2 (alembic loggers) + Bug 3 (auto-enable *_enabled on save) | 2026-06-03 | 2fd17c7 | [260603-l8g-library-browser-manual-translate](./quick/260603-l8g-library-browser-manual-translate/) |
+| 260603-mc3 | Selective SPA fallback — deep-link/refresh on client-side routes (/library, /bible/:id) now serves index.html instead of {"detail":"Not Found"}; missing assets + unknown /api paths still 404 honestly | 2026-06-03 | cbf1ad3 | [260603-mc3-selective-spa-fallback-for-deep-link-ref](./quick/260603-mc3-selective-spa-fallback-for-deep-link-ref/) |
 
 ## Deferred Items
 
