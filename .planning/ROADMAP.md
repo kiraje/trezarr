@@ -33,7 +33,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 11: shadcn Foundation & Purple Theme** - Install shadcn@2.10.0 + jolly-ui on Tailwind v3, wire the `@/` alias, establish the HSL CSS-variable purple dark theme, and verify a green build with no page content changes (completed 2026-06-03)
 - [x] **Phase 12: App Shell + Route Restructure** - Replace the current AppShell with SidebarProvider + AppSidebar + Outlet, restructure routes so `/library` → `/series` + `/movies` + `/series/:id` and `/` → `/series` (completed 2026-06-03)
 - [x] **Phase 13: Backend Episodes Enrichment** - Rewrite `GET /api/library/series/{id}/episodes` to return season-grouped episode records from Sonarr with audio languages and Bazarr subtitle inventory (fail-soft); expose `translated_count`/`total_count` on list endpoints (completed 2026-06-03)
-- [ ] **Phase 14: New Library Pages + Nav Badge Wiring** - Build Series list, Series detail (season-grouped Accordion with audio/subtitle badges, translate actions, search/filter/sort), Movies list, and wire the sidebar count+LIVE badges to live API data
+- [x] **Phase 14: New Library Pages + Nav Badge Wiring** - Build Series list, Series detail (season-grouped Accordion with audio/subtitle badges, translate actions, search/filter/sort), Movies list, and wire the sidebar count+LIVE badges to live API data (completed 2026-06-03)
 - [ ] **Phase 15: Reskin Existing Pages** - Reskin-in-place Queue, History, Settings, Bible List, JobLogs, and Bible Editor onto shadcn primitives; remove legacy bridge tokens after all pages pass
 - [ ] **Phase 16: Docker Rebuild + Live Smoke Test** - Rebuild the multi-stage Docker image with `--no-cache`, run the new dashboard on :6868 against the live *arr stack, and verify all six nav routes, episode badges, translate flow, and deep-link fallback
 
@@ -441,7 +441,7 @@ Plans:
 
 **Wave 4** *(blocked on Wave 3 completion)*
 
-- [ ] 14-06-PLAN.md — Wave 4: Delete Library.tsx, remove /library route + import from App.tsx, remove deprecated types from client.ts (D-11 cleanup) (LIB-01, LIB-02, LIB-03, LIB-05, NAV-03)
+- [x] 14-06-PLAN.md — Wave 4: Delete Library.tsx, remove /library route + import from App.tsx, remove deprecated types from client.ts (D-11 cleanup) (LIB-01, LIB-02, LIB-03, LIB-05, NAV-03)
 
 **UI hint**: yes
 
@@ -495,6 +495,6 @@ v1.1 phases execute in numeric order: 11 → 12 → 13 (parallel-eligible with 1
 | 11. shadcn Foundation & Purple Theme | 3/3 | Complete    | 2026-06-03 |
 | 12. App Shell + Route Restructure | 1/1 | Complete    | 2026-06-03 |
 | 13. Backend Episodes Enrichment | 3/3 | Complete    | 2026-06-03 |
-| 14. New Library Pages + Nav Badge Wiring | 5/6 | In Progress|  |
+| 14. New Library Pages + Nav Badge Wiring | 6/6 | Complete   | 2026-06-03 |
 | 15. Reskin Existing Pages | 0/TBD | Not started | - |
 | 16. Docker Rebuild + Live Smoke Test | 0/TBD | Not started | - |
