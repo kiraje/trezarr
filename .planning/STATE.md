@@ -2,9 +2,9 @@
 gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: "UI v2: shadcn dashboard"
-status: verifying
-stopped_at: Completed 14-02-PLAN.md
-last_updated: "2026-06-03T19:00:41.618Z"
+status: ready_to_plan
+stopped_at: Phase 14 complete (6/6) — ready to discuss Phase 15
+last_updated: 2026-06-03T19:17:21.171Z
 last_activity: 2026-06-03
 progress:
   total_phases: 16
@@ -21,13 +21,13 @@ progress:
 See: .planning/PROJECT.md (updated 2026-06-03)
 
 **Core value:** Vietnamese subtitles that stay consistent and relationally correct (right pronoun pair, stable names/terms) across an entire series — produced automatically.
-**Current focus:** Phase 14 — new-library-pages-nav-badge-wiring
+**Current focus:** Phase 15 — reskin existing pages
 
 ## Current Position
 
-Phase: 14 (new-library-pages-nav-badge-wiring) — EXECUTING
-Plan: 6 of 6
-Status: Phase complete — ready for verification
+Phase: 15
+Plan: Not started
+Status: Ready to plan
 Last activity: 2026-06-03
 
 ```
@@ -41,7 +41,7 @@ Phase 15: [ ] Reskin       Phase 16: [ ] Docker/Smoke
 
 **Velocity:**
 
-- Total plans completed: 46 (v1.0)
+- Total plans completed: 52 (v1.0)
 - Average duration: 6 min
 - Total execution time: 0.1 hours
 
@@ -61,6 +61,7 @@ Phase 15: [ ] Reskin       Phase 16: [ ] Docker/Smoke
 | 11 | 3 | - | - |
 | 12 | 1 | - | - |
 | 13 | 3 | - | - |
+| 14 | 6 | - | - |
 
 **Recent Trend:**
 
