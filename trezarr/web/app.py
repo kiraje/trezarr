@@ -20,6 +20,7 @@ Anti-patterns avoided (RESEARCH.md):
   - StaticFiles mount LAST (Pitfall E)
   - No translation inside request handlers (Pitfall D)
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -32,8 +33,55 @@ from typing import AsyncIterator
 
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
+from starlette.exceptions import HTTPException as StarletteHTTPException
+from starlette.responses import FileResponse
+from starlette.types import Scope
 
 from trezarr.config import TrezarrSettings
+
+
+# ── SPA-aware static file handler ───────────────────────────────────────────────
+
+
+class SPAStaticFiles(StaticFiles):
+    """StaticFiles subclass that falls back to index.html for extensionless
+    client-side routes, while preserving honest 404s for missing assets.
+
+    Rules:
+    - Real files → served normally (StaticFiles wins, no change).
+    - Extensionless path that is NOT under /api or /webhook → 200 index.html.
+    - Path with a file extension (e.g. .js, .css, .png) → 404 (asset missing,
+      fail loudly so stale-build bugs surface).
+    - Unknown /api/... or /webhook/... paths → 404 (exclusions required because
+      these are extensionless but must NOT return the SPA shell).
+    - Non-404 exceptions → re-raised unchanged.
+
+    Note: Starlette's get_path() passes paths WITHOUT the leading slash and
+    normalises them via os.path.normpath (e.g. "library", "bible/123",
+    "api/nope"). The is_api and is_webhook prefix checks match the unslashed
+    form accordingly.
+    """
+
+    async def get_response(self, path: str, scope: Scope) -> FileResponse:  # type: ignore[override]
+        try:
+            return await super().get_response(path, scope)
+        except StarletteHTTPException as exc:
+            if exc.status_code != 404:
+                raise
+            # Only fall back for extensionless paths outside /api and /webhook.
+            last_segment = path.rstrip("/").rsplit("/", 1)[-1]
+            has_extension = "." in last_segment
+            is_api = path.startswith("api/") or path == "api"
+            is_webhook = path.startswith("webhook/") or path == "webhook"
+            if has_extension or is_api or is_webhook:
+                raise
+            # Serve index.html with 200.
+            index_path = os.path.join(self.directory, "index.html")
+            if not os.path.exists(index_path):
+                raise
+            return FileResponse(index_path, media_type="text/html")
+
 
 logger = logging.getLogger(__name__)
 
@@ -63,14 +111,17 @@ def _resolve_db_url(settings: TrezarrSettings) -> str:
             logger.warning(
                 "DB parent directory %s does not exist; using temp DB at %s "
                 "(this is normal in test environments without /config/ mounted)",
-                parent, tmp_path,
+                parent,
+                tmp_path,
             )
             return f"sqlite+aiosqlite:///{tmp_path}"
     return db_url
 
 
 @asynccontextmanager
-async def _lifespan(app, settings: TrezarrSettings | None = None, engine_cell: list | None = None) -> AsyncIterator[None]:
+async def _lifespan(
+    app, settings: TrezarrSettings | None = None, engine_cell: list | None = None
+) -> AsyncIterator[None]:
     """FastAPI lifespan manager — owns engine, scheduler, and worker task (D-61).
 
     Startup sequence mirrors cli.py::_run_once but at process scope (CR-01):
@@ -166,6 +217,7 @@ async def _lifespan(app, settings: TrezarrSettings | None = None, engine_cell: l
         scheduler = AsyncIOScheduler()
         # Wire the poll job (Plan 07-03 monitoring, D-65/D-66)
         from trezarr.web.scheduler import setup_scheduler  # noqa: PLC0415
+
         setup_scheduler(scheduler, session_factory, _settings, ledger, media_roots, llm_client)
         scheduler.start()
         logger.info("lifespan: APScheduler started with main_poll job")
@@ -211,12 +263,19 @@ async def _lifespan(app, settings: TrezarrSettings | None = None, engine_cell: l
         logger.info("lifespan: engine disposed (CR-01)")
 
 
-def create_app(settings: TrezarrSettings | None = None) -> FastAPI:
+def create_app(
+    settings: TrezarrSettings | None = None,
+    _spa_dir: str | None = None,
+) -> FastAPI:
     """Create and return the FastAPI application with lifespan management.
 
     Args:
         settings: Optional TrezarrSettings override. If None, TrezarrSettings()
                   is used inside the lifespan (with test-friendly DB path fallback).
+        _spa_dir: Test-only escape hatch. When provided, this directory is used
+                  as the SPA static root instead of the default trezarr/web/static
+                  directory. Allows tests to inject a temporary directory with a
+                  known index.html sentinel without building the frontend.
 
     Returns:
         Configured FastAPI instance with lifespan, health endpoint, and (when
@@ -251,11 +310,14 @@ def create_app(settings: TrezarrSettings | None = None) -> FastAPI:
     # We patch the State object to provide the 'engine' attribute dynamically.
     class _StateWithEngine:
         """Proxy that exposes engine from the mutable cell."""
+
         def __getattr__(self, name: str):
             if name == "engine":
                 if _engine_cell:
                     return _engine_cell[0]
-                raise AttributeError("'State' object has no attribute 'engine' (lifespan not started?)")
+                raise AttributeError(
+                    "'State' object has no attribute 'engine' (lifespan not started?)"
+                )
             return object.__getattribute__(self, name)
 
         def __setattr__(self, name: str, value) -> None:
@@ -277,43 +339,50 @@ def create_app(settings: TrezarrSettings | None = None) -> FastAPI:
     # GET/PUT /api/settings + GET /api/settings/env-locked (SVC-02, D-70)
     # Registered BEFORE StaticFiles (Pitfall E)
     from trezarr.web.routes.settings import router as settings_router  # noqa: PLC0415
+
     app.include_router(settings_router, prefix="/api")
 
     # POST /api/test/{sonarr|radarr|bazarr|llm} — connection-test endpoints (D-71)
     # Registered BEFORE StaticFiles (Pitfall E)
     from trezarr.web.routes.test_connection import router as test_connection_router  # noqa: PLC0415
+
     app.include_router(test_connection_router, prefix="/api")
 
     # GET /api/queue, GET /api/jobs, GET /api/jobs/{id}/logs (SVC-03, D-75)
     # Registered BEFORE StaticFiles (Pitfall E)
     from trezarr.web.routes.queue import router as queue_router  # noqa: PLC0415
+
     app.include_router(queue_router, prefix="/api")
 
     # POST /api/jobs/{id}/retry (SVC-04, D-74)
     # Registered BEFORE StaticFiles (Pitfall E)
     from trezarr.web.routes.jobs import router as jobs_router  # noqa: PLC0415
+
     app.include_router(jobs_router, prefix="/api")
 
     # Bible editor endpoints (BIBLE-08) — registered before StaticFiles (Pitfall E)
     from trezarr.web.routes.bible import router as bible_router  # noqa: PLC0415
+
     app.include_router(bible_router, prefix="/api")
 
     # Library browser + manual translate (quick task 260603-l8g)
     # GET /api/library, GET /api/library/series/{id}/episodes, POST /api/translate
     from trezarr.web.routes.library import router as library_router  # noqa: PLC0415
+
     app.include_router(library_router, prefix="/api")
 
     # POST /webhook — Sonarr/Radarr/Bazarr inbound webhooks (AUTO-02, D-66)
     # Registered BEFORE StaticFiles (Pitfall E: StaticFiles matches all remaining paths)
     from trezarr.web.routes.webhook import router as webhook_router  # noqa: PLC0415
+
     app.include_router(webhook_router)  # no prefix — /webhook is top-level (not /api/webhook)
 
     # ── SPA static file mount — LAST (Pitfall E: StaticFiles must be after routes) ─
-    _static_dir = os.path.join(os.path.dirname(__file__), "static")
+    _static_dir = (
+        _spa_dir if _spa_dir is not None else os.path.join(os.path.dirname(__file__), "static")
+    )
     if os.path.exists(_static_dir):
-        from fastapi.staticfiles import StaticFiles  # noqa: PLC0415
-
-        app.mount("/", StaticFiles(directory=_static_dir, html=True), name="spa")
+        app.mount("/", SPAStaticFiles(directory=_static_dir, html=True), name="spa")
         logger.info("Serving SPA from %s", _static_dir)
     else:
         logger.info(
