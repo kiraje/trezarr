@@ -65,6 +65,44 @@ def _episode_key_from_file(ep_file: dict, raw_path: str) -> str:
     return derive_episode_key(None, raw_path)
 
 
+def _normalize_audio_languages(raw: list | str | None) -> list[str]:
+    """Normalize Sonarr mediaInfo.audioLanguages to ISO-639-1 code2 list (D-07).
+
+    Handles both string (slash-joined, e.g. "Korean/English") and list input.
+    Dedupes preserving order. Maps full names via _ORIG_LANG_NAME_TO_CODE2;
+    unknown names fall back to lowercased original.
+
+    Args:
+        raw: Raw audioLanguages value from Sonarr mediaInfo — str, list, or None.
+
+    Returns:
+        List of ISO-639-1 code2 strings (or lowercased fallback for unknowns).
+    """
+    if not raw:
+        return []
+
+    # Deferred import — D-07 reuses rank.py constants (noqa: PLC0415 pattern)
+    from trezarr.source_selection.rank import _ORIG_LANG_NAME_TO_CODE2  # noqa: PLC0415
+
+    names: list[str] = []
+    if isinstance(raw, str):
+        names = [part.strip() for part in raw.split("/") if part.strip()]
+    else:
+        # List input — each item may itself be slash-joined
+        for item in raw:
+            if isinstance(item, str):
+                names.extend(part.strip() for part in item.split("/") if part.strip())
+
+    seen: set[str] = set()
+    result: list[str] = []
+    for name in names:
+        code = _ORIG_LANG_NAME_TO_CODE2.get(name.lower(), name.lower())
+        if code not in seen:
+            seen.add(code)
+            result.append(code)
+    return result
+
+
 # ── GET /api/library ───────────────────────────────────────────────────────────
 
 @router.get("/library")
@@ -73,6 +111,10 @@ async def get_library(request: Request) -> JSONResponse:
 
     Per-source errors are collected into the ``errors`` list; the endpoint
     always returns HTTP 200 so the UI can display partial results.
+
+    Series items include translated_count (D-05 bulk query) and total_count
+    (D-04 from statistics.episodeFileCount). Movie items include translated_count
+    (filesystem vi-sidecar check) and total_count (1 if hasFile else 0).
     """
     from trezarr.arr import DiscoveryError  # noqa: PLC0415
     from trezarr.arr.radarr import build_radarr_client  # noqa: PLC0415
@@ -89,6 +131,9 @@ async def get_library(request: Request) -> JSONResponse:
     errors: list[dict] = []
 
     # ── Sonarr: list all series ───────────────────────────────────────────────
+    raw_series: list[dict] = []
+    raw_series_stats: dict[int, int] = {}  # series_id -> episodeFileCount (D-04)
+
     if settings.sonarr_enabled:
         try:
             client = build_sonarr_client(settings)
@@ -98,9 +143,13 @@ async def get_library(request: Request) -> JSONResponse:
             for s in raw_series:
                 images = s.get("images") or []
                 poster_url = images[0].get("remoteUrl") if images else None
+                s_id = s.get("id")
+                # Accumulate episodeFileCount for post-loop total_count (D-04)
+                if s_id is not None:
+                    raw_series_stats[s_id] = s.get("statistics", {}).get("episodeFileCount", 0)
                 series_list.append({
                     "kind": "series",
-                    "id": s.get("id"),
+                    "id": s_id,
                     "title": s.get("title", ""),
                     "year": s.get("year"),
                     "monitored": s.get("monitored", False),
@@ -109,7 +158,26 @@ async def get_library(request: Request) -> JSONResponse:
         except (PyarrError, DiscoveryError, Exception) as exc:  # noqa: BLE001
             logger.warning("get_library: Sonarr error — %s", exc)
             series_list = []
+            raw_series = []
             errors.append({"source": "sonarr", "error": str(exc)})
+
+    # D-05: bulk translated count — one aggregate DB query, not N queries
+    if series_list:
+        session_factory = getattr(request.app.state, "session_factory", None)
+        if session_factory:
+            from trezarr.output.ledger_sqla import translated_counts_for_series  # noqa: PLC0415
+            _s_ids = [s.get("id") for s in raw_series if s.get("id") is not None]
+            t_counts = await translated_counts_for_series(session_factory, _s_ids)
+        else:
+            t_counts: dict[str, int] = {}
+    else:
+        t_counts = {}
+
+    # Post-loop: apply translated_count and total_count to each series item
+    for item in series_list:
+        s_id = item.get("id")
+        item["translated_count"] = t_counts.get(str(s_id), 0) if s_id is not None else 0
+        item["total_count"] = raw_series_stats.get(s_id, 0) if s_id is not None else 0
 
     # ── Radarr: list all movies + source-sub status ───────────────────────────
     if settings.radarr_enabled:
@@ -126,8 +194,14 @@ async def get_library(request: Request) -> JSONResponse:
                     local_path = apply_path_mapping(raw_path, settings.path_mappings)
                     source_sub_result = find_source_sub(local_path, settings.source_lang_priority)
                     source_sub_found = source_sub_result is not None
+                    # D-05 movie translated_count: filesystem vi-sidecar check
+                    vi_found = any(
+                        (local_path.parent / (local_path.stem + ext)).exists()
+                        for ext in (".vi.srt", ".vi.ass", ".vi.vtt")
+                    )
                 else:
                     source_sub_found = False
+                    vi_found = False
                 images = m.get("images") or []
                 poster_url = images[0].get("remoteUrl") if images else None
                 movies_list.append({
@@ -138,6 +212,8 @@ async def get_library(request: Request) -> JSONResponse:
                     "monitored": m.get("monitored", False),
                     "poster_url": poster_url,
                     "source_sub_found": source_sub_found,
+                    "translated_count": 1 if vi_found else 0,
+                    "total_count": 1 if m.get("hasFile", False) else 0,
                 })
         except (PyarrError, DiscoveryError, Exception) as exc:  # noqa: BLE001
             logger.warning("get_library: Radarr error — %s", exc)
@@ -151,10 +227,25 @@ async def get_library(request: Request) -> JSONResponse:
 
 @router.get("/library/series/{series_id}/episodes")
 async def get_series_episodes(series_id: int, request: Request) -> JSONResponse:
-    """Return per-episode file rows for one Sonarr series.
+    """Return season-grouped episode records for one Sonarr series (D-01/D-08).
 
-    Status enum: ``translated`` | ``has_source`` | ``nothing``.
+    Always returns HTTP 200 when Sonarr succeeds — Bazarr failures degrade
+    gracefully (bazarr_available=False, subtitles=[]) per D-08 fail-soft contract.
+
+    Sonarr disabled → 400. PyarrError → 502 (episodes view requires Sonarr).
+
+    Response envelope:
+      { series_id, bazarr_available, seasons: [{ season_number, episodes: [...] }], errors: [] }
+
+    Each episode carries: episode_id, episode_file_id, season_number, episode_number,
+    episode_key (SxxExx from ints — D-03), title, monitored, has_file, local_path,
+    source_path, source_lang, status, audio_languages (ISO-639-1 — D-07),
+    subtitles (list of {code2, code3, hi, forced} — D-02, no path field).
     """
+    import asyncio  # noqa: PLC0415
+    from collections import defaultdict  # noqa: PLC0415
+    from pathlib import Path as _Path  # noqa: PLC0415
+
     from trezarr.config import TrezarrSettings  # noqa: PLC0415
 
     settings: TrezarrSettings = getattr(request.app.state, "settings", None) or TrezarrSettings()
@@ -162,6 +253,9 @@ async def get_series_episodes(series_id: int, request: Request) -> JSONResponse:
     if not settings.sonarr_enabled:
         return JSONResponse({"error": "sonarr_disabled"}, status_code=400)
 
+    errors: list[dict] = []
+
+    # ── Sonarr fetch (asyncio.to_thread wraps all blocking pyarr calls — D-03) ─
     try:
         from trezarr.arr.sonarr import build_sonarr_client  # noqa: PLC0415
         from trezarr.discover.scan import find_source_sub  # noqa: PLC0415
@@ -169,55 +263,135 @@ async def get_series_episodes(series_id: int, request: Request) -> JSONResponse:
         from pyarr.exceptions import PyarrError  # noqa: PLC0415
 
         client = build_sonarr_client(settings)
-        ep_files = client.episode_file.get(series_id=series_id)
-        # Normalise single-dict response (matches sonarr.py lines 173-179 pattern)
-        if isinstance(ep_files, dict):
-            ep_files = [ep_files]
 
-        rows: list[dict] = []
-        for ep_file in ep_files:
-            raw_path: str = ep_file.get("path", "") or ""
-            if not raw_path:
-                continue
+        # asyncio.to_thread for both pyarr calls; gather for concurrency (D-01)
+        episodes_coro = asyncio.to_thread(client.episode.get, series_id=series_id)
+        ep_files_coro = asyncio.to_thread(client.episode_file.get, series_id=series_id)
+        episodes_raw, ep_files_raw = await asyncio.gather(episodes_coro, ep_files_coro)
 
-            local_path: Path = apply_path_mapping(raw_path, settings.path_mappings)
-            source_sub_result = find_source_sub(local_path, settings.source_lang_priority)
+        # Pitfall 2: pyarr returns a single dict for a single result
+        if isinstance(episodes_raw, dict):
+            episodes_raw = [episodes_raw]
+        if isinstance(ep_files_raw, dict):
+            ep_files_raw = [ep_files_raw]
 
-            # Use Sonarr's authoritative seasonNumber + tolerant episode parse
-            # (handles SxxExx and NxNN donghua naming); falls back gracefully.
-            episode_key: str = _episode_key_from_file(ep_file, raw_path)
+        # Build episode-file lookup by episodeFile.id (NOT episode.id — D-02)
+        ep_file_by_id: dict[int, dict] = {ef["id"]: ef for ef in ep_files_raw if ef.get("id")}
 
-            # Determine status
-            if source_sub_result is None:
-                status = "nothing"
-                source_path = None
-                source_lang = None
-            else:
-                source_path = str(source_sub_result[0])
-                source_lang = source_sub_result[1]
-                # Check for existing vi sidecar
-                vi_found = any(
-                    (local_path.parent / (local_path.stem + ext)).exists()
-                    for ext in (".vi.srt", ".vi.ass", ".vi.vtt")
-                )
-                status = "translated" if vi_found else "has_source"
-
-            title: str = ep_file.get("sceneName") or ep_file.get("relativePath", "")
-
-            rows.append({
-                "episode_key": episode_key,
-                "title": title,
-                "local_path": str(local_path),
-                "status": status,
-                "source_path": source_path,
-                "source_lang": source_lang,
-            })
-
-        return JSONResponse(rows)
-
-    except (PyarrError, Exception) as exc:  # noqa: BLE001
-        logger.error("get_series_episodes: error for series_id=%d — %s", series_id, exc)
+    except PyarrError as exc:
+        logger.error("get_series_episodes: Sonarr error for series_id=%d — %s", series_id, exc)
         return JSONResponse({"error": str(exc)}, status_code=502)
+    except Exception as exc:  # noqa: BLE001
+        logger.error("get_series_episodes: unexpected error for series_id=%d — %s", series_id, exc)
+        return JSONResponse({"error": str(exc)}, status_code=502)
+
+    # ── Bazarr fail-soft block (D-08) ─────────────────────────────────────────
+    # Disabled → bazarr_available=False, errors=[] (disabled is not an error).
+    # Enabled + BazarrError → bazarr_available=False, errors[] entry. Always HTTP 200.
+    bazarr_by_ep_id: dict[int, list[dict]] = {}
+    bazarr_available = False
+
+    if settings.bazarr_enabled:
+        try:
+            from trezarr.arr.bazarr import BazarrClient, BazarrError  # noqa: PLC0415
+
+            bazarr_client = BazarrClient.from_settings(settings)
+            # fetch_episode_inventory uses params=[("seriesid[]", id)] list form.
+            # If this returns empty on live Bazarr at 192.168.5.42, fall back to
+            # params={"seriesid": series_id} — ARCHITECTURE.md §8 known risk.
+            # TODO(phase-16): verify seriesid[] vs seriesid against live Bazarr.
+            bazarr_items = await bazarr_client.fetch_episode_inventory(series_id)
+            # Build lookup: episode.id (arr_id / sonarrEpisodeId) → badge list (D-02)
+            bazarr_by_ep_id = {
+                item.arr_id: [
+                    {
+                        "code2": s.code2,
+                        "code3": s.code3,
+                        "hi": s.hi,
+                        "forced": s.forced,
+                        # D-02: subtitle path intentionally stripped — codes+flags only (T-13-01)
+                    }
+                    for s in item.subtitles
+                ]
+                for item in bazarr_items
+            }
+            bazarr_available = True
+        except BazarrError as exc:
+            logger.warning("get_series_episodes: Bazarr error for series_id=%d — %s", series_id, exc)
+            errors.append({"source": "bazarr", "error": str(exc)})
+            # bazarr_available stays False
+
+    # ── Season grouping loop ──────────────────────────────────────────────────
+    seasons: dict[int, list[dict]] = defaultdict(list)
+
+    for ep in episodes_raw:
+        ep_id: int | None = ep.get("id")
+        ep_file_id: int | None = ep.get("episodeFileId")
+        has_file: bool = bool(ep.get("hasFile", False))
+
+        # Look up episode file by episodeFile.id (the join is file.id → file, not ep.id)
+        ep_file: dict | None = ep_file_by_id.get(ep_file_id) if ep_file_id else None
+
+        raw_path: str = ep_file.get("path", "") if ep_file else ""
+        local_path_obj: _Path | None = None
+        if raw_path:
+            local_path_obj = apply_path_mapping(raw_path, settings.path_mappings)
+
+        # Audio language normalization via _ORIG_LANG_NAME_TO_CODE2 (D-07)
+        media_info: dict = (ep_file or {}).get("mediaInfo") or {}
+        audio_raw = media_info.get("audioLanguages") or []
+        audio_languages = _normalize_audio_languages(audio_raw)
+
+        # D-03: episode_key from authoritative Sonarr episode-record ints (not filename parse)
+        season_number: int = ep.get("seasonNumber", 0)
+        episode_number: int = ep.get("episodeNumber", 0)
+        episode_key = f"S{season_number:02d}E{episode_number:02d}"
+
+        # Filesystem-based status (vi sidecar check)
+        source_path: str | None = None
+        source_lang: str | None = None
+        status = "nothing"
+        local_path_str: str | None = None
+
+        if local_path_obj is not None:
+            local_path_str = str(local_path_obj)
+            if local_path_obj.exists():
+                src = find_source_sub(local_path_obj, settings.source_lang_priority)
+                if src is not None:
+                    source_path = str(src[0])
+                    source_lang = src[1]
+                    vi_found = any(
+                        (local_path_obj.parent / (local_path_obj.stem + ext)).exists()
+                        for ext in (".vi.srt", ".vi.ass", ".vi.vtt")
+                    )
+                    status = "translated" if vi_found else "has_source"
+
+        # Bazarr subtitles: join on episode.id == BazarrInventoryItem.arr_id (D-02)
+        subtitles = bazarr_by_ep_id.get(ep_id, []) if ep_id is not None else []
+
+        seasons[season_number].append({
+            "episode_id": ep_id,
+            "episode_file_id": ep_file_id,
+            "season_number": season_number,
+            "episode_number": episode_number,
+            "episode_key": episode_key,
+            "title": ep.get("title", ""),
+            "monitored": ep.get("monitored", False),
+            "has_file": has_file,
+            "local_path": local_path_str,
+            "source_path": source_path,
+            "source_lang": source_lang,
+            "status": status,
+            "audio_languages": audio_languages,
+            "subtitles": subtitles,
+        })
+
+    return JSONResponse({
+        "series_id": series_id,
+        "bazarr_available": bazarr_available,
+        "seasons": [{"season_number": sn, "episodes": seasons[sn]} for sn in sorted(seasons)],
+        "errors": errors,
+    })
 
 
 # ── POST /api/translate ────────────────────────────────────────────────────────

@@ -179,7 +179,7 @@ async def test_get_series_episodes_bazarr_join_key():
     Bazarr inventory has arr_id=10 (episode.id, NOT episodeFile.id=99).
     The subtitle must appear on the episode with episode_id==10, not ep_id==11.
     """
-    from unittest.mock import patch, MagicMock  # noqa: PLC0415
+    from unittest.mock import patch, MagicMock, AsyncMock  # noqa: PLC0415
     from trezarr.web.app import create_app  # noqa: PLC0415
     from trezarr.config import TrezarrSettings  # noqa: PLC0415
     from httpx import AsyncClient, ASGITransport  # noqa: PLC0415
@@ -200,17 +200,19 @@ async def test_get_series_episodes_bazarr_join_key():
     ]
 
     # Bazarr inventory keyed on arr_id=10 (episode.id), not 99 (episodeFile.id)
-    from trezarr.arr.bazarr import BazarrInventoryItem, BazarrSubtitle  # noqa: PLC0415
+    # SubtitleEntry is the correct class name (BazarrSubtitle was an alias in the stub — Rule 1 fix)
+    # fetch_episode_inventory is async, so mock with AsyncMock (Rule 1 fix)
+    from trezarr.arr.bazarr import BazarrInventoryItem, SubtitleEntry  # noqa: PLC0415
     bazarr_inventory = [
         BazarrInventoryItem(
             arr_id=10,
             path="/media/show/s01e01.mkv",
-            subtitles=[BazarrSubtitle(code2="en", code3="eng", forced=False, hi=False)],
+            subtitles=[SubtitleEntry(code2="en", code3="eng", path="", forced=False, hi=False)],
         ),
     ]
 
     mock_bazarr = MagicMock()
-    mock_bazarr.fetch_episode_inventory.return_value = bazarr_inventory
+    mock_bazarr.fetch_episode_inventory = AsyncMock(return_value=bazarr_inventory)
 
     with patch("trezarr.arr.sonarr.build_sonarr_client", return_value=mock_sonarr), \
          patch("trezarr.arr.bazarr.BazarrClient.from_settings", return_value=mock_bazarr):
