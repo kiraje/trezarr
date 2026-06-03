@@ -98,8 +98,8 @@ Milestone v1.1 (defined 2026-06-03). Big-bang dashboard rework on a shadcn/ui + 
 
 ### API — Backend Episode Data
 
-- [ ] **API-01**: `GET /api/library/series/{id}/episodes` returns episodes from Sonarr episode records grouped by season, each carrying `audio_languages` (Sonarr mediaInfo) + `subtitles[]` (Bazarr inventory incl. `hi`/`forced`) + Trezarr status; Bazarr failures degrade fail-soft (endpoint still returns HTTP 200 without subtitle badges)
-- [ ] **API-02**: The library Series + Movies list endpoints expose per-item `translated_count` / `total_count` for the progress indicators and nav badges
+- [x] **API-01**: `GET /api/library/series/{id}/episodes` returns episodes from Sonarr episode records grouped by season, each carrying `audio_languages` (Sonarr mediaInfo) + `subtitles[]` (Bazarr inventory incl. `hi`/`forced`) + Trezarr status; Bazarr failures degrade fail-soft (endpoint still returns HTTP 200 without subtitle badges)
+- [x] **API-02**: The library Series + Movies list endpoints expose per-item `translated_count` / `total_count` for the progress indicators and nav badges
 
 ### RSK — Reskin & Delivery
 
@@ -205,8 +205,8 @@ Which phases cover which requirements. Populated during roadmap creation.
 | NAV-01 | Phase 12 | Complete |
 | NAV-02 | Phase 12 | Complete |
 | NAV-03 | Phase 14 | Pending |
-| API-01 | Phase 13 | Pending |
-| API-02 | Phase 13 | Pending |
+| API-01 | Phase 13 | Complete |
+| API-02 | Phase 13 | Complete |
 | LIB-01 | Phase 14 | Pending |
 | LIB-02 | Phase 14 | Pending |
 | LIB-03 | Phase 14 | Pending |

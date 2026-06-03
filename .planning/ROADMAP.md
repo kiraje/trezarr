@@ -400,7 +400,7 @@ Plans:
 
 **Wave 0**
 
-- [ ] 13-01-PLAN.md — Wave 0: RED test scaffold — 8 new xfail stubs in test_library_api.py + 1 xfail stub in test_engine.py (API-01, API-02, D-06)
+- [x] 13-01-PLAN.md — Wave 0: RED test scaffold — 8 new xfail stubs in test_library_api.py + 1 xfail stub in test_engine.py (API-01, API-02, D-06)
 
 **Wave 1** *(blocked on Wave 0 completion)*
 
@@ -476,7 +476,7 @@ v1.1 phases execute in numeric order: 11 → 12 → 13 (parallel-eligible with 1
 | 10. Source Selection & Per-Series Overrides | 4/4 | Complete | 2026-06-02 |
 | 11. shadcn Foundation & Purple Theme | 3/3 | Complete    | 2026-06-03 |
 | 12. App Shell + Route Restructure | 1/1 | Complete    | 2026-06-03 |
-| 13. Backend Episodes Enrichment | 0/3 | Not started | - |
+| 13. Backend Episodes Enrichment | 1/3 | In Progress|  |
 | 14. New Library Pages + Nav Badge Wiring | 0/TBD | Not started | - |
 | 15. Reskin Existing Pages | 0/TBD | Not started | - |
 | 16. Docker Rebuild + Live Smoke Test | 0/TBD | Not started | - |
