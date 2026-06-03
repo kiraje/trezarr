@@ -15,7 +15,7 @@
  *   /settings           → Settings page (SVC-02)
  *   /bible              → Bible List page
  *   /bible/:seriesId    → Bible Editor page
- *   /library            → Library page (transitional route, D-03 — not in nav; removed Phase 14)
+ *   /library            → NotFound (catch-all, deleted Phase 14 plan 06)
  *   /nonexistent        → NotFound page (catch-all, WR-03 — must be last child of layout route)
  *
  * SPAStaticFiles(html=True) on the FastAPI side handles SPA routing fallback
@@ -35,7 +35,6 @@ import JobLogs from "./pages/JobLogs";
 import Settings from "./pages/Settings";
 import BibleList from "./pages/BibleList";
 import BibleEditor from "./pages/BibleEditor";
-import Library from "./pages/Library"; // transitional (D-03) — removed Phase 14
 import NotFound from "./pages/NotFound";
 import LibraryProvider from "./contexts/LibraryContext";
 
@@ -57,8 +56,7 @@ export default function App() {
           <Route path="settings" element={<Settings />} />
           <Route path="bible" element={<BibleList />} />
           <Route path="bible/:seriesId" element={<BibleEditor />} />
-          <Route path="library" element={<Library />} /> {/* transitional, not in nav (D-03) */}
-          {/* WR-03: catch-all 404 route — MUST be last child of layout route */}
+{/* WR-03: catch-all 404 route — MUST be last child of layout route */}
           <Route path="*" element={<NotFound />} />
         </Route>
       </Routes>

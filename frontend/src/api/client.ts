@@ -560,45 +560,6 @@ export interface TranslateResponse {
   source_path: string;
 }
 
-// ── Deprecated legacy types (Library.tsx still compiles through plan 05) ──────
-
-/**
- * @deprecated Use SeriesItem — removed when Library.tsx is deleted in Phase 14 plan 06.
- */
-export interface LibrarySeriesItem {
-  kind: "series";
-  id: number;
-  title: string;
-  year: number | null;
-  monitored: boolean;
-  poster_url: string | null;
-}
-
-/**
- * @deprecated Use MovieItem — removed when Library.tsx is deleted in Phase 14 plan 06.
- */
-export interface LibraryMovieItem {
-  kind: "movie";
-  id: number;
-  title: string;
-  year: number | null;
-  monitored: boolean;
-  poster_url: string | null;
-  source_sub_found: boolean;
-}
-
-/**
- * @deprecated Use EpisodeEnrichedRow — removed when Library.tsx is deleted in Phase 14 plan 06.
- */
-export interface EpisodeRow {
-  episode_key: string;
-  title: string;
-  local_path: string;
-  status: "translated" | "has_source" | "nothing";
-  source_path: string | null;
-  source_lang: string | null;
-}
-
 // ── Fetch wrappers ────────────────────────────────────────────────────────────
 
 /** GET /api/library — list Sonarr series and Radarr movies. */
