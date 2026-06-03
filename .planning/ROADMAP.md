@@ -459,7 +459,7 @@ v1.1 phases execute in numeric order: 11 → 12 → 13 (parallel-eligible with 1
 | 8. Editable Series Bible UI | 4/4 | Complete | 2026-06-02 |
 | 9. Multi-Format — ASS/SSA + VTT | 5/6 | In Progress | |
 | 10. Source Selection & Per-Series Overrides | 4/4 | Complete | 2026-06-02 |
-| 11. shadcn Foundation & Purple Theme | 3/3 | Complete   | 2026-06-03 |
+| 11. shadcn Foundation & Purple Theme | 3/3 | Complete    | 2026-06-03 |
 | 12. App Shell + Route Restructure | 0/TBD | Not started | - |
 | 13. Backend Episodes Enrichment | 0/TBD | Not started | - |
 | 14. New Library Pages + Nav Badge Wiring | 0/TBD | Not started | - |

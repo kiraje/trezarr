@@ -2,9 +2,9 @@
 gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: "UI v2: shadcn dashboard"
-status: verifying
-stopped_at: Phase 11 UI-SPEC approved
-last_updated: "2026-06-03T11:44:55.233Z"
+status: ready_to_plan
+stopped_at: Phase 11 complete (3/3) — ready to discuss Phase 12
+last_updated: 2026-06-03T12:16:52.033Z
 last_activity: 2026-06-03
 progress:
   total_phases: 16
@@ -21,13 +21,13 @@ progress:
 See: .planning/PROJECT.md (updated 2026-06-03)
 
 **Core value:** Vietnamese subtitles that stay consistent and relationally correct (right pronoun pair, stable names/terms) across an entire series — produced automatically.
-**Current focus:** Phase 11 — shadcn Foundation & Purple Theme
+**Current focus:** Phase 12 — app shell + route restructure
 
 ## Current Position
 
-Phase: 11 (shadcn Foundation & Purple Theme) — EXECUTING
-Plan: 3 of 3
-Status: Phase complete — ready for verification
+Phase: 12
+Plan: Not started
+Status: Ready to plan
 Last activity: 2026-06-03
 
 ```
@@ -41,7 +41,7 @@ Phase 15: [ ] Reskin       Phase 16: [ ] Docker/Smoke
 
 **Velocity:**
 
-- Total plans completed: 39 (v1.0)
+- Total plans completed: 42 (v1.0)
 - Average duration: 6 min
 - Total execution time: 0.1 hours
 
@@ -58,6 +58,7 @@ Phase 15: [ ] Reskin       Phase 16: [ ] Docker/Smoke
 | 7 | 6 | - | - |
 | 08 | 4 | - | - |
 | 10 | 4 | - | - |
+| 11 | 3 | - | - |
 
 **Recent Trend:**
 
