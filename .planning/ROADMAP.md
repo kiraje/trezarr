@@ -462,7 +462,7 @@ Plans:
 - [x] 15-01-PLAN.md — Reskin JobLogs.tsx + shared StatusBadge, LogViewer
 - [x] 15-02-PLAN.md — Reskin Queue.tsx + shared JobTable
 - [x] 15-03-PLAN.md — Reskin History.tsx + shared RetryButton; Sonner migration (first call-site)
-- [ ] 15-04-PLAN.md — Reskin Settings.tsx + shared MaskedSecretInput, ConnectionTestButton; Sonner migration
+- [x] 15-04-PLAN.md — Reskin Settings.tsx + shared MaskedSecretInput, ConnectionTestButton; Sonner migration
 - [ ] 15-05-PLAN.md — Reskin BibleList.tsx
 - [ ] 15-06-PLAN.md — Reskin BibleEditor.tsx + shared LockBadge, LockToggleButton, FieldHistoryPanel, PronounCombo, ReciprocalSuggestionPanel; Sonner migration (final call-site)
 - [ ] 15-07-PLAN.md — Token cleanup: mount Toaster, delete Toast.tsx, remove 5 bridge tokens, grep gate + build + pytest
@@ -505,5 +505,5 @@ v1.1 phases execute in numeric order: 11 → 12 → 13 (parallel-eligible with 1
 | 12. App Shell + Route Restructure | 1/1 | Complete    | 2026-06-03 |
 | 13. Backend Episodes Enrichment | 3/3 | Complete    | 2026-06-03 |
 | 14. New Library Pages + Nav Badge Wiring | 6/6 | Complete    | 2026-06-03 |
-| 15. Reskin Existing Pages | 3/7 | In Progress|  |
+| 15. Reskin Existing Pages | 4/7 | In Progress|  |
 | 16. Docker Rebuild + Live Smoke Test | 0/TBD | Not started | - |

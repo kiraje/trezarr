@@ -4,13 +4,13 @@ milestone: v1.1
 milestone_name: "UI v2: shadcn dashboard"
 status: executing
 stopped_at: Completed 14-02-PLAN.md
-last_updated: "2026-06-03T19:46:49.022Z"
+last_updated: "2026-06-03T19:51:43.715Z"
 last_activity: 2026-06-03
 progress:
   total_phases: 16
   completed_phases: 14
   total_plans: 64
-  completed_plans: 60
+  completed_plans: 61
   percent: 88
 ---
 
@@ -26,7 +26,7 @@ See: .planning/PROJECT.md (updated 2026-06-03)
 ## Current Position
 
 Phase: 15 (reskin-existing-pages) — EXECUTING
-Plan: 4 of 7
+Plan: 5 of 7
 Status: Ready to execute
 Last activity: 2026-06-03
 
@@ -111,6 +111,7 @@ Phase 15: [ ] Reskin       Phase 16: [ ] Docker/Smoke
 | Phase 15-reskin-existing-pages P01 | 139 | 3 tasks | 3 files |
 | Phase 15 P02 | 2m | 2 tasks | 2 files |
 | Phase 15 P03 | 135s | 2 tasks | 2 files |
+| Phase 15 P04 | 2 min | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -160,6 +161,7 @@ Recent decisions affecting current work:
 - [Phase ?]: SidebarGroup wrapper added (WR-01): SidebarContent > SidebarGroup > SidebarMenu pattern; adds p-2 inset
 - [Phase ?]: NavBadge slot uses flex items-center gap-1 wrapper for LIVE+count badges in SidebarMenuButton (14-02)
 - [Phase ?]: WR-03: Route path='*' catch-all as last child of layout route; NotFound.tsx static copy only no XSS surface (14-02)
+- [Phase ?]: Settings.tsx SectionHeading uses plain h2 with text-base font-semibold text-card-foreground; CardHeader/CardTitle not imported — plain h2 keeps compact layout within Card/CardContent wrapper
 
 ### Pending Todos
 
@@ -192,6 +194,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-06-03T19:46:49.016Z
+Last session: 2026-06-03T19:51:40.947Z
 Stopped at: Completed 14-02-PLAN.md
 Resume file: None
