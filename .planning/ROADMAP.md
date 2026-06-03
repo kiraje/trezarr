@@ -456,7 +456,16 @@ Plans:
   2. The Bible Editor renders identically to its pre-reskin behavior: all five tabs (Characters, Address Map, Term Dictionary, Register, Overrides) load, lock badges display provenance correctly, field history panels populate, and pronoun combos work — confirmed by the existing test suite (all tests green)
   3. After all pages are reskinned, a grep for `bg-[#` and `text-[#` in `src/` returns no results; legacy bridge tokens are removed from `tailwind.config.js`
 
-**Plans**: TBD
+**Plans**: 7 plans
+
+Plans:
+- [ ] 15-01-PLAN.md — Reskin JobLogs.tsx + shared StatusBadge, LogViewer
+- [ ] 15-02-PLAN.md — Reskin Queue.tsx + shared JobTable
+- [ ] 15-03-PLAN.md — Reskin History.tsx + shared RetryButton; Sonner migration (first call-site)
+- [ ] 15-04-PLAN.md — Reskin Settings.tsx + shared MaskedSecretInput, ConnectionTestButton; Sonner migration
+- [ ] 15-05-PLAN.md — Reskin BibleList.tsx
+- [ ] 15-06-PLAN.md — Reskin BibleEditor.tsx + shared LockBadge, LockToggleButton, FieldHistoryPanel, PronounCombo, ReciprocalSuggestionPanel; Sonner migration (final call-site)
+- [ ] 15-07-PLAN.md — Token cleanup: mount Toaster, delete Toast.tsx, remove 5 bridge tokens, grep gate + build + pytest
 
 **UI hint**: yes
 
