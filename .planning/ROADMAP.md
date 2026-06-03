@@ -377,7 +377,10 @@ Plans:
   3. All existing pages (Queue, History, Settings, Bible List, Bible Editor) remain navigable and fully functional inside the new shell with no regressions
   4. Stub Series, SeriesDetail, and Movies pages render a heading placeholder at their new routes without errors
 
-**Plans**: TBD
+**Plans**: 1 plan
+
+Plans:
+- [ ] 12-01-PLAN.md — Replace AppShell with SidebarProvider + AppSidebar + Outlet shell, migrate App.tsx to the layout-route table (/library -> /series + /movies + /series/:seriesId; / -> /series), and add Series/SeriesDetail/Movies stub pages (NAV-01, NAV-02)
 
 **UI hint**: yes
 
