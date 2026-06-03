@@ -505,5 +505,5 @@ v1.1 phases execute in numeric order: 11 → 12 → 13 (parallel-eligible with 1
 | 12. App Shell + Route Restructure | 1/1 | Complete    | 2026-06-03 |
 | 13. Backend Episodes Enrichment | 3/3 | Complete    | 2026-06-03 |
 | 14. New Library Pages + Nav Badge Wiring | 6/6 | Complete    | 2026-06-03 |
-| 15. Reskin Existing Pages | 7/7 | Complete   | 2026-06-03 |
+| 15. Reskin Existing Pages | 7/7 | Complete    | 2026-06-03 |
 | 16. Docker Rebuild + Live Smoke Test | 0/TBD | Not started | - |
