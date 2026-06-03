@@ -353,7 +353,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 Plans:
 **Wave 1**
 
-- [ ] 11-01-PLAN.md — Wave 1: .npmrc + deps + @/ alias + shadcn@2.10.0 init (pre-theme baseline)
+- [x] 11-01-PLAN.md — Wave 1: .npmrc + deps + @/ alias + shadcn@2.10.0 init (pre-theme baseline)
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
@@ -484,7 +484,7 @@ v1.1 phases execute in numeric order: 11 → 12 → 13 (parallel-eligible with 1
 | 8. Editable Series Bible UI | 4/4 | Complete | 2026-06-02 |
 | 9. Multi-Format — ASS/SSA + VTT | 5/6 | In Progress | |
 | 10. Source Selection & Per-Series Overrides | 4/4 | Complete | 2026-06-02 |
-| 11. shadcn Foundation & Purple Theme | 0/TBD | Not started | - |
+| 11. shadcn Foundation & Purple Theme | 1/3 | In Progress|  |
 | 12. App Shell + Route Restructure | 0/TBD | Not started | - |
 | 13. Backend Episodes Enrichment | 0/TBD | Not started | - |
 | 14. New Library Pages + Nav Badge Wiring | 0/TBD | Not started | - |

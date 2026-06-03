@@ -4,13 +4,13 @@ milestone: v1.1
 milestone_name: "UI v2: shadcn dashboard"
 status: executing
 stopped_at: Phase 11 UI-SPEC approved
-last_updated: "2026-06-03T11:26:03.691Z"
-last_activity: 2026-06-03 -- Phase 11 planning complete
+last_updated: "2026-06-03T11:33:45.767Z"
+last_activity: 2026-06-03
 progress:
   total_phases: 16
   completed_phases: 10
   total_plans: 47
-  completed_plans: 44
+  completed_plans: 45
   percent: 63
 ---
 
@@ -21,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-06-03)
 
 **Core value:** Vietnamese subtitles that stay consistent and relationally correct (right pronoun pair, stable names/terms) across an entire series — produced automatically.
-**Current focus:** Milestone v1.1 — UI v2 shadcn dashboard. Roadmap created; ready to plan Phase 11.
+**Current focus:** Phase 11 — shadcn Foundation & Purple Theme
 
 ## Current Position
 
-Phase: 11 (shadcn Foundation & Purple Theme) — Not started
-Plan: —
+Phase: 11 (shadcn Foundation & Purple Theme) — EXECUTING
+Plan: 2 of 3
 Status: Ready to execute
-Last activity: 2026-06-03 -- Phase 11 planning complete
+Last activity: 2026-06-03
 
 ```
 v1.1 Progress: [          ] 0% (0/6 phases)
@@ -95,6 +95,7 @@ Phase 15: [ ] Reskin       Phase 16: [ ] Docker/Smoke
 | Phase 09-multi-format-ass-ssa-vtt P05 | 35m | 2 tasks | 5 files |
 | Phase 10-source-selection-per-series-overrides P02 | 25 | 2 tasks | 12 files |
 | Phase 10 P03 | 12min | 2 tasks | 11 files |
+| Phase 11-shadcn-foundation-purple-theme P01 | 3 min | 2 tasks | 10 files |
 
 ## Accumulated Context
 
@@ -173,6 +174,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-06-03T11:07:18.382Z
+Last session: 2026-06-03T11:33:45.761Z
 Stopped at: Phase 11 UI-SPEC approved
-Resume file: .planning/phases/11-shadcn-foundation-purple-theme/11-UI-SPEC.md
+Resume file: None

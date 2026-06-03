@@ -77,7 +77,7 @@ Milestone v1.1 (defined 2026-06-03). Big-bang dashboard rework on a shadcn/ui + 
 
 ### UI — Foundation & Theme
 
-- [ ] **UI-01**: shadcn/ui + jolly-ui component foundation is installed on Tailwind v3 (`cn()` util, `@/` path alias, `components.json`, base primitives) and the SPA build stays green throughout the migration
+- [x] **UI-01**: shadcn/ui + jolly-ui component foundation is installed on Tailwind v3 (`cn()` util, `@/` path alias, `components.json`, base primitives) and the SPA build stays green throughout the migration
 - [ ] **UI-02**: A purple CSS-variable theme (dark mode default) replaces the legacy custom hex tokens across every page
 
 ### NAV — Navigation Shell
@@ -200,7 +200,7 @@ Which phases cover which requirements. Populated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| UI-01 | Phase 11 | Pending |
+| UI-01 | Phase 11 | Complete |
 | UI-02 | Phase 11 | Pending |
 | NAV-01 | Phase 12 | Pending |
 | NAV-02 | Phase 12 | Pending |
