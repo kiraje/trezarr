@@ -38,8 +38,7 @@ function formatTimestamp(iso: string | null): string {
 function SourceBadge({ source }: { source: string }) {
   return (
     <span
-      className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-normal"
-      style={{ backgroundColor: "#1e293b", color: "#94a3b8" }}
+      className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-normal bg-card text-muted-foreground"
     >
       {source}
     </span>
@@ -75,20 +74,20 @@ export default function FieldHistoryPanel({
   }, [seriesId, entityType, entityId, field]);
 
   return (
-    <div className="bg-bg-surface border border-[#2d3148] rounded p-4 max-h-80 overflow-y-auto">
+    <div className="bg-card border border-border rounded p-4 max-h-80 overflow-y-auto">
       {loading ? (
-        <p className="text-xs text-text-muted">Loading…</p>
+        <p className="text-xs text-muted-foreground">Loading…</p>
       ) : events.length === 0 ? (
-        <p className="text-xs text-text-muted">No history for this field.</p>
+        <p className="text-xs text-muted-foreground">No history for this field.</p>
       ) : (
         <div className="flex flex-col gap-1">
           {events.map((evt) => (
             <div key={evt.id} className="flex gap-2 text-xs py-1 items-start">
-              <span className="text-text-muted whitespace-nowrap flex-shrink-0">
+              <span className="text-muted-foreground whitespace-nowrap flex-shrink-0">
                 {formatTimestamp(evt.created_at)}
               </span>
               <SourceBadge source={evt.source} />
-              <span className="text-text-primary">
+              <span className="text-foreground">
                 {String(evt.old_value ?? "—")}
                 {" → "}
                 {String(evt.new_value ?? "—")}

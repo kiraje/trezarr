@@ -47,6 +47,14 @@ import {
   TabsContent,
 } from "../components/ui/tabs";
 import { Skeleton } from "../components/ui/skeleton";
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+} from "../components/ui/card";
+import { Input } from "../components/ui/input";
+import { Button } from "../components/ui/button";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -413,27 +421,27 @@ function CharactersSection({
   }
 
   return (
-    <SectionCard>
-      <div className="flex items-center justify-between">
-        <h2 className="text-base font-semibold text-text-primary">
-          Characters
-        </h2>
-        <button
+    <Card>
+      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-4">
+        <CardTitle>Characters</CardTitle>
+        <Button
           type="button"
-          className="text-sm text-accent px-3 py-1 rounded border border-[#3b82f6] hover:bg-[#1e3a5f]"
+          variant="outline"
+          size="sm"
           onClick={() => setShowAddForm(true)}
         >
           Add Character
-        </button>
-      </div>
+        </Button>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-4">
 
       {showAddForm && (
-        <div className="bg-bg-base border border-[#2d3148] rounded p-3 flex flex-wrap gap-3 items-end">
+        <div className="border border-border rounded p-3 flex flex-wrap gap-3 items-end">
           <div className="flex-1 min-w-32">
-            <label className="text-xs text-text-muted block mb-1">
+            <label className="text-xs text-muted-foreground block mb-1">
               Name
             </label>
-            <input
+            <Input
               type="text"
               autoFocus
               value={addFields.original_latin_name}
@@ -443,11 +451,10 @@ function CharactersSection({
                   original_latin_name: e.target.value,
                 }))
               }
-              className="h-9 w-full bg-bg-surface border border-[#2d3148] rounded px-2 text-sm text-text-primary focus:outline-[#3b82f6] focus:outline-2 focus:outline-offset-2"
             />
           </div>
           <div>
-            <label className="text-xs text-text-muted block mb-1">
+            <label className="text-xs text-muted-foreground block mb-1">
               Gender
             </label>
             <select
@@ -455,7 +462,7 @@ function CharactersSection({
               onChange={(e) =>
                 setAddFields((f) => ({ ...f, gender: e.target.value }))
               }
-              className="h-9 bg-bg-surface border border-[#2d3148] rounded px-2 text-sm text-text-primary focus:outline-[#3b82f6] focus:outline-2 focus:outline-offset-2"
+              className="h-9 rounded-md border border-border bg-background px-3 text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
               <option value="">—</option>
               <option value="male">male</option>
@@ -464,104 +471,105 @@ function CharactersSection({
             </select>
           </div>
           <div>
-            <label className="text-xs text-text-muted block mb-1">
+            <label className="text-xs text-muted-foreground block mb-1">
               Age
             </label>
-            <input
+            <Input
               type="text"
               value={addFields.rough_age}
               onChange={(e) =>
                 setAddFields((f) => ({ ...f, rough_age: e.target.value }))
               }
-              className="h-9 w-20 bg-bg-surface border border-[#2d3148] rounded px-2 text-sm text-text-primary focus:outline-[#3b82f6] focus:outline-2 focus:outline-offset-2"
+              className="w-20"
             />
           </div>
           <div className="flex-1 min-w-32">
-            <label className="text-xs text-text-muted block mb-1">
+            <label className="text-xs text-muted-foreground block mb-1">
               Role
             </label>
-            <input
+            <Input
               type="text"
               value={addFields.role}
               onChange={(e) =>
                 setAddFields((f) => ({ ...f, role: e.target.value }))
               }
-              className="h-9 w-full bg-bg-surface border border-[#2d3148] rounded px-2 text-sm text-text-primary focus:outline-[#3b82f6] focus:outline-2 focus:outline-offset-2"
             />
           </div>
           <div className="flex gap-2">
-            <button
+            <Button
               type="button"
-              className="text-sm text-accent"
+              variant="default"
+              size="sm"
               onClick={handleAddCharacter}
             >
               Add Character
-            </button>
-            <button
+            </Button>
+            <Button
               type="button"
-              className="text-sm text-text-muted"
+              variant="ghost"
+              size="sm"
               onClick={() => setShowAddForm(false)}
             >
               Discard
-            </button>
+            </Button>
           </div>
         </div>
       )}
 
       {bible.characters.length === 0 ? (
-        <p className="text-xs text-text-muted">
+        <p className="text-xs text-muted-foreground">
           No characters. Click Add Character to add the first one.
         </p>
       ) : (
         <div className="overflow-x-auto">
           <table className="w-full">
             <thead>
-              <tr className="border-b border-[#2d3148]">
+              <tr className="border-b border-border">
                 <th
                   scope="col"
-                  className="px-3 py-2 text-left text-xs text-text-muted font-normal"
+                  className="px-3 py-2 text-left text-xs text-muted-foreground font-normal"
                   style={{ width: "22%" }}
                 >
                   Name
                 </th>
                 <th
                   scope="col"
-                  className="px-3 py-2 text-left text-xs text-text-muted font-normal"
+                  className="px-3 py-2 text-left text-xs text-muted-foreground font-normal"
                   style={{ width: "12%" }}
                 >
                   Gender
                 </th>
                 <th
                   scope="col"
-                  className="px-3 py-2 text-left text-xs text-text-muted font-normal"
+                  className="px-3 py-2 text-left text-xs text-muted-foreground font-normal"
                   style={{ width: "10%" }}
                 >
                   Age
                 </th>
                 <th
                   scope="col"
-                  className="px-3 py-2 text-left text-xs text-text-muted font-normal"
+                  className="px-3 py-2 text-left text-xs text-muted-foreground font-normal"
                   style={{ width: "28%" }}
                 >
                   Role
                 </th>
                 <th
                   scope="col"
-                  className="px-3 py-2 text-left text-xs text-text-muted font-normal"
+                  className="px-3 py-2 text-left text-xs text-muted-foreground font-normal"
                   style={{ width: "14%" }}
                 >
                   Lock
                 </th>
                 <th
                   scope="col"
-                  className="px-3 py-2 text-left text-xs text-text-muted font-normal"
+                  className="px-3 py-2 text-left text-xs text-muted-foreground font-normal"
                   style={{ width: "7%" }}
                 >
                   History
                 </th>
                 <th
                   scope="col"
-                  className="px-3 py-2 text-left text-xs text-text-muted font-normal"
+                  className="px-3 py-2 text-left text-xs text-muted-foreground font-normal"
                   style={{ width: "7%" }}
                 >
                   Actions
@@ -569,20 +577,15 @@ function CharactersSection({
               </tr>
             </thead>
             <tbody>
-              {bible.characters.map((char, idx) => (
+              {bible.characters.map((char) => (
                 <>
                   <tr
                     key={char.id}
-                    className={[
-                      "h-10 border-b border-[#2d3148]",
-                      idx % 2 === 1 ? "bg-bg-stripe" : "",
-                    ]
-                      .filter(Boolean)
-                      .join(" ")}
+                    className="h-10 border-b border-border"
                   >
                     {editingId === char.id ? (
                       <>
-                        <td className="px-3 text-sm text-text-primary">
+                        <td className="px-3 text-sm text-foreground">
                           {char.original_latin_name}
                         </td>
                         <td className="px-2">
@@ -595,7 +598,7 @@ function CharactersSection({
                               }))
                             }
                             autoFocus
-                            className="h-8 bg-bg-surface border border-[#2d3148] rounded px-1 text-xs text-text-primary focus:outline-[#3b82f6] focus:outline-2 focus:outline-offset-2 w-full"
+                            className="h-8 w-full rounded-md border border-border bg-background px-1 text-xs text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                           >
                             <option value="">—</option>
                             <option value="male">male</option>
@@ -604,7 +607,7 @@ function CharactersSection({
                           </select>
                         </td>
                         <td className="px-2">
-                          <input
+                          <Input
                             type="text"
                             value={editFields.rough_age}
                             onChange={(e) =>
@@ -613,11 +616,11 @@ function CharactersSection({
                                 rough_age: e.target.value,
                               }))
                             }
-                            className="h-8 w-full bg-bg-surface border border-[#2d3148] rounded px-1 text-xs text-text-primary focus:outline-[#3b82f6] focus:outline-2 focus:outline-offset-2"
+                            className="h-8 text-xs"
                           />
                         </td>
                         <td className="px-2">
-                          <input
+                          <Input
                             type="text"
                             value={editFields.role}
                             onChange={(e) =>
@@ -626,7 +629,7 @@ function CharactersSection({
                                 role: e.target.value,
                               }))
                             }
-                            className="h-8 w-full bg-bg-surface border border-[#2d3148] rounded px-1 text-xs text-text-primary focus:outline-[#3b82f6] focus:outline-2 focus:outline-offset-2"
+                            className="h-8 text-xs"
                           />
                         </td>
                         <td className="px-3">
@@ -640,49 +643,52 @@ function CharactersSection({
                           />
                         </td>
                         <td className="px-3">
-                          <button
+                          <Button
                             type="button"
+                            variant="ghost"
+                            size="icon"
                             aria-label="View field history"
                             onClick={() =>
                               setHistoryOpenId(
                                 historyOpenId === char.id ? null : char.id,
                               )
                             }
-                            className="text-text-muted hover:text-accent"
                           >
                             <Clock size={14} />
-                          </button>
+                          </Button>
                         </td>
                         <td className="px-3 flex items-center gap-2 h-10">
-                          <button
+                          <Button
                             type="button"
-                            className="text-xs text-accent"
+                            variant="default"
+                            size="sm"
                             disabled={saving}
                             onClick={() => saveCharacter(char)}
                           >
-                            {saving ? "Saving…" : "Save character"}
-                          </button>
-                          <button
+                            {saving ? "Saving…" : "Save"}
+                          </Button>
+                          <Button
                             type="button"
-                            className="text-xs text-text-muted"
+                            variant="ghost"
+                            size="sm"
                             onClick={discardEdit}
                           >
-                            Discard changes
-                          </button>
+                            Discard
+                          </Button>
                         </td>
                       </>
                     ) : (
                       <>
-                        <td className="px-3 text-sm text-text-primary">
+                        <td className="px-3 text-sm text-foreground">
                           {char.original_latin_name}
                         </td>
-                        <td className="px-3 text-xs text-text-primary">
+                        <td className="px-3 text-xs text-foreground">
                           {char.gender ?? "—"}
                         </td>
-                        <td className="px-3 text-xs text-text-primary">
+                        <td className="px-3 text-xs text-foreground">
                           {char.rough_age ?? "—"}
                         </td>
-                        <td className="px-3 text-xs text-text-primary">
+                        <td className="px-3 text-xs text-foreground">
                           {char.role ?? "—"}
                         </td>
                         <td className="px-3">
@@ -705,28 +711,30 @@ function CharactersSection({
                           </div>
                         </td>
                         <td className="px-3">
-                          <button
+                          <Button
                             type="button"
+                            variant="ghost"
+                            size="icon"
                             aria-label="View field history"
                             onClick={() =>
                               setHistoryOpenId(
                                 historyOpenId === char.id ? null : char.id,
                               )
                             }
-                            className="text-text-muted hover:text-accent"
                           >
                             <Clock size={14} />
-                          </button>
+                          </Button>
                         </td>
                         <td className="px-3">
-                          <button
+                          <Button
                             type="button"
+                            variant="ghost"
+                            size="icon"
                             aria-label="Edit character"
                             onClick={() => startEdit(char)}
-                            className="text-text-muted hover:text-accent"
                           >
                             <Pencil size={14} />
-                          </button>
+                          </Button>
                         </td>
                       </>
                     )}
@@ -749,7 +757,8 @@ function CharactersSection({
           </table>
         </div>
       )}
-    </SectionCard>
+      </CardContent>
+    </Card>
   );
 }
 
