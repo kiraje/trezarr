@@ -13,7 +13,7 @@
  *  - T-14-05-01: seriesId validated with parseInt+isNaN before any API call; never injected
  *    into innerHTML
  */
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 
 import {
@@ -87,8 +87,8 @@ function EpisodeTable({
                 <td className="py-2 px-4">
                   {!isFileMissing && (
                     <div className="flex flex-wrap gap-1">
-                      {episode.audio_languages.map((lang) => (
-                        <SubtitleBadge key={lang} code2={lang} type="audio" />
+                      {episode.audio_languages.map((lang, idx) => (
+                        <SubtitleBadge key={`${lang}-${idx}`} code2={lang} type="audio" />
                       ))}
                     </div>
                   )}
@@ -173,6 +173,10 @@ export default function SeriesDetail() {
     Record<string, string>
   >({});
 
+  // WR-02: mount flag so the inline Retry handler has a consistent guard.
+  const mountedRef = useRef(true);
+  useEffect(() => () => { mountedRef.current = false; }, []);
+
   useEffect(() => {
     // Guard: skip fetch if ID is invalid (guard rendered below after hooks)
     if (isNaN(numericId)) {
@@ -195,7 +199,7 @@ export default function SeriesDetail() {
         const msg = String(err);
         // Detect HTTP status from error message text thrown by getSeriesEpisodes
         if (msg.includes(" 400")) setErrorStatus(400);
-        else if (msg.includes(" 502")) setErrorStatus(502);
+        // WR-04: 502 was tracked but never rendered; dropped — falls through to generic error UI
         setError(msg);
       } finally {
         if (!cancelled) setLoading(false);
@@ -257,15 +261,27 @@ export default function SeriesDetail() {
     const eligible = season.episodes.filter(
       (e) => e.has_file && e.source_path !== null && e.status !== "translated",
     );
+    let enqueued = 0;
+    const failures: string[] = [];
     for (const ep of eligible) {
       if (!ep.source_path) continue;
       try {
         await postTranslate("series", numericId, ep.source_path);
+        enqueued = enqueued + 1;
       } catch {
-        // Continue to next episode — user sees results in Queue
+        failures.push(ep.episode_key);
       }
     }
-    navigate("/queue");
+    // WR-05: only navigate when at least one enqueue succeeded; otherwise
+    // surface failures inline so the user is not silently redirected to an
+    // empty Queue page.
+    if (enqueued > 0) {
+      navigate("/queue");
+    } else {
+      setTranslateErrors(
+        Object.fromEntries(failures.map((k) => [k, "Could not enqueue."])),
+      );
+    }
   }
 
   // --- Render: loading state ---
@@ -304,22 +320,24 @@ export default function SeriesDetail() {
         </p>
         <div className="flex gap-2">
           <Button
-            onClick={() => {
+            onClick={async () => {
+              // WR-02: use mountedRef so state updates are guarded after unmount
               setError(null);
               setErrorStatus(null);
               setLoading(true);
-              getSeriesEpisodes(numericId)
-                .then((result) => {
-                  setData(result);
-                  setLoading(false);
-                })
-                .catch((err: unknown) => {
-                  const msg = String(err);
-                  if (msg.includes(" 400")) setErrorStatus(400);
-                  else if (msg.includes(" 502")) setErrorStatus(502);
-                  setError(msg);
-                  setLoading(false);
-                });
+              try {
+                const result = await getSeriesEpisodes(numericId);
+                if (!mountedRef.current) return;
+                setData(result);
+                setLoading(false);
+              } catch (err: unknown) {
+                if (!mountedRef.current) return;
+                const msg = String(err);
+                if (msg.includes(" 400")) setErrorStatus(400);
+                // WR-04: 502 dropped — falls through to generic error UI
+                setError(msg);
+                setLoading(false);
+              }
             }}
           >
             Retry
