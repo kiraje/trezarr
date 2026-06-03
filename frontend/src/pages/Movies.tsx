@@ -280,7 +280,7 @@ export default function Movies() {
       {/* Empty after filter */}
       {filtered.length === 0 && !isRadarrDown ? (
         <div className="space-y-3">
-          <h2 className="text-base font-medium text-muted-foreground">
+          <h2 className="text-base font-normal text-muted-foreground">
             No movies found
           </h2>
           <p className="text-muted-foreground">
