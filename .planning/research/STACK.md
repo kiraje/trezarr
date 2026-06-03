@@ -1,164 +1,559 @@
-# Stack Research
+# Technology Stack — v1.1 UI v2 (shadcn + jolly-ui)
 
-**Domain:** Self-hosted Dockerized LLM subtitle-translation daemon + web UI, companion to the Sonarr/Radarr/Bazarr (*arr) stack
-**Researched:** 2026-05-31
-**Confidence:** HIGH (core libraries verified against PyPI + Context7 + official docs; architecture patterns MEDIUM)
+**Project:** Trezarr frontend — shadcn/ui + jolly-ui component foundation
+**Researched:** 2026-06-03
+**Scope:** Stack additions only for the UI v2 milestone. Python/FastAPI/SQLAlchemy/etc. are shipped v1 — not restated here.
+**Overall confidence:** HIGH (npm registry versions live-verified 2026-06-03; shadcn CLI source read directly; Radix and React Aria peer deps confirmed)
 
-## TL;DR Prescription
+---
 
-**Build it in Python.** This is not a close call. Bazarr — the literal reference product Trezarr sits next to — is Python. Every mature subtitle-parsing library (`pysubs2`, `ass`, `srt`, `webvtt-py`), the most complete *arr API client (`pyarr`), and the OpenAI SDK all have first-class Python support. Node/TS has good OpenAI SDK support but materially weaker subtitle (especially styling-preserving ASS/SSA) and *arr-client ecosystems, which would force you to write that plumbing yourself. Python lets you spend your effort on the hard problem (the Series Bible / pronoun engine), not on re-implementing subtitle parsers.
+## Summary
 
-**The stack:** Python 3.12 + FastAPI (async, served by Uvicorn) backend, `pysubs2` for subtitle I/O, `openai` v2 AsyncOpenAI client with `.parse()` structured outputs, `pyarr` for *arr APIs, SQLite via SQLAlchemy 2.0 (async + `aiosqlite`) for the Series Bible, APScheduler + `watchfiles` for the daemon, and a small React+Vite SPA built and served as static files by FastAPI in a single LinuxServer.io-style Docker image (PUID/PGID, `/config` volume).
+Adding shadcn/ui (Radix primitives) + jolly-ui (React Aria Components) to an existing React 19 / Tailwind v3.4 / Vite 7 project requires: (a) six runtime npm packages, (b) shadcn CLI pinned to `shadcn@2.x` (the Tailwind v3 line), (c) a `components.json` with explicit `tailwind.config` path, (d) a path alias (`@/`) wired through both `tsconfig.json` and `vite.config.ts`, (e) a rewritten `tailwind.config.js` with the CSS-variable color map + `tailwindcss-animate` plugin + accordion keyframes, and (f) a rewritten `src/index.css` with the shadcn HSL `:root`/`.dark` variable block.
 
-## Recommended Stack
+jolly-ui is **not a package** — it is a shadcn-style copy-paste registry served at `https://jollyui.dev/r`. Components are added via the standard shadcn CLI (`REGISTRY_URL=https://jollyui.dev/r npx shadcn@latest add <component>`). The only extra runtime dep jolly-ui needs is `react-aria-components` (1.18.0 stable). It shares `components.json` with shadcn; both use the same `cn()` util and CSS-variable theme. The two primitive layers (Radix vs React Aria) do not conflict — they target different components.
 
-### Core Technologies
+**Key constraint:** Stay on `shadcn@2.x` (2.10.0 is the latest 2.x stable as of this writing) for `init`. The main branch / `shadcn@latest` (4.x) has switched to Tailwind v4 / OKLCH. Running `shadcn@latest init` on a Tailwind v3 project will emit v4 config that breaks the existing setup.
 
-| Technology | Version | Purpose | Why Recommended |
-|------------|---------|---------|-----------------|
-| Python | 3.12 | Backend runtime | Matches Bazarr/*arr ecosystem; only runtime with mature, styling-preserving subtitle libs AND the best *arr client AND first-class OpenAI SDK. `pyarr` 6.x requires `>=3.12`, so 3.12 is the floor. |
-| FastAPI | 0.136.x | Web framework + REST API for the dashboard | Async-native (critical — the whole app is I/O bound on LLM + *arr + filesystem calls), Pydantic-native (the Series Bible and LLM structured outputs are both Pydantic models — one type system end to end), auto-generates OpenAPI/Swagger for the UI to consume. |
-| Uvicorn | 0.48.x | ASGI server | Standard FastAPI production server; single process is fine for a single-user self-hosted daemon. Run the daemon/scheduler in the same process via FastAPI lifespan. |
-| openai | 2.38.x | LLM client (user-provided OpenAI-compatible endpoint) | The constraint is "OpenAI-SDK-compatible endpoint." `AsyncOpenAI(base_url=..., api_key=..., max_retries=...)` makes base URL / key / model fully configurable and gives free exponential-backoff retries on 429/5xx/timeouts. `chat.completions.parse(response_format=PydanticModel)` gives typed structured outputs for the Series Bible. |
-| pysubs2 | 1.8.x | Subtitle parse/serialize (SRT, ASS/SSA, VTT) | Single library covers ALL three required formats with a unified API, and is the only one that round-trips ASS/SSA styles, fonts, positioning, and inline override tags — exactly the "preserve styling" requirement. Avoids juggling three separate libraries. |
-| pyarr | 6.6.x | Sonarr/Radarr/Bazarr API client | Maintained, covers Sonarr + Radarr + Bazarr in one client, returns plain JSON (resilient to *arr API drift), supports sync and asyncio. Saves writing/maintaining REST plumbing for three services. |
-| SQLAlchemy | 2.0.x | ORM / persistence layer for the Series Bible | The Series Bible is relational (Characters → directed Address-Map pairs → relationship-evolution markers → Term Dictionary). SQLAlchemy 2.0 async + a single SQLite file fits the *arr `/config` convention and supports the editable, propagating-correction model. |
-| aiosqlite | 0.22.x | Async SQLite driver | Lets the FastAPI/async stack hit SQLite without blocking the event loop. |
-| React + Vite | React 19 / Vite 7 | Dashboard SPA (Series Bible editor, job status, config) | Bazarr uses React; matches user/community expectations. Vite builds to static assets that FastAPI serves directly — no second web server, one container, one port. |
+---
 
-### Supporting Libraries
+## 1. Dependency Table
 
-| Library | Version | Purpose | When to Use |
-|---------|---------|---------|-------------|
-| Pydantic | 2.13.x | Models for config, Series Bible, and LLM structured outputs | Always. One model type used as the LLM `response_format`, the API response schema, and the DB shape (or paired with SQLModel). |
-| pydantic-settings | 2.14.x | Env-var + file config loading | Always — *arr images are env-config driven; this reads `TREZARR_*` env vars and a `/config/config.yaml` with one declarative model. |
-| APScheduler | 3.11.x | In-process job scheduling (poll *arr APIs, periodic library scans) | Always — the daemon polls Sonarr/Radarr/Bazarr on an interval and runs the two-pass translation pipeline. In-process scheduler avoids a separate worker/broker for a single-user daemon. |
-| watchfiles | 1.2.x | Filesystem watching for new/changed subtitle sidecars | Use as the event-driven complement to polling — react immediately when Bazarr writes a new source `.srt`/`.ass` into the media tree. Rust-backed, async, debounced. |
-| httpx | 0.28.x | HTTP client | Already pulled in by openai/fastapi; use directly for the Bazarr webhook receiver or any *arr call pyarr doesn't cover. |
-| tenacity | 9.1.x | Retry/backoff for the multi-step pipeline | Use for orchestration-level retries (whole translation step / *arr call). The OpenAI SDK handles per-request retries itself, so use tenacity at the pipeline boundary, not around individual LLM calls. |
-| Alembic | 1.18.x | DB schema migrations | Add once the Series Bible schema is real — the Bible WILL evolve (relationship-evolution markers, locked corrections) and self-hosted users have existing DBs to migrate. |
+All versions live-verified against the npm registry on 2026-06-03.
 
-### Development Tools
+### Runtime additions (to `frontend/package.json` dependencies)
 
-| Tool | Purpose | Notes |
-|------|---------|-------|
-| uv | Dependency + venv management | Fast, lockfile-based; standard for new 2025/2026 Python projects. Reproducible Docker builds. |
-| Ruff | Lint + format | Replaces black + isort + flake8 in one fast tool. |
-| pytest + pytest-asyncio | Testing | Async tests for the FastAPI/pipeline code; fixture-based SQLite for Series Bible tests. |
-| s6-overlay | Container init / PUID-PGID handling | The LinuxServer.io base image mechanism; gives you PUID/PGID drop-privileges and `/config` ownership fixup for free. |
+| Package | Version | Why needed | Notes |
+|---------|---------|-----------|-------|
+| `class-variance-authority` | `^0.7.1` | CVA — shadcn components use `cva()` to express slot/variant classes | Stable for 2 years; 0.7.x is the production line used by all shadcn v2 components |
+| `clsx` | `^2.1.1` | Conditional class string helper; used inside `cn()` util | Tiny (239 B); no peer deps |
+| `tailwind-merge` | `^3.6.0` | Deduplicates/merges conflicting Tailwind utility strings at runtime inside `cn()` | v3.x supports both Tailwind v3 and v4; no peer deps |
+| `tailwindcss-animate` | `^1.0.7` | Tailwind plugin that registers shadcn's accordion/collapsible/dialog keyframe animations | Required for Accordion, Collapsible, and Sheet; last updated 3 years ago but functionally complete for Tailwind v3 |
+| `react-aria-components` | `^1.18.0` | jolly-ui's primitive layer — replaces Radix for jolly-ui components (Table, Disclosure) | Peer deps: `react ^16.8 || ^17 || ^18 || ^19.0.0-rc.1` — covers React 19.0 (see React 19 notes) |
+| `sonner` | `^2.0.7` | Toast/notification system; shadcn's Sonner component wraps this | Peer deps explicitly list `^18.0.0 || ^19.0.0 || ^19.0.0-rc` — React 19 clean |
 
-## Installation
+### Dev additions (to `devDependencies`)
+
+| Package | Version | Why needed | Notes |
+|---------|---------|-----------|-------|
+| `@types/node` | `^22.x` | Needed by `vite.config.ts` to call `path.resolve(__dirname, ...)` for the `@/` alias | Add if missing |
+
+### Radix UI primitives (installed per-component by shadcn CLI — do NOT pre-install)
+
+These are pulled automatically by `npx shadcn@2.x add <component>`. Listed here for awareness only. Versions are current as of 2026-06-03.
+
+| Package | Current version | Pulled by |
+|---------|----------------|-----------|
+| `@radix-ui/react-slot` | 1.2.4 | Button, Badge, many others |
+| `@radix-ui/react-accordion` | 1.2.12 | Accordion |
+| `@radix-ui/react-collapsible` | 1.1.12 | Collapsible (sidebar sections) |
+| `@radix-ui/react-dialog` | 1.1.15 | Dialog, Sheet |
+| `@radix-ui/react-dropdown-menu` | 2.1.16 | DropdownMenu |
+| `@radix-ui/react-label` | 2.1.8 | Form labels |
+| `@radix-ui/react-separator` | 1.1.8 | Sidebar dividers |
+| `@radix-ui/react-tabs` | 1.1.13 | Tabs (shadcn version) |
+| `@radix-ui/react-tooltip` | 1.2.8 | Tooltip |
+
+All `@radix-ui/*` packages declare peer React `^16.8 || ^17.0 || ^18.0 || ^19.0 || ^19.0.0-rc` — React 19.0 clean since June 2024.
+
+### What is NOT needed
+
+| Package | Why not needed |
+|---------|---------------|
+| `@radix-ui/react-icons` | lucide-react is already installed and preferred |
+| `tw-animate-css` | That is the Tailwind v4 replacement for `tailwindcss-animate`; do not add on v3 |
+| `@tailwindcss/vite` | That is the Tailwind v4 Vite plugin; incompatible with v3 |
+| Any `jolly-ui` npm package | jolly-ui has no npm package — it is a copy-paste registry only |
+| `cmdk` | Command palette; not in scope for v1.1 |
+| `recharts` | Charts; not in scope for v1.1 |
+| `vaul` | Drawer; not needed for v1.1 sidebar (shadcn sidebar is not vaul-based) |
+| `framer-motion` | Not needed; shadcn v3 animations are Tailwind keyframes only |
+| Individual `@react-aria/*` packages | Use the bundled `react-aria-components`; individual packages conflict with RAC's internal versions |
+
+---
+
+## 2. shadcn init — Tailwind v3 Path
+
+### Critical version pin
+
+The shadcn CLI has two major lines:
+
+- **`shadcn@2.x`** (latest stable: `2.10.0`) — Tailwind v3, HSL CSS variables, `tailwind.config.js`-based, `tailwindcss-animate` plugin
+- **`shadcn@4.x` / `shadcn@latest`** — Tailwind v4, OKLCH, `@tailwindcss/vite`, `tw-animate-css`
+
+**Always invoke init as `npx shadcn@2.10.0 init`** for this project. The official shadcn docs state: "If you are using Tailwind v3, use `shadcn@2.3.0`" (that is a minimum; 2.10.0 is the current 2.x stable). Running `shadcn@latest init` emits v4 config.
+
+### Init command for existing Vite project
 
 ```bash
-# Project + deps (uv)
-uv init trezarr && cd trezarr
-uv add fastapi "uvicorn[standard]" openai pysubs2 pyarr \
-       "sqlalchemy[asyncio]" aiosqlite pydantic pydantic-settings \
-       apscheduler watchfiles httpx tenacity alembic
-
-# Dev dependencies
-uv add --dev ruff pytest pytest-asyncio
-
-# Frontend (separate package, built to static assets FastAPI serves)
-npm create vite@latest frontend -- --template react-ts
+cd frontend
+npx shadcn@2.10.0 init
 ```
 
-## OpenAI-Compatible Client — Prescribed Patterns
+Prompt answers:
+- Style: **New York** (more compact, better for a dashboard)
+- Base color: **Zinc** (closest neutral dark — all tokens are overridden anyway)
+- CSS variables: **yes**
+- Global CSS file: `src/index.css`
+- Tailwind config: `tailwind.config.js`
+- Components path alias: `@/components`
+- Utils path alias: `@/lib/utils`
 
-- **Configurability:** instantiate one `AsyncOpenAI(base_url=cfg.base_url, api_key=cfg.api_key, max_retries=4, timeout=120)`. `base_url`, `api_key`, and `model` (passed per-call) come from `pydantic-settings`. This satisfies "user brings their own OpenAI-compatible endpoint."
-- **Structured outputs:** use `client.chat.completions.parse(model=..., messages=..., response_format=SeriesBible)` so the Series Bible and per-line translation results come back as typed Pydantic objects, not hand-parsed JSON. Falls back to `response_format={"type": "json_object"}` (JSON mode) if the user's endpoint doesn't support strict json_schema (many local/proxy endpoints don't — detect and degrade).
-- **Retries:** rely on the SDK's built-in exponential backoff for transient 429/5xx/timeout. Set `max_retries` on the client. Do NOT wrap individual `create`/`parse` calls in tenacity (double-retry storm). Use tenacity only at the pipeline-step level.
-- **Concurrency control:** the daemon translates many lines/files; cap parallel in-flight LLM calls with an `asyncio.Semaphore` (e.g. 4–8) rather than firing all `create()` coroutines at once. This is the single most important reliability knob against user endpoints with low rate limits.
+This creates `components.json`, writes `src/lib/utils.ts`, updates `src/index.css` with a `:root` HSL block, and updates `tailwind.config.js`. After init, replace both files with the versions in Sections 3 and 4 (the init-generated versions are the base; our versions extend them with sidebar tokens and the custom purple theme).
 
-## *arr Integration — Prescribed Approach
+### components.json (expected shape after init)
 
-- **Auth:** all three (Sonarr/Radarr/Bazarr) authenticate with an API key. Send it as the `X-Api-Key` header (preferred) or `?apikey=` query param. `pyarr` handles this.
-- **API roots:** Sonarr/Radarr expose REST v3 at `/api/v3` (series, episode, movie, queue, calendar, system status). Bazarr exposes `/api/*` and a `/api/webhooks/plex` incoming hook.
-- **Discovery + subtitle state:** poll Sonarr/Radarr for the library (series/episodes/movies + file paths + TMDB/TVDB metadata for the register/genre signal), and query Bazarr for existing subtitle state per item. This identifies "has source sub, lacks good Vietnamese sub."
-- **Events:** Sonarr/Radarr support outgoing webhooks via Settings → Connect (On Import / On Download / On Upgrade). Bazarr can POST outgoing webhooks on subtitle events. **Recommendation: hybrid.** Accept inbound webhooks (a FastAPI `/webhook` endpoint) for low-latency reaction, but ALSO poll on an APScheduler interval as the source of truth — webhooks are best-effort/lossy in this ecosystem and a missed event must not mean a permanently-untranslated episode.
+```json
+{
+  "$schema": "https://ui.shadcn.com/schema.json",
+  "style": "new-york",
+  "rsc": false,
+  "tsx": true,
+  "tailwind": {
+    "config": "tailwind.config.js",
+    "css": "src/index.css",
+    "baseColor": "zinc",
+    "cssVariables": true,
+    "prefix": ""
+  },
+  "aliases": {
+    "components": "@/components",
+    "utils": "@/lib/utils",
+    "ui": "@/components/ui",
+    "lib": "@/lib",
+    "hooks": "@/hooks"
+  },
+  "iconLibrary": "lucide"
+}
+```
 
-## Series Bible Persistence — Prescribed Shape
+Key fields:
+- `"config": "tailwind.config.js"` — must be a non-empty string for shadcn 2.x (shadcn 4.x leaves this empty)
+- `"rsc": false` — Vite SPA, not Next.js RSC
+- `"iconLibrary": "lucide"` — lucide-react is already installed
 
-**Use SQLite (one file in `/config`), not flat files.** The Bible is inherently relational and needs queryable, updatable, lock-aware state — flat YAML/JSON would force full-file rewrites and lose referential integrity for the directed address-map and evolution markers.
+### Path alias setup
 
-Schema shape (one DB, one `series` row per show):
+**`tsconfig.json`** — add to `compilerOptions` (the current file has neither):
 
-- `series` — id, *arr/TMDB id, title, register/tone, source-language-priority decision
-- `character` — id, series_id, original_latin_name, gender, rough_age, role
-- `address_map` — id, series_id, speaker_character_id, addressee_character_id (the directed pair), self_term, address_term, `locked` (bool — the human-override valve), valid_from_episode (evolution marker)
-- `term_dictionary` — id, series_id, source_term, vietnamese_rendering, category (proper noun / title / place / jargon), `locked`
-- `relationship_event` — id, series_id, character_a, character_b, episode_marker, description (drives evolution of the address_map over the series)
-- `processed_file` — id, series_id, episode key, source_path, source_lang, output_path, status, content_hash (idempotency for the watcher/poller)
+```json
+{
+  "compilerOptions": {
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["./src/*"]
+    }
+  }
+}
+```
 
-The directed `address_map` keyed by (speaker, addressee, valid_from_episode) is the literal pronoun engine; `locked` columns implement "corrections lock and propagate forward." Pair the SQLAlchemy models with Pydantic (or use SQLModel 0.0.38 to share one class) so the same shape serializes to the editor UI and is fed into LLM context.
+**`vite.config.ts`** — add `resolve.alias` (preserving existing `build.outDir`):
 
-## Docker Packaging — Prescribed Conventions
+```typescript
+import path from "path"
+import { defineConfig } from "vite"
+import react from "@vitejs/plugin-react"
 
-Match the *arr ecosystem so self-hosters can drop Trezarr into their existing compose file:
+export default defineConfig({
+  plugins: [react()],
+  resolve: {
+    alias: {
+      "@": path.resolve(__dirname, "./src"),
+    },
+  },
+  build: {
+    outDir: "../trezarr/web/static",
+    emptyOutDir: true,
+  },
+})
+```
 
-- **Base on the LinuxServer.io pattern** (`ghcr.io/linuxserver/baseimage-*` with s6-overlay) OR a plain `python:3.12-slim` + a small entrypoint that does PUID/PGID. The LSIO base gives PUID/PGID and `/config` permission handling for free — recommended.
-- **PUID/PGID env vars** — drop privileges to the host user so sidecar `.vi.srt` files are written with correct ownership next to the media (non-negotiable: files must be owned like the rest of the *arr stack's output).
-- **`/config` volume** — all state lives here: SQLite Bible DB, `config.yaml`, logs. This is the universal *arr convention.
-- **Media volume(s)** mounted at the SAME paths as Sonarr/Radarr/Bazarr see them, so path mapping from the *arr APIs resolves on Trezarr's filesystem (path-mapping gotcha — see PITFALLS).
-- **Env-based config** via `pydantic-settings`: `TREZARR_OPENAI_BASE_URL`, `TREZARR_OPENAI_API_KEY`, `TREZARR_MODEL`, `TREZARR_SONARR_URL/_APIKEY`, etc., with `/config/config.yaml` overrides editable from the UI.
-- **Single image, single port** (e.g. 6868, echoing Bazarr's 6767): multi-stage Dockerfile builds the Vite SPA in a node stage, copies the static `dist/` into the Python image, and FastAPI serves it. No nginx, no second process.
+The `path.resolve(__dirname, ...)` call requires `@types/node` in devDependencies.
 
-## Alternatives Considered
+### cn() utility
 
-| Recommended | Alternative | When to Use Alternative |
-|-------------|-------------|-------------------------|
-| FastAPI | Flask (what Bazarr uses) | Only if you want byte-for-byte Bazarr parity. FastAPI's native async + Pydantic is strictly better for this I/O-bound, structured-output-heavy workload — prefer it. |
-| Python | Node/TypeScript | Only if the team has zero Python skill. You'd lose `pysubs2` (no equally complete styling-preserving ASS lib in JS) and `pyarr`, and have to build that plumbing — net negative for this domain. |
-| pysubs2 | `srt` + `ass` + `webvtt-py` (three libs) | If you needed deep, format-specific control beyond what pysubs2 exposes. For Trezarr, pysubs2's unified API covering all three formats is the right default; reach for `ass` 1.0.x only if pysubs2's ASS style fidelity proves insufficient for an edge case. |
-| pyarr | Custom httpx wrapper | If pyarr lacks a specific Bazarr endpoint you need — drop to httpx for that one call (you already have httpx). Don't replace the whole client. |
-| APScheduler (in-process) | arq / Celery + Redis | Only at multi-worker scale. A single-user self-hosted daemon should NOT require users to run Redis — keep it in-process. |
-| SQLite | Postgres | Never for v1 — SQLite in `/config` is the *arr convention and single-writer is fine. Revisit only for a hypothetical multi-instance future. |
+Created at `src/lib/utils.ts` by `shadcn init`. Do not move it; `components.json` aliases.utils points here.
 
-## What NOT to Use
+```typescript
+import { type ClassValue, clsx } from "clsx"
+import { twMerge } from "tailwind-merge"
 
-| Avoid | Why | Use Instead |
-|-------|-----|-------------|
-| Celery / arq + Redis broker | Forces users to run an extra service; massive overkill for a single-user daemon | APScheduler in-process + asyncio |
-| Flatten Series Bible into JSON/YAML files | Loses referential integrity, no atomic per-field locking/propagation, full-file rewrites race the watcher | SQLite (SQLAlchemy 2.0 + aiosqlite) |
-| Pure polling OR pure webhooks | Polling alone is high-latency; webhooks alone are lossy in the *arr ecosystem | Hybrid: webhook for latency + poll as source of truth |
-| Per-call tenacity around OpenAI requests | Double-retries on top of the SDK's built-in backoff → request storms against the user's endpoint | SDK `max_retries` for requests; tenacity only at pipeline-step level |
-| Firing all line-translation coroutines at once | Will trip rate limits on user-provided endpoints (often low-tier/local) | `asyncio.Semaphore`-bounded concurrency (4–8) |
-| nginx in the container | Unneeded second process for a single-user SPA | FastAPI static-file serving of the Vite `dist/` |
-| Sync `requests`/`openai` (sync) client in the FastAPI loop | Blocks the event loop; kills throughput on an I/O-bound app | `AsyncOpenAI` + async SQLAlchemy + httpx |
-| Running container as root | Sidecar files get root ownership, breaking the shared *arr filesystem | PUID/PGID drop-privilege (s6-overlay / LSIO base) |
+export function cn(...inputs: ClassValue[]) {
+  return twMerge(clsx(inputs))
+}
+```
 
-## Stack Patterns by Variant
+---
 
-**If the user's endpoint does not support strict `json_schema` structured outputs (common for local LLM proxies — llama.cpp, vLLM older builds, some OpenRouter models):**
-- Detect at config-test time; fall back from `chat.completions.parse()` to `response_format={"type": "json_object"}` + manual Pydantic validation.
-- Because the quality bar is "replace a human translator," prefer instructing the user toward a frontier model that supports strict structured outputs for the Series Bible pass.
+## 3. tailwind.config.js — Full Replacement
 
-**If the user has a low-rate-limit endpoint:**
-- Lower the `asyncio.Semaphore` ceiling (configurable, default 4) and raise SDK `max_retries`. Batch fewer lines per request.
+Replace the entire current file (which uses raw hex tokens). The shadcn HSL CSS-variable color map supersedes the hex tokens. Retain the old named tokens (`bg-base`, `bg-surface`, etc.) temporarily if migration is phased; remove them once all components are ported.
 
-**If ASS/SSA style fidelity is paramount (anime/fansub audience):**
-- Translate only the dialogue event text, never the style/format blocks; pysubs2 keeps styles intact on round-trip. Validate that inline override tags (`{\\...}`) inside dialogue are preserved/repositioned, not translated.
+```javascript
+/** @type {import('tailwindcss').Config} */
+export default {
+  darkMode: ["class"],
+  content: [
+    "./index.html",
+    "./src/**/*.{ts,tsx}",
+  ],
+  theme: {
+    container: {
+      center: true,
+      padding: "2rem",
+      screens: { "2xl": "1400px" },
+    },
+    extend: {
+      colors: {
+        // shadcn CSS-variable tokens (Tailwind v3 HSL pattern — hsl() wrapper in JS, bare H S% L% in CSS)
+        border: "hsl(var(--border))",
+        input: "hsl(var(--input))",
+        ring: "hsl(var(--ring))",
+        background: "hsl(var(--background))",
+        foreground: "hsl(var(--foreground))",
+        primary: {
+          DEFAULT: "hsl(var(--primary))",
+          foreground: "hsl(var(--primary-foreground))",
+        },
+        secondary: {
+          DEFAULT: "hsl(var(--secondary))",
+          foreground: "hsl(var(--secondary-foreground))",
+        },
+        destructive: {
+          DEFAULT: "hsl(var(--destructive))",
+          foreground: "hsl(var(--destructive-foreground))",
+        },
+        muted: {
+          DEFAULT: "hsl(var(--muted))",
+          foreground: "hsl(var(--muted-foreground))",
+        },
+        accent: {
+          DEFAULT: "hsl(var(--accent))",
+          foreground: "hsl(var(--accent-foreground))",
+        },
+        popover: {
+          DEFAULT: "hsl(var(--popover))",
+          foreground: "hsl(var(--popover-foreground))",
+        },
+        card: {
+          DEFAULT: "hsl(var(--card))",
+          foreground: "hsl(var(--card-foreground))",
+        },
+        // Sidebar tokens — required by shadcn/ui Sidebar component
+        sidebar: {
+          DEFAULT: "hsl(var(--sidebar-background))",
+          foreground: "hsl(var(--sidebar-foreground))",
+          primary: "hsl(var(--sidebar-primary))",
+          "primary-foreground": "hsl(var(--sidebar-primary-foreground))",
+          accent: "hsl(var(--sidebar-accent))",
+          "accent-foreground": "hsl(var(--sidebar-accent-foreground))",
+          border: "hsl(var(--sidebar-border))",
+          ring: "hsl(var(--sidebar-ring))",
+        },
+      },
+      borderRadius: {
+        lg: "var(--radius)",
+        md: "calc(var(--radius) - 2px)",
+        sm: "calc(var(--radius) - 4px)",
+      },
+      keyframes: {
+        "accordion-down": {
+          from: { height: "0" },
+          to: { height: "var(--radix-accordion-content-height)" },
+        },
+        "accordion-up": {
+          from: { height: "var(--radix-accordion-content-height)" },
+          to: { height: "0" },
+        },
+      },
+      animation: {
+        "accordion-down": "accordion-down 0.2s ease-out",
+        "accordion-up": "accordion-up 0.2s ease-out",
+      },
+    },
+  },
+  plugins: [require("tailwindcss-animate")],
+}
+```
 
-## Version Compatibility
+Notes:
+- `darkMode: ["class"]` — dark mode activated by `.dark` on `<html>`. Add `document.documentElement.classList.add("dark")` in `src/main.tsx` before `ReactDOM.createRoot(...)` since this app defaults to dark.
+- The accordion keyframes reference `--radix-accordion-content-height`, a CSS custom property injected by the Radix Accordion component at render time. This is correct and intentional.
+- `require("tailwindcss-animate")` is CommonJS require inside an ESM-style file (`export default`). This works in Vite's PostCSS/Tailwind processing context. If there is a module error, switch to: add `import tailwindcssAnimate from "tailwindcss-animate"` at top and use `plugins: [tailwindcssAnimate]`.
+- The sidebar token block is needed because shadcn's `sidebar.tsx` references `bg-sidebar`, `text-sidebar-foreground`, etc.
 
-| Package A | Compatible With | Notes |
-|-----------|-----------------|-------|
-| pyarr 6.6.x | Python >=3.12 | This sets the minimum Python version for the whole project. |
-| FastAPI 0.136.x | Pydantic 2.13.x, Uvicorn 0.48.x | All Pydantic v2; do not mix any Pydantic v1 deps. |
-| SQLAlchemy 2.0.x (async) | aiosqlite 0.22.x | Use the `sqlalchemy[asyncio]` extra + `sqlite+aiosqlite://` URL. |
-| openai 2.38.x | httpx 0.28.x | SDK bundles httpx; `.parse()` structured outputs require a json_schema-capable endpoint. |
-| SQLModel 0.0.38 | SQLAlchemy 2.0.x, Pydantic 2.x | Optional convenience to unify ORM + Pydantic; pre-1.0, so accept some API churn if adopted. |
+---
+
+## 4. src/index.css — Full Replacement (Purple Dark Theme)
+
+Replace the current 3-line file. The values below map the existing hex design tokens (`#0f1117`, `#1a1d27`, `#3b82f6`) to shadcn HSL CSS variables, with `--primary` set to purple as specified in the milestone brief.
+
+**Tailwind v3 HSL variable rule:** CSS variable values must be bare channel numbers (`H S% L%`), NOT wrapped in `hsl()`. The `hsl()` wrapper is applied only in `tailwind.config.js`. Example: `--background: 228 14% 8%` is correct; `--background: hsl(228 14% 8%)` is wrong for v3.
+
+```css
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* Border radius scale */
+    --radius: 0.5rem;
+
+    /* Core surfaces — mapped from existing hex tokens */
+    --background: 228 14% 8%;          /* #0f1117 (bg-base) */
+    --foreground: 220 18% 88%;         /* #e2e6f0 (text-primary) */
+
+    --card: 228 12% 13%;               /* #1a1d27 (bg-surface) */
+    --card-foreground: 220 18% 88%;
+
+    --popover: 228 12% 13%;
+    --popover-foreground: 220 18% 88%;
+
+    /* Primary — purple accent (replaces blue #3b82f6) */
+    --primary: 270 70% 60%;            /* ~purple-500 */
+    --primary-foreground: 0 0% 100%;
+
+    /* Secondary — stripe surface */
+    --secondary: 228 10% 18%;          /* #1e2130 (bg-stripe) */
+    --secondary-foreground: 220 18% 88%;
+
+    /* Muted */
+    --muted: 228 10% 18%;
+    --muted-foreground: 220 8% 43%;    /* #6b7280 (text-muted) */
+
+    /* Accent — subtle hover highlight */
+    --accent: 228 12% 20%;
+    --accent-foreground: 220 18% 88%;
+
+    /* Destructive */
+    --destructive: 0 72% 60%;          /* #ef4444 */
+    --destructive-foreground: 0 0% 100%;
+
+    /* Border / input / ring */
+    --border: 232 22% 23%;             /* #2d3148 */
+    --input: 232 22% 23%;
+    --ring: 270 70% 60%;               /* purple — matches primary */
+
+    /* Sidebar tokens — required by shadcn/ui Sidebar component */
+    --sidebar-background: 228 14% 8%;
+    --sidebar-foreground: 220 18% 88%;
+    --sidebar-primary: 270 70% 60%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 228 12% 15%;
+    --sidebar-accent-foreground: 220 18% 88%;
+    --sidebar-border: 232 22% 23%;
+    --sidebar-ring: 270 70% 60%;
+  }
+
+  /*
+   * No .light block — this app is dark-mode-first/only.
+   * dark mode is activated by `document.documentElement.classList.add("dark")` in main.tsx.
+   * The :root values above ARE the dark theme.
+   * If light mode support is added later, move dark values to .dark and define light values in :root.
+   */
+
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+  }
+}
+```
+
+Token migration note: The current `tailwind.config.js` exposes `bg-base`, `bg-surface`, `bg-stripe`, `border`, `text-primary`, `text-muted`, `accent`, `destructive` as Tailwind utilities. Those map directly to the new tokens:
+
+| Old utility | New utility |
+|-------------|------------|
+| `bg-base` | `bg-background` |
+| `bg-surface` | `bg-card` |
+| `bg-stripe` | `bg-secondary` |
+| `border` color | `border-border` (via `@apply border-border` in base) |
+| `text-primary` | `text-foreground` |
+| `text-muted` | `text-muted-foreground` |
+| `accent` (blue) | `bg-primary` (now purple) |
+| `destructive` | `bg-destructive` |
+
+Keep the old token definitions in `tailwind.config.js` during phase 1 to allow existing JSX to work until migrated, then remove them.
+
+---
+
+## 5. jolly-ui — Install Method and Coexistence
+
+### What jolly-ui is NOT
+
+jolly-ui is not an npm package. There is no `npm install jolly-ui`. It is a component registry served at `https://jollyui.dev/r`. Components are fetched and written to your project by the shadcn CLI's remote registry feature.
+
+### Install method
+
+```bash
+# Method A: Using REGISTRY_URL env variable
+REGISTRY_URL=https://jollyui.dev/r npx shadcn@latest add button
+
+# Method B: Full URL
+npx shadcn@latest add https://jollyui.dev/default/button
+```
+
+`shadcn@latest` (4.x) is fine for the `add` command — it only copies component source files, it does not touch `tailwind.config.js` or run `init`. The 2.x pin is only needed for `init`.
+
+### Prerequisites
+
+1. Complete `shadcn@2.10.0 init` first (jolly-ui docs: "Setup requires you doing the shadcn-ui set-up")
+2. Have `react-aria-components` in `package.json` (installed in Section 2 setup)
+3. The standard shadcn deps (`tailwindcss-animate`, `class-variance-authority`, `clsx`, `tailwind-merge`) are already present from Section 1
+
+### Radix vs React Aria coexistence
+
+No conflict. The two primitive layers target different components and manage independent DOM trees:
+- Radix primitives: Dialog, DropdownMenu, Accordion, Tooltip, Tabs, Collapsible
+- React Aria components: Table, Disclosure, some form primitives
+
+They share the same CSS variable theme, `cn()` util, and `components.json`. Both write to `src/components/ui/`. No second `components.json` is needed.
+
+### Tailwind v3 support confirmed
+
+jolly-ui's installation page explicitly provides a `tailwind.config.js` config (not `@tailwindcss/vite`). The config structure matches the Tailwind v3 shadcn pattern. jolly-ui works on Tailwind v3.4. (HIGH confidence — documentation demonstrates v3 config directly.)
+
+---
+
+## 6. Component Source Map
+
+| Component | Source | Install command | Notes |
+|-----------|--------|----------------|-------|
+| **Sidebar** | shadcn | `npx shadcn@2.10.0 add sidebar` | Installs `sidebar.tsx` (~600 lines, 25 sub-components) + `useSidebar` hook + `SidebarProvider`; requires the `sidebar.*` CSS variables and Tailwind color tokens from Sections 3-4 |
+| **Button** | shadcn | `npx shadcn@2.10.0 add button` | Uses Radix `@radix-ui/react-slot`; apply CVA variants |
+| **Badge** | shadcn | `npx shadcn@2.10.0 add badge` | Pure CSS, no Radix primitive; for audio/subtitle language badges |
+| **Card** | shadcn | `npx shadcn@2.10.0 add card` | Pure CSS wrapper; for series/movie cards |
+| **Table** | jolly-ui | `REGISTRY_URL=https://jollyui.dev/r npx shadcn@latest add table` | React Aria Table — keyboard nav, row selection, sort announcements built in; superior to shadcn's plain `<table>` for the episode detail view. Beta status in jolly-ui. |
+| **Tabs** | shadcn | `npx shadcn@2.10.0 add tabs` | Radix Tabs — already used in Bible Editor; keep consistent |
+| **Accordion** | shadcn | `npx shadcn@2.10.0 add accordion` | Radix Accordion; uses `--radix-accordion-content-height` keyframes; for season-grouped episode view |
+| **Collapsible** | shadcn | `npx shadcn@2.10.0 add collapsible` | Radix Collapsible; for individual season sections inside Accordion |
+| **Tooltip** | shadcn | `npx shadcn@2.10.0 add tooltip` | Radix Tooltip; for sidebar nav item hover labels |
+| **Skeleton** | shadcn | `npx shadcn@2.10.0 add skeleton` | Pure CSS pulse animation via `tailwindcss-animate` |
+| **Sonner (Toast)** | shadcn | `npx shadcn@2.10.0 add sonner` | Wraps the `sonner` package; install `sonner` npm dep separately (Section 1) |
+| **DropdownMenu** | shadcn | `npx shadcn@2.10.0 add dropdown-menu` | Radix DropdownMenu; for sidebar nav overflow menus |
+
+Bulk shadcn install:
+
+```bash
+npx shadcn@2.10.0 add sidebar button badge card tabs accordion collapsible tooltip skeleton sonner dropdown-menu
+```
+
+Then add jolly-ui Table (after `react-aria-components` is installed):
+
+```bash
+REGISTRY_URL=https://jollyui.dev/r npx shadcn@latest add table
+```
+
+---
+
+## 7. React 19 Compatibility
+
+### Radix UI
+
+Full React 19 support shipped June 19, 2024 across all `@radix-ui/*` primitives. Peer dep range: `react: "^16.8 || ^17.0 || ^18.0 || ^19.0 || ^19.0.0-rc"`. No `--legacy-peer-deps` required. No breaking changes for consumers.
+
+The one React 19 change affecting shadcn component source: `React.forwardRef` is deprecated (ref is now a plain prop). Shadcn components generated by `shadcn@2.x` still use `forwardRef` wrappers. These continue to work in React 19 — React 19 maintains full backward compatibility with `forwardRef`. You will see a deprecation warning in dev console if React DevTools is strict; suppress by updating the pattern per the shadcn v4 upgrade guide (`React.ComponentProps<...>` + direct ref prop). This is optional cleanup; it does not block runtime.
+
+### react-aria-components
+
+Version 1.18.0 (current stable). Peer dep range: `react: "^16.8.0 || ^17.0.0-rc.1 || ^18.0.0 || ^19.0.0-rc.1"`. This range, while showing `rc.1`, satisfies React 19.0 stable via semver (`^19.0.0-rc.1` matches anything `>=19.0.0-rc.1 <20.0.0`, which includes 19.0.0 stable). npm may display a peer dep warning due to the range literal, but the package functions correctly on React 19.0. Adobe has shipped React 19-specific fixes in recent releases (ref cleanup behavior, collection performance in transitions).
+
+Do not use the nightly `3.0.0-nightly-*` builds — unstable API.
+
+### sonner
+
+sonner@2.0.7 peer deps: `react: "^18.0.0 || ^19.0.0 || ^19.0.0-rc"` — explicitly covers React 19.0 stable. No issues.
+
+---
+
+## 8. Setup Sequence (Ordered)
+
+```bash
+# 0. Working directory
+cd /path/to/Trezarr/frontend
+
+# 1. Install runtime deps
+npm install \
+  class-variance-authority@^0.7.1 \
+  clsx@^2.1.1 \
+  tailwind-merge@^3.6.0 \
+  tailwindcss-animate@^1.0.7 \
+  react-aria-components@^1.18.0 \
+  sonner@^2.0.7
+
+# 2. Install @types/node dev dep (for vite.config.ts path.resolve)
+npm install -D @types/node
+
+# 3. Edit tsconfig.json — add baseUrl and paths under compilerOptions (see Section 2)
+
+# 4. Edit vite.config.ts — add resolve.alias block (see Section 2)
+
+# 5. Run shadcn init on the Tailwind v3 line
+npx shadcn@2.10.0 init
+# Prompts: New York / Zinc / CSS variables: yes / src/index.css / tailwind.config.js / @/components / @/lib/utils
+
+# 6. Replace tailwind.config.js with the full version from Section 3
+#    (adds sidebar tokens and ensures module format is correct)
+
+# 7. Replace src/index.css with the purple dark theme from Section 4
+#    (the init-generated block uses zinc defaults; replace with Trezarr's purple tokens)
+
+# 8. Add dark class to <html> in src/main.tsx (before ReactDOM.createRoot):
+#    document.documentElement.classList.add("dark")
+
+# 9. Add shadcn components (bulk)
+npx shadcn@2.10.0 add sidebar button badge card tabs accordion collapsible tooltip skeleton sonner dropdown-menu
+
+# 10. Add jolly-ui Table
+REGISTRY_URL=https://jollyui.dev/r npx shadcn@latest add table
+
+# 11. Verify build
+npm run build
+# Expect: build completes, trezarr/web/static/ populated
+```
+
+---
+
+## 9. What NOT to Add
+
+| Package / Action | Reason |
+|-----------------|--------|
+| `tailwindcss@^4.x` | Breaks existing v3 config; locked out of scope |
+| `@tailwindcss/vite` | Tailwind v4 Vite plugin — incompatible with v3 |
+| `tw-animate-css` | Tailwind v4 animation replacement; use `tailwindcss-animate` on v3 |
+| `npx shadcn@latest init` | 4.x emits v4 config; use `shadcn@2.10.0 init` |
+| Any `jolly-ui` npm package | Does not exist; all jolly-ui is copy-paste via registry |
+| `@radix-ui/react-icons` | Redundant; lucide-react is already present |
+| `vaul` | Not used in this milestone's sidebar design |
+| `cmdk` | Command palette not in v1.1 scope |
+| `recharts` | Charts not in v1.1 scope |
+| `framer-motion` | Not needed; shadcn v3 uses Tailwind keyframes only |
+| Individual `@react-aria/*` packages | Use the bundled `react-aria-components`; individual packages conflict with RAC internal versions |
+| A second `components.json` | jolly-ui shares the existing one |
+
+---
+
+## 10. FastAPI / Vite Integration Notes
+
+The existing `vite.config.ts` builds to `../trezarr/web/static` with `emptyOutDir: true`, served by FastAPI's `SPAStaticFiles` mount. This setup is unaffected by the shadcn additions:
+- The `@/` alias is a build-time TypeScript/Vite alias — resolves before bundling, zero runtime footprint in static output
+- `npm run build` output structure does not change (Vite still produces `index.html` + hashed asset bundles)
+- The FastAPI `StaticFiles` mount and SPA deep-link fallback do not need updates
+
+---
 
 ## Sources
 
-- `/openai/openai-python` (Context7) — AsyncOpenAI base_url/api_key/max_retries config, `chat.completions.parse()` structured outputs, retry/backoff behavior — HIGH
-- `/tkarabela/pysubs2` (Context7) + PyPI — SRT/ASS/SSA/VTT support, styling round-trip — HIGH
-- PyPI JSON API (live, 2026-05-31) — current versions + requires_python for openai 2.38.0, pysubs2 1.8.1, fastapi 0.136.3, uvicorn 0.48.0, pydantic 2.13.4, sqlalchemy 2.0.50, aiosqlite 0.22.1, apscheduler 3.11.2, watchfiles 1.2.0, httpx 0.28.1, alembic 1.18.4, pydantic-settings 2.14.1, pyarr 6.6.0, tenacity 9.1.4, sqlmodel 0.0.38 — HIGH
-- https://docs.linuxserver.io/general/understanding-puid-and-pgid/ — PUID/PGID, /config volume conventions — HIGH
-- https://github.com/Radarr/Radarr/wiki/API + sonarr.tv/docs/api + Bazarr wiki — X-Api-Key auth, /api/v3 roots, Connect webhooks, Bazarr outgoing/incoming webhooks — MEDIUM (official docs, some via search summary)
-- https://github.com/totaldebug/pyarr + PyPI — pyarr covers Sonarr/Radarr/Bazarr, sync+async, JSON results, maintained — MEDIUM
-- https://hub.docker.com/r/linuxserver/bazarr + blog.miguelgrinberg.com (Dockerize React+Flask) — single-image multi-stage build, app-serves-static-SPA pattern — MEDIUM
-
----
-*Stack research for: self-hosted Dockerized LLM Vietnamese subtitle-translation daemon (*arr companion)*
-*Researched: 2026-05-31*
+| Source | Confidence | What it verified |
+|--------|-----------|-----------------|
+| npm registry live queries (2026-06-03) | HIGH | Current versions: CVA 0.7.1, clsx 2.1.1, tailwind-merge 3.6.0, tailwindcss-animate 1.0.7, react-aria-components 1.18.0, sonner 2.0.7; all @radix-ui/* versions; peer dep ranges |
+| `github.com/shadcn-ui/ui` — `packages/shadcn/src/utils/templates.ts` (raw, read directly 2026-06-03) | HIGH | Exact `TAILWIND_CONFIG_WITH_VARIABLES` template (HSL color map, accordion keyframes, borderRadius), `UTILS` (`cn()` function) — these are the v3 templates `shadcn init` writes |
+| `ui.shadcn.com/docs/tailwind-v4` | HIGH | Confirms v3 projects still supported; v3 uses `tailwindcss-animate`, v4 uses `tw-animate-css`; "use `shadcn@2.3.0`" minimum for Tailwind v3 |
+| `jollyui.dev/docs/installation` | HIGH | jolly-ui is copy-paste registry (not npm); uses `REGISTRY_URL=https://jollyui.dev/r npx shadcn@latest add`; requires shadcn init first; lists same npm deps as shadcn; Tailwind v3 config shown directly |
+| `jollyui.dev/docs/components/table`, `jollyui.dev/docs` (component index) | MEDIUM | Table component exists (beta, uses React Aria); full component list confirmed |
+| `radix-ui.com/primitives/docs/overview/releases` (fetched 2026-06-03) | HIGH | Full React 19 compatibility shipped June 2024; peer deps cover `^19.0` |
+| `github.com/adobe/react-spectrum` issues #6445, #9267; npm dist tag | MEDIUM | react-aria-components 1.18.0 runs on React 19; peer dep range `^19.0.0-rc.1` satisfies 19.0 stable |
+| Context7 `/shadcn-ui/ui` — sidebar component | HIGH | `npx shadcn@latest add sidebar`; sidebar CSS variable names (`--sidebar-background`, `--sidebar-primary`, etc.); `SidebarProvider` usage pattern |
