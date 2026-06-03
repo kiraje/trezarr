@@ -357,7 +357,7 @@ Plans:
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-- [ ] 11-02-PLAN.md — Wave 2: tailwind.config.js + src/index.css + index.html (purple theme tokens)
+- [x] 11-02-PLAN.md — Wave 2: tailwind.config.js + src/index.css + index.html (purple theme tokens)
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
@@ -380,7 +380,7 @@ Plans:
 **Plans**: 3 plans
 Plans:
 
-- [ ] 11-01-PLAN.md — Wave 1: .npmrc + deps + @/ alias + shadcn@2.10.0 init (pre-theme baseline)
+- [x] 11-01-PLAN.md — Wave 1: .npmrc + deps + @/ alias + shadcn@2.10.0 init (pre-theme baseline)
 - [ ] 11-02-PLAN.md — Wave 2: tailwind.config.js + src/index.css + index.html (purple theme tokens)
 - [ ] 11-03-PLAN.md — Wave 3: bulk shadcn add + jolly-ui Table + D-09 human visual UAT gate
 
@@ -484,7 +484,7 @@ v1.1 phases execute in numeric order: 11 → 12 → 13 (parallel-eligible with 1
 | 8. Editable Series Bible UI | 4/4 | Complete | 2026-06-02 |
 | 9. Multi-Format — ASS/SSA + VTT | 5/6 | In Progress | |
 | 10. Source Selection & Per-Series Overrides | 4/4 | Complete | 2026-06-02 |
-| 11. shadcn Foundation & Purple Theme | 1/3 | In Progress|  |
+| 11. shadcn Foundation & Purple Theme | 2/3 | In Progress|  |
 | 12. App Shell + Route Restructure | 0/TBD | Not started | - |
 | 13. Backend Episodes Enrichment | 0/TBD | Not started | - |
 | 14. New Library Pages + Nav Badge Wiring | 0/TBD | Not started | - |
