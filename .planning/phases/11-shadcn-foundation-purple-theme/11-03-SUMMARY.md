@@ -87,7 +87,7 @@ Step 12 — Build gate:
 - `npm run build` exits 0 (tsc -b + vite 1.22s, 42.26KB CSS, 312.49KB JS)
 - `animate-in` confirmed in `trezarr/web/static/assets/index-B3VWDDqZ.css`
 
-### Task 2: D-09 Human Visual UAT (PENDING — checkpoint)
+### Task 2: D-09 Human Visual UAT (APPROVED 2026-06-03)
 
 The plan's `autonomous: false` gate. Human must confirm four D-09 criteria in a browser:
 1. `<html class="dark">` active in DevTools
@@ -168,11 +168,9 @@ No new security surface beyond what the plan's threat model covers.
 
 **T-11-08 (Tampering — shadcn@2.10.0 add):** MITIGATED — official registry, pinned version, lockfile committed.
 
-## Checkpoint: Task 2 — D-09 Human Visual UAT (PENDING)
+## Checkpoint: Task 2 — D-09 Human Visual UAT (APPROVED 2026-06-03)
 
-Task 2 is a `type="checkpoint:human-verify"` gate. It requires human confirmation that the four D-09 browser criteria pass before Phase 11 can close.
-
-**Awaiting:** Human to start dev server (`cd frontend && npm run dev`) or open the production build at `:6868`, temporarily add the test elements to a page, and confirm all four criteria.
+Task 2 is a `type="checkpoint:human-verify"` gate. The human confirmed all four D-09 browser criteria pass (dark purple background with `.dark` active, purple default Button, `bg-primary/50` half-opacity, no broken existing pages). Approved by the user on 2026-06-03 — Phase 11 may close.
 
 See the checkpoint return below for exact browser steps.
 

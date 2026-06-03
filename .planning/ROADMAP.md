@@ -377,12 +377,7 @@ Plans:
   3. All existing pages (Queue, History, Settings, Bible List, Bible Editor) remain navigable and fully functional inside the new shell with no regressions
   4. Stub Series, SeriesDetail, and Movies pages render a heading placeholder at their new routes without errors
 
-**Plans**: 3 plans
-Plans:
-
-- [x] 11-01-PLAN.md — Wave 1: .npmrc + deps + @/ alias + shadcn@2.10.0 init (pre-theme baseline)
-- [x] 11-02-PLAN.md — Wave 2: tailwind.config.js + src/index.css + index.html (purple theme tokens)
-- [ ] 11-03-PLAN.md — Wave 3: bulk shadcn add + jolly-ui Table + D-09 human visual UAT gate
+**Plans**: TBD
 
 **UI hint**: yes
 
@@ -398,12 +393,7 @@ Plans:
   3. `GET /api/library` series and movies list items include `translated_count` and `total_count` fields
   4. Backend tests cover the Bazarr fail-soft path, the correct `episode.id` (not `episodeFile.id`) join to Bazarr inventory, and the `audioLanguages` full-name-to-ISO lookup
 
-**Plans**: 3 plans
-Plans:
-
-- [x] 11-01-PLAN.md — Wave 1: .npmrc + deps + @/ alias + shadcn@2.10.0 init (pre-theme baseline)
-- [ ] 11-02-PLAN.md — Wave 2: tailwind.config.js + src/index.css + index.html (purple theme tokens)
-- [ ] 11-03-PLAN.md — Wave 3: bulk shadcn add + jolly-ui Table + D-09 human visual UAT gate
+**Plans**: TBD
 
 ### Phase 14: New Library Pages + Nav Badge Wiring
 
@@ -418,12 +408,7 @@ Plans:
   4. The Movies page shows all Radarr movies with source-subtitle status and a Translate button
   5. The Series and Movies lists support search by title, filter by subtitle status, and sort; the sidebar Series and Movies nav rows show a count badge of items needing a Vietnamese subtitle (auto-hidden at zero) and a LIVE badge when the backing *arr service is connected
 
-**Plans**: 3 plans
-Plans:
-
-- [ ] 11-01-PLAN.md — Wave 1: .npmrc + deps + @/ alias + shadcn@2.10.0 init (pre-theme baseline)
-- [ ] 11-02-PLAN.md — Wave 2: tailwind.config.js + src/index.css + index.html (purple theme tokens)
-- [ ] 11-03-PLAN.md — Wave 3: bulk shadcn add + jolly-ui Table + D-09 human visual UAT gate
+**Plans**: TBD
 
 **UI hint**: yes
 
@@ -438,12 +423,7 @@ Plans:
   2. The Bible Editor renders identically to its pre-reskin behavior: all five tabs (Characters, Address Map, Term Dictionary, Register, Overrides) load, lock badges display provenance correctly, field history panels populate, and pronoun combos work — confirmed by the existing test suite (all tests green)
   3. After all pages are reskinned, a grep for `bg-[#` and `text-[#` in `src/` returns no results; legacy bridge tokens are removed from `tailwind.config.js`
 
-**Plans**: 3 plans
-Plans:
-
-- [ ] 11-01-PLAN.md — Wave 1: .npmrc + deps + @/ alias + shadcn@2.10.0 init (pre-theme baseline)
-- [ ] 11-02-PLAN.md — Wave 2: tailwind.config.js + src/index.css + index.html (purple theme tokens)
-- [ ] 11-03-PLAN.md — Wave 3: bulk shadcn add + jolly-ui Table + D-09 human visual UAT gate
+**Plans**: TBD
 
 **UI hint**: yes
 
@@ -459,12 +439,7 @@ Plans:
   3. The Series detail page for a real Sonarr series shows season-grouped episodes with audio and subtitle-language badges populated from Bazarr
   4. Triggering a translation from the Series detail view enqueues it and the Queue page shows the job; a hard-refresh on `/series/42` serves `index.html` (SPA deep-link fallback intact)
 
-**Plans**: 3 plans
-Plans:
-
-- [ ] 11-01-PLAN.md — Wave 1: .npmrc + deps + @/ alias + shadcn@2.10.0 init (pre-theme baseline)
-- [ ] 11-02-PLAN.md — Wave 2: tailwind.config.js + src/index.css + index.html (purple theme tokens)
-- [ ] 11-03-PLAN.md — Wave 3: bulk shadcn add + jolly-ui Table + D-09 human visual UAT gate
+**Plans**: TBD
 
 ## Progress
 
