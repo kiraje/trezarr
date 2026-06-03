@@ -1,7 +1,8 @@
 ---
 phase: 12
 slug: app-shell-route-restructure
-status: draft
+status: approved
+reviewed_at: 2026-06-03
 shadcn_initialized: true
 preset: "New York / Zinc / CSS variables (inherited from Phase 11)"
 created: 2026-06-03
