@@ -4,6 +4,8 @@
 
 Trezarr is built leaves-first, novel-logic-last. We start by proving the mechanical file-in → file-out path (parse a real SRT, hit the user's LLM endpoint, validate, write a sidecar) with the blind-trust validation gate built in from day one. We then wire in \*arr discovery to get one real episode translated end-to-end — de-risking path-mapping and permissions, the ecosystem's biggest friction — before investing in the moat. With a working slice, we build the persistent Series Bible store, then the three-pass pronoun engine (the differentiator), then relationship-evolution and self-review on top of a proven consistency core. Finally we add the operator surfaces (web UI, hardened service, editable Bible) and the orthogonal depth (ASS/SSA + VTT formats, relational-fidelity source selection). Each phase delivers a coherent, verifiable capability; every v1 requirement lands in exactly one phase.
 
+**v1.1 (UI v2: shadcn dashboard)** continues phase numbering at 11. The build order is dependency-forced: shadcn foundation first (gates everything), then app shell + route restructure (wraps all pages), then backend episodes enrichment (can run in parallel with shell; must land before the Series detail page), then new library pages (headline deliverables), then reskin-in-place of existing pages (BibleEditor last — highest regression risk), then Docker rebuild and live smoke test as the release gate.
+
 ## Phases
 
 **Phase Numbering:**
@@ -12,6 +14,8 @@ Trezarr is built leaves-first, novel-logic-last. We start by proving the mechani
 - Decimal phases (2.1, 2.2): Urgent insertions (marked with INSERTED)
 
 Decimal phases appear between their surrounding integers in numeric order.
+
+### v1.0 Phases (Complete)
 
 - [x] **Phase 1: Codec & LLM Client Foundation** - Parse/serialize SRT and call the user's OpenAI-compatible endpoint as isolated, testable leaves (completed 2026-05-31)
 - [x] **Phase 2: Mechanical Translation Core + Validation Gate** - Single-pass translate a parsed file and write a valid sidecar, gated by a hard pre-write quality check (completed 2026-05-31)
@@ -23,6 +27,15 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 8: Editable Series Bible UI** - View, correct, and lock Bible fields so human overrides propagate forward (the override valve) (completed 2026-06-02)
 - [ ] **Phase 9: Multi-Format — ASS/SSA + VTT** - Translate ASS/SSA and VTT while preserving styling, tags, positioning, and cue settings byte-identical
 - [x] **Phase 10: Source Selection & Per-Series Overrides** - Read Bazarr's subtitle inventory and pick the source language whose relational system best serves Vietnamese; per-series tuning (completed 2026-06-02)
+
+### v1.1 Phases (UI v2: shadcn dashboard)
+
+- [ ] **Phase 11: shadcn Foundation & Purple Theme** - Install shadcn@2.10.0 + jolly-ui on Tailwind v3, wire the `@/` alias, establish the HSL CSS-variable purple dark theme, and verify a green build with no page content changes
+- [ ] **Phase 12: App Shell + Route Restructure** - Replace the current AppShell with SidebarProvider + AppSidebar + Outlet, restructure routes so `/library` → `/series` + `/movies` + `/series/:id` and `/` → `/series`
+- [ ] **Phase 13: Backend Episodes Enrichment** - Rewrite `GET /api/library/series/{id}/episodes` to return season-grouped episode records from Sonarr with audio languages and Bazarr subtitle inventory (fail-soft); expose `translated_count`/`total_count` on list endpoints
+- [ ] **Phase 14: New Library Pages + Nav Badge Wiring** - Build Series list, Series detail (season-grouped Accordion with audio/subtitle badges, translate actions, search/filter/sort), Movies list, and wire the sidebar count+LIVE badges to live API data
+- [ ] **Phase 15: Reskin Existing Pages** - Reskin-in-place Queue, History, Settings, Bible List, JobLogs, and Bible Editor onto shadcn primitives; remove legacy bridge tokens after all pages pass
+- [ ] **Phase 16: Docker Rebuild + Live Smoke Test** - Rebuild the multi-stage Docker image with `--no-cache`, run the new dashboard on :6868 against the live *arr stack, and verify all six nav routes, episode badges, translate flow, and deep-link fallback
 
 ## Phase Details
 
@@ -119,8 +132,8 @@ Decimal phases appear between their surrounding integers in numeric order.
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-- [x] 04-02-PLAN.md — Series + register slice: MediaItem arr_metadata extension, Pydantic DTO boundary, get_or_create_series + load_series_bible (BIBLE-01, BIBLE-05)
-- [x] 04-03-PLAN.md — Character + term_dictionary + merge_inferred + bible_event audit log; lock-precedence + atomic UPDATE+INSERT + carry-forward (BIBLE-02, BIBLE-04, BIBLE-06)
+- [x] 04-02-PLAN.md — Wave 1: Series + register slice: MediaItem arr_metadata extension, Pydantic DTO boundary, get_or_create_series + load_series_bible (BIBLE-01, BIBLE-05)
+- [x] 04-03-PLAN.md — Wave 1: Character + term_dictionary + merge_inferred + bible_event audit log; lock-precedence + atomic UPDATE+INSERT + carry-forward (BIBLE-02, BIBLE-04, BIBLE-06)
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
@@ -320,20 +333,107 @@ Decimal phases appear between their surrounding integers in numeric order.
 
 **UI hint**: yes
 
+---
+
+## v1.1 Phase Details
+
+### Phase 11: shadcn Foundation & Purple Theme
+
+**Goal**: The shadcn/ui + jolly-ui component infrastructure is installed on the existing Tailwind v3 stack, the `@/` path alias is wired in both TypeScript and Vite configs, and a purple dark-mode CSS-variable theme replaces the legacy hex tokens — all verified with a green production build before any page content changes.
+**Depends on**: Phase 10 (v1.0 complete)
+**Requirements**: UI-01, UI-02
+**Success Criteria** (what must be TRUE):
+  1. Running `npm run build` after setup produces a green build with no TypeScript or Vite errors, and the built `trezarr/web/static/` is populated
+  2. Opening the app in a browser shows the existing pages rendered on a dark purple background with the new CSS-variable theme (the `.dark` class on `<html>` is active)
+  3. A shadcn `<Button variant="default">` renders with the purple primary color and correct opacity on `bg-primary/50` — confirming HSL channel-triple format is correct
+  4. No existing page breaks or shows unstyled text; the bridge-period dual-token setup keeps legacy classes functional
+**Plans**: TBD
+**UI hint**: yes
+
+### Phase 12: App Shell + Route Restructure
+
+**Goal**: The current AppShell is replaced with a SidebarProvider + AppSidebar + Outlet layout, the route table is restructured with `/library` split into `/series` + `/movies` + `/series/:id` and `/` redirecting to `/series`, and all existing pages load correctly inside the new full-height sidebar shell.
+**Depends on**: Phase 11
+**Requirements**: NAV-01, NAV-02
+**Success Criteria** (what must be TRUE):
+  1. Navigating to `/` in the browser redirects to `/series`; refreshing `/series`, `/movies`, `/queue`, `/history`, `/bible`, or `/settings` loads the correct page (SPA deep-link fallback intact)
+  2. The full-height sidebar is visible on all pages showing the Trezarr brand, all six nav items (Series / Movies / Queue / History / Bible / Settings), and a left 2-pixel purple accent bar on the active nav item
+  3. All existing pages (Queue, History, Settings, Bible List, Bible Editor) remain navigable and fully functional inside the new shell with no regressions
+  4. Stub Series, SeriesDetail, and Movies pages render a heading placeholder at their new routes without errors
+**Plans**: TBD
+**UI hint**: yes
+
+### Phase 13: Backend Episodes Enrichment
+
+**Goal**: The `GET /api/library/series/{id}/episodes` endpoint is rewritten to return season-grouped episode records from Sonarr with audio languages and Bazarr subtitle inventory (fail-soft HTTP 200 always), and the Series + Movies list endpoints expose `translated_count`/`total_count` per item.
+**Depends on**: Phase 11 (for deployment context; backend work is parallel-eligible with Phase 12)
+**Requirements**: API-01, API-02
+**Success Criteria** (what must be TRUE):
+  1. `GET /api/library/series/{id}/episodes` returns a JSON envelope with `seasons[]` (grouped by season number), each episode carrying `audio_languages`, `subtitles[]` (with `code2`, `hi`), `episode_key`, and `status`; the endpoint always returns HTTP 200 even when Bazarr is down (`bazarr_available: false` in the envelope)
+  2. When Bazarr is unreachable, the endpoint returns all episode records with `subtitles: []` for each and `bazarr_available: false` — no 502, no empty page
+  3. `GET /api/library` series and movies list items include `translated_count` and `total_count` fields
+  4. Backend tests cover the Bazarr fail-soft path, the correct `episode.id` (not `episodeFile.id`) join to Bazarr inventory, and the `audioLanguages` full-name-to-ISO lookup
+**Plans**: TBD
+
+### Phase 14: New Library Pages + Nav Badge Wiring
+
+**Goal**: The Series list, Series detail (season-grouped Accordion with audio and subtitle-language badges, translate actions, search/filter/sort), and Movies list pages are built and fully functional; the sidebar count and LIVE badges are wired to live API data; Library.tsx is deleted.
+**Depends on**: Phase 12 (shell + stubs), Phase 13 (stable API contract)
+**Requirements**: LIB-01, LIB-02, LIB-03, LIB-04, LIB-05, LIB-06, LIB-07, NAV-03
+**Success Criteria** (what must be TRUE):
+  1. The Series list page shows all Sonarr series in a dense table with a "X/Y translated" progress bar per series; clicking a series navigates to `/series/:id`
+  2. The Series detail page shows episodes grouped by season in collapsible sections with the latest season auto-expanded; each episode row shows an Audio badge (blue) and subtitle-language badges (`CODE2` uppercase, amber = source / purple = VI, `VI:HI` when `hi=true`); when `bazarr_available=false` the subtitle badge column is suppressed rather than showing all-empty badges
+  3. A "Translate" button on an episode row or season header enqueues the item and navigates to the Queue page; the button is absent for episodes with no file
+  4. The Movies page shows all Radarr movies with source-subtitle status and a Translate button
+  5. The Series and Movies lists support search by title, filter by subtitle status, and sort; the sidebar Series and Movies nav rows show a count badge of items needing a Vietnamese subtitle (auto-hidden at zero) and a LIVE badge when the backing *arr service is connected
+**Plans**: TBD
+**UI hint**: yes
+
+### Phase 15: Reskin Existing Pages
+
+**Goal**: Queue, History, Settings, Bible List, JobLogs, and Bible Editor are all reskinned in-place onto shadcn primitives; the legacy bridge tokens are removed from tailwind.config.js; the existing test suite remains green throughout.
+**Depends on**: Phase 12 (new shell), Phase 14 (proves badge system on new code before touching high-risk BibleEditor)
+**Requirements**: RSK-01, RSK-02
+**Success Criteria** (what must be TRUE):
+  1. Queue, History, Settings, Bible List, and JobLogs pages render on the new shadcn component system with no visible legacy hex colors; each page shows loading, empty, and error states correctly
+  2. The Bible Editor renders identically to its pre-reskin behavior: all five tabs (Characters, Address Map, Term Dictionary, Register, Overrides) load, lock badges display provenance correctly, field history panels populate, and pronoun combos work — confirmed by the existing test suite (all tests green)
+  3. After all pages are reskinned, a grep for `bg-[#` and `text-[#` in `src/` returns no results; legacy bridge tokens are removed from `tailwind.config.js`
+**Plans**: TBD
+**UI hint**: yes
+
+### Phase 16: Docker Rebuild + Live Smoke Test
+
+**Goal**: The multi-stage Docker image is rebuilt from scratch, the new dashboard is verified live on :6868 against the real *arr stack, and all six nav routes, episode badges, translate flow, Settings save, and SPA deep-link fallback are confirmed working in the production build.
+**Depends on**: Phase 15 (all pages reskinned)
+**Requirements**: RSK-03
+**Success Criteria** (what must be TRUE):
+  1. `docker build --no-cache` completes the full multi-stage build (node Vite build → python:3.12-slim) without error; the image starts on :6868 and `/api/health` returns 200
+  2. Navigating to all six sidebar routes (/series, /movies, /queue, /history, /bible, /settings) in the browser at :6868 renders the new shadcn dashboard with no blank pages or missing styles
+  3. The Series detail page for a real Sonarr series shows season-grouped episodes with audio and subtitle-language badges populated from Bazarr
+  4. Triggering a translation from the Series detail view enqueues it and the Queue page shows the job; a hard-refresh on `/series/42` serves `index.html` (SPA deep-link fallback intact)
+**Plans**: TBD
+
 ## Progress
 
 **Execution Order:**
-Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 → 9 → 10
+v1.0 phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 → 9 → 10
+v1.1 phases execute in numeric order: 11 → 12 → 13 (parallel-eligible with 12) → 14 → 15 → 16
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Codec & LLM Client Foundation | 3/3 | Complete    | 2026-05-31 |
-| 2. Mechanical Translation Core + Validation Gate | 3/3 | Complete    | 2026-05-31 |
-| 3. \*arr Integration + First Vertical Slice | 5/5 | Awaiting Verification |  |
-| 4. Series Bible Store & Schema | 4/4 | Complete   | 2026-06-01 |
-| 5. Three-Pass Pronoun Engine | 6/6 | Complete   | 2026-06-01 |
-| 6. Relationship Evolution + Self-Review | 3/3 | Complete    | 2026-06-01 |
-| 7. Web UI & Service Hardening | 6/6 | Complete    | 2026-06-01 |
-| 8. Editable Series Bible UI | 4/4 | Complete   | 2026-06-02 |
-| 9. Multi-Format — ASS/SSA + VTT | 5/6 | In Progress|  |
-| 10. Source Selection & Per-Series Overrides | 4/4 | Complete    | 2026-06-02 |
+| 1. Codec & LLM Client Foundation | 3/3 | Complete | 2026-05-31 |
+| 2. Mechanical Translation Core + Validation Gate | 3/3 | Complete | 2026-05-31 |
+| 3. \*arr Integration + First Vertical Slice | 5/5 | Awaiting Verification | |
+| 4. Series Bible Store & Schema | 4/4 | Complete | 2026-06-01 |
+| 5. Three-Pass Pronoun Engine | 6/6 | Complete | 2026-06-01 |
+| 6. Relationship Evolution + Self-Review | 3/3 | Complete | 2026-06-01 |
+| 7. Web UI & Service Hardening | 6/6 | Complete | 2026-06-01 |
+| 8. Editable Series Bible UI | 4/4 | Complete | 2026-06-02 |
+| 9. Multi-Format — ASS/SSA + VTT | 5/6 | In Progress | |
+| 10. Source Selection & Per-Series Overrides | 4/4 | Complete | 2026-06-02 |
+| 11. shadcn Foundation & Purple Theme | 0/TBD | Not started | - |
+| 12. App Shell + Route Restructure | 0/TBD | Not started | - |
+| 13. Backend Episodes Enrichment | 0/TBD | Not started | - |
+| 14. New Library Pages + Nav Badge Wiring | 0/TBD | Not started | - |
+| 15. Reskin Existing Pages | 0/TBD | Not started | - |
+| 16. Docker Rebuild + Live Smoke Test | 0/TBD | Not started | - |

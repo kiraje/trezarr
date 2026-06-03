@@ -6,7 +6,7 @@ status: planning
 last_updated: "2026-06-03T10:03:08.166Z"
 last_activity: 2026-06-03
 progress:
-  total_phases: 0
+  total_phases: 6
   completed_phases: 0
   total_plans: 0
   completed_plans: 0
@@ -17,23 +17,30 @@ progress:
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-05-31)
+See: .planning/PROJECT.md (updated 2026-06-03)
 
 **Core value:** Vietnamese subtitles that stay consistent and relationally correct (right pronoun pair, stable names/terms) across an entire series — produced automatically.
-**Current focus:** All 10 phases complete — milestone v1.0 ready for verify-work + complete-milestone.
+**Current focus:** Milestone v1.1 — UI v2 shadcn dashboard. Roadmap created; ready to plan Phase 11.
 
 ## Current Position
 
-Phase: Not started (defining requirements)
+Phase: 11 (shadcn Foundation & Purple Theme) — Not started
 Plan: —
-Status: Defining requirements
-Last activity: 2026-06-03 — Milestone v1.1 started
+Status: Roadmap defined; awaiting phase planning
+Last activity: 2026-06-03 — v1.1 roadmap created (Phases 11–16)
+
+```
+v1.1 Progress: [          ] 0% (0/6 phases)
+Phase 11: [ ] Foundation   Phase 12: [ ] Shell
+Phase 13: [ ] Backend API  Phase 14: [ ] Library Pages
+Phase 15: [ ] Reskin       Phase 16: [ ] Docker/Smoke
+```
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 39
+- Total plans completed: 39 (v1.0)
 - Average duration: 6 min
 - Total execution time: 0.1 hours
 
@@ -128,6 +135,11 @@ Recent decisions affecting current work:
 - [Phase 09-01]: validate_allowlist xfail stubs use xfail(strict=False) without raises= restriction — raises= is too narrow because pytest.fail() inside try/except raises _pytest.outcomes.Failed, not AssertionError
 - [Phase 09-01]: Wave 0 xfail stubs for non-existent modules use pytest.importorskip — tests SKIP cleanly when module absent, go GREEN when module lands (established Trezarr pattern)
 - [Phase ?]: no separate test_sonarr.py/test_radarr.py created
+- [v1.1 Roadmap]: Phase 11 pins `shadcn@2.10.0 init` (not @latest) — shadcn@latest (4.x) emits Tailwind v4 config that breaks the existing Tailwind v3.4 PostCSS pipeline on first run. The `add` command for components can use @latest safely.
+- [v1.1 Roadmap]: NAV-03 (count/LIVE badges) assigned to Phase 14 — badge data requires API-02 `translated_count`/`total_count` from Phase 13; the Phase 12 shell delivers placeholder/zero badges; full badge wiring lands with Phase 14 library pages.
+- [v1.1 Roadmap]: Phase 13 (backend enrichment) is parallel-eligible with Phase 12 (shell) — no shared code; but Phase 14 (SeriesDetail) blocks on both Phase 12 (layout route / Outlet) and Phase 13 (stable API contract).
+- [v1.1 Roadmap]: BibleEditor reskin is Phase 15 (last page) — 88KB, 5 previously-fixed critical locking bugs; reskin-in-place only (token substitution, no logic changes); test suite must stay green after each of the four sections.
+- [v1.1 Roadmap]: Bridge period dual-token strategy — legacy hex tokens kept in tailwind.config.js until all pages are reskinned; removed atomically in Phase 15 (single commit after grep for `bg-[#` returns zero results).
 
 ### Pending Todos
 
@@ -137,6 +149,8 @@ None yet.
 
 - Phase 5 (Three-Pass Pronoun Engine) is the novel core and flagged for deeper research during planning: prompt design, Bible merge/lock semantics, speaker-inference reliability, Vietnamese pronoun-pair rules, and a cross-episode consistency harness.
 - Phase 9 (ASS/SSA) and Phase 10 (source selection) are also research-flagged (intricate ASS tag grammar; novel relational-fidelity ranking heuristic).
+- [v1.1] Phase 13 runtime validation needed: Bazarr `fetch_episode_inventory` param format (`seriesid[]` vs `seriesid`) must be verified against the live instance at 192.168.5.42 during Phase 13 — known ambiguity from production observation.
+- [v1.1] Phase 14 jolly-ui Table beta stability: evaluate within the first day of Phase 14 implementation; have the shadcn plain `<Table>` fallback ready to swap if Table beta is unstable.
 
 ### Quick Tasks Completed
 
@@ -158,7 +172,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-06-02T09:40:21.307Z
-Stopped at: Phase 10 Wave 0-2 executed (10-01/02/03 complete, 10-04 UI built); HOLDING at 10-04 human-verify checkpoint per user — awaiting browser UAT before completing phase
+Last session: 2026-06-03
+Stopped at: v1.1 roadmap created (Phases 11–16); ready to plan Phase 11
 Resume file: None
-| 5 | Fix WR-04: set_series_overrides bible_event old_value now records prior override values (audit-trail completeness) + test | 2026-06-02 | bd440a1 | — |

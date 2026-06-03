@@ -145,6 +145,8 @@ Explicitly excluded. Documented to prevent scope creep.
 
 Which phases cover which requirements. Populated during roadmap creation.
 
+### v1.0 Traceability
+
 | Requirement | Phase | Status |
 |-------------|-------|--------|
 | INTG-01 | Phase 3 | Complete |
@@ -188,12 +190,41 @@ Which phases cover which requirements. Populated during roadmap creation.
 | SVC-04 | Phase 7 | Complete |
 | SVC-05 | Phase 10 | Complete |
 
-**Coverage:**
+**v1.0 Coverage:**
 - v1 requirements: 40 total (INTG 4, AUTO 5, FMT 5, ENG 7, BIBLE 9, PRON 3, SRC 2, SVC 5 — the initial header count of "38" was a miscount; all 40 listed requirements are mapped)
 - Mapped to phases: 40 ✓
 - Unmapped: 0 ✓
 - Duplicates (a requirement in >1 phase): 0 ✓
 
+### v1.1 Traceability
+
+| Requirement | Phase | Status |
+|-------------|-------|--------|
+| UI-01 | Phase 11 | Pending |
+| UI-02 | Phase 11 | Pending |
+| NAV-01 | Phase 12 | Pending |
+| NAV-02 | Phase 12 | Pending |
+| NAV-03 | Phase 14 | Pending |
+| API-01 | Phase 13 | Pending |
+| API-02 | Phase 13 | Pending |
+| LIB-01 | Phase 14 | Pending |
+| LIB-02 | Phase 14 | Pending |
+| LIB-03 | Phase 14 | Pending |
+| LIB-04 | Phase 14 | Pending |
+| LIB-05 | Phase 14 | Pending |
+| LIB-06 | Phase 14 | Pending |
+| LIB-07 | Phase 14 | Pending |
+| RSK-01 | Phase 15 | Pending |
+| RSK-02 | Phase 15 | Pending |
+| RSK-03 | Phase 16 | Pending |
+
+**v1.1 Coverage:**
+- v1.1 requirements: 17 total (UI 2, NAV 3, LIB 7, API 2, RSK 3)
+- Mapped to phases: 17 ✓
+- Unmapped: 0 ✓
+- Duplicates (a requirement in >1 phase): 0 ✓
+
 ---
 *Requirements defined: 2026-05-31*
+*Last updated: 2026-06-03 — v1.1 requirements (Phases 11–16) added to traceability table*
 *Last updated: 2026-06-01 — Phase 3 complete: INTG-01, INTG-03, INTG-04, AUTO-01, AUTO-03, AUTO-04 marked Complete in traceability table*
