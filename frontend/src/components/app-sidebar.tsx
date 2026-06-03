@@ -146,7 +146,7 @@ export function AppSidebar() {
       <SidebarFooter>
         <div className="flex items-center gap-2 px-2">
           <span
-            className="h-2 w-2 rounded-full bg-[#22c55e]"
+            className="h-2 w-2 rounded-full bg-emerald-500"
             aria-label="Service status: running"
             title="Service running"
           />
