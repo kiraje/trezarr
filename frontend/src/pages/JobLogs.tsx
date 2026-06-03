@@ -4,7 +4,7 @@
  * Conforms to 07-UI-SPEC.md §Per-Job Logs View and 15-UI-SPEC.md §JobLogs reskin:
  * - Breadcrumb "← History" at top (Button variant="ghost" size="sm")
  * - Heading: text-xl font-semibold text-foreground
- * - Job summary strip: Card/CardContent replacing legacy bg-bg-surface border
+ * - Job summary strip: Card/CardContent (shadcn bg-card border-border)
  * - Loading state: three Skeleton rows
  * - Error state: <div role="alert"> with bg-destructive/10 text-destructive
  * - Empty state: muted paragraph when no entries
