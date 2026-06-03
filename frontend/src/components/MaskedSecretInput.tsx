@@ -10,6 +10,8 @@
  */
 import { useState } from "react";
 import { Eye, EyeOff, Lock } from "lucide-react";
+import { Input } from "./ui/input";
+import { Button } from "./ui/button";
 
 interface MaskedSecretInputProps {
   id: string;
@@ -32,29 +34,26 @@ export default function MaskedSecretInput({
 }: MaskedSecretInputProps) {
   const [showTyped, setShowTyped] = useState(false);
 
-  const inputClasses =
-    "h-9 w-full bg-bg-surface border border-[#2d3148] rounded px-2 text-sm text-[#e2e6f0] focus:outline-[#3b82f6] focus:outline-2 focus:outline-offset-2";
-
   if (envLocked) {
     return (
       <div className="flex flex-col gap-1">
         <label
           htmlFor={id}
-          className="text-xs text-[#6b7280] flex items-center gap-1"
+          className="text-xs text-muted-foreground flex items-center gap-1"
         >
           {label}
           <Lock size={12} aria-hidden="true" />
         </label>
-        <input
+        <Input
           id={id}
           type="text"
           disabled
           value=""
           placeholder="set via environment variable"
-          className={`${inputClasses} italic text-[#6b7280] cursor-not-allowed opacity-60`}
+          className="italic cursor-not-allowed"
           readOnly
         />
-        <span className="text-xs text-[#6b7280]">
+        <span className="text-xs text-muted-foreground">
           (set via environment variable)
         </span>
       </div>
@@ -63,35 +62,37 @@ export default function MaskedSecretInput({
 
   return (
     <div className="flex flex-col gap-1">
-      <label htmlFor={id} className="text-xs text-[#6b7280]">
+      <label htmlFor={id} className="text-xs text-muted-foreground">
         {label}
       </label>
       <div className="flex items-center gap-2">
         <div className="relative flex-1">
-          <input
+          <Input
             id={id}
             type={showTyped ? "text" : "password"}
             value={value}
             onChange={(e) => onChange(e.target.value)}
             placeholder={isSet && !value ? "••••••••" : placeholder}
-            className={`${inputClasses} pr-8`}
+            className="pr-8"
             autoComplete="new-password"
           />
           {/* Eye toggle — only shows for typed (not stored) value */}
           {value && (
-            <button
+            <Button
               type="button"
+              variant="ghost"
+              size="icon"
               onClick={() => setShowTyped((v) => !v)}
-              className="absolute right-2 top-1/2 -translate-y-1/2 text-[#6b7280] hover:text-[#e2e6f0] focus:outline-[#3b82f6] focus:outline-2 focus:outline-offset-2"
+              className="absolute right-0 top-0 h-full w-8"
               aria-label={showTyped ? "Hide value" : "Show value"}
             >
               {showTyped ? <EyeOff size={14} /> : <Eye size={14} />}
-            </button>
+            </Button>
           )}
         </div>
         {/* "set" chip if field has a stored value and user hasn't typed a new one */}
         {isSet && !value && (
-          <span className="text-xs text-[#6b7280] flex-shrink-0">set</span>
+          <span className="text-xs text-muted-foreground flex-shrink-0">set</span>
         )}
       </div>
     </div>

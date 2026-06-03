@@ -9,6 +9,7 @@
 import { useState } from "react";
 import { Check, X, RefreshCw } from "lucide-react";
 import { testConnection } from "../api/client";
+import { Button } from "./ui/button";
 
 type TestStatus = "idle" | "pending" | "ok" | "error";
 
@@ -45,23 +46,23 @@ export default function ConnectionTestButton({
 
   return (
     <div className="flex items-center gap-3">
-      <button
+      <Button
         type="button"
+        variant="outline"
+        size="sm"
         onClick={handleTest}
         disabled={status === "pending"}
-        className="flex items-center gap-2 h-9 px-4 bg-accent text-white text-sm rounded disabled:opacity-60 hover:bg-[#2563eb] focus:outline-[#3b82f6] focus:outline-2 focus:outline-offset-2 transition-colors duration-150"
       >
         {status === "pending" && (
           <RefreshCw size={14} className="animate-spin" aria-hidden="true" />
         )}
         Test Connection
-      </button>
+      </Button>
 
       {/* ResultChip */}
       {status === "ok" && (
         <span
-          className="inline-flex items-center gap-1.5 h-7 px-2 rounded text-xs"
-          style={{ backgroundColor: "#14291e", color: "#4ade80" }}
+          className="inline-flex items-center gap-1.5 h-7 px-2 rounded text-xs bg-emerald-900/50 text-emerald-400"
         >
           <Check size={12} aria-hidden="true" />
           Connected
@@ -69,8 +70,7 @@ export default function ConnectionTestButton({
       )}
       {status === "error" && (
         <span
-          className="inline-flex items-center gap-1.5 h-7 px-2 rounded text-xs"
-          style={{ backgroundColor: "#2d1515", color: "#f87171" }}
+          className="inline-flex items-center gap-1.5 h-7 px-2 rounded text-xs bg-destructive/10 text-destructive"
           title={errorMsg}
         >
           <X size={12} aria-hidden="true" />
