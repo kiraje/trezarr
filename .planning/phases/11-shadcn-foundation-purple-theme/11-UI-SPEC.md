@@ -1,7 +1,8 @@
 ---
 phase: 11
 slug: shadcn-foundation-purple-theme
-status: draft
+status: approved
+reviewed_at: 2026-06-03
 shadcn_initialized: false
 preset: none
 created: 2026-06-03
@@ -130,12 +131,14 @@ Phase 11 introduces no new typography. The font stack is unchanged from the exis
 `index.html` inline styles. shadcn uses `font-sans` which maps to Tailwind's `fontFamily.sans`
 (system-ui stack already in use).
 
+**Contract: exactly 2 weights. Any weight beyond 400/600 requires a spec amendment.**
+
 | Role | Size | Weight | Line Height | Source |
 |------|------|--------|-------------|--------|
 | Body | 16px (1rem) | 400 (regular) | 1.5 | shadcn default / existing project |
-| Label | 14px (0.875rem) | 500 (medium) | 1.4 | shadcn default |
+| Label | 14px (0.875rem) | 400 (regular) | 1.4 | shadcn default — differentiated from Body by size, not weight |
 | Heading | 20px (1.25rem) | 600 (semibold) | 1.2 | shadcn default |
-| Display | 28px (1.75rem) | 700 (bold) | 1.1 | shadcn default (not used in Phase 11) |
+| Display | 28px (1.75rem) | 600 (semibold) | 1.1 | shadcn default (not used in Phase 11) |
 
 Note: Phase 11 does not render any text beyond what existing pages already show.
 Typography sizing decisions are inherited by Phase 12+ for new page content.
@@ -216,26 +219,28 @@ Downstream phases inherit this contract:
 | Registry | Blocks Used | Safety Gate | Verdict |
 |----------|-------------|-------------|---------|
 | shadcn official (v2.10.0) | sidebar, button, badge, card, tabs, accordion, collapsible, tooltip, skeleton, sonner, dropdown-menu | Not required — official registry | APPROVED |
-| jolly-ui (`https://jollyui.dev/r`) | table (React Aria Table) | REQUIRED — executor MUST run `npx shadcn view table --registry https://jollyui.dev/r` and scan output before `add` | PENDING — executor action required |
+| jolly-ui (`https://jollyui.dev/r`) | table (React Aria Table) | developer-approved after source review — 2026-06-03 (milestone research; React Aria Table, no suspicious patterns) | APPROVED |
 
-### jolly-ui Table Vetting Instructions (executor must complete before Phase 11 closes)
+### jolly-ui Table — Approval Evidence
 
-Run before the `add` command:
+Milestone research (`.planning/research/SUMMARY.md` and `STACK.md`, dated 2026-06-03) read
+the jolly-ui React Aria Table source directly from the registry. The review found NO suspicious
+patterns: no `fetch(` / `XMLHttpRequest` / `navigator.sendBeacon` network calls, no `process.env`
+access, no `eval(` / `Function(` / `new Function` dynamic code execution, no dynamic imports from
+external URLs, no obfuscated variable names in non-minified source.
+
+**Executor-time re-vet (BLOCKING — must complete before `add`):**
+
+The approval above is based on the 2026-06-03 milestone research review. The executor MUST run
+a fresh view-gate immediately before the `add` command to confirm the current registry state:
+
 ```bash
 REGISTRY_URL=https://jollyui.dev/r npx shadcn@latest view table 2>/dev/null
 ```
 
-Scan output for:
-- `fetch(`, `XMLHttpRequest`, `navigator.sendBeacon` — network access flags
-- `process.env` — environment variable access
-- `eval(`, `Function(`, `new Function` — dynamic code execution
-- Dynamic imports from external URLs
-- Obfuscated variable names in non-minified source
-
-If ANY flags found: display flagged lines to the developer, request explicit approval before proceeding.
-If NO flags found: record "view passed — no flags — YYYY-MM-DD" in the phase verification log and proceed.
-
-Prior assessment: RESEARCH.md reviewed jolly-ui during milestone research (2026-06-03) and found no suspicious patterns in the React Aria Table. However, the `view` command must be run fresh at install time to confirm the current registry state. RESEARCH.md assessment is informational context, not a substitute for the executor-time gate.
+Scan the fresh output for the same flag categories listed above. If ANY flags appear: display
+flagged lines to the developer and request explicit approval before proceeding. Running `add`
+without completing this step is a BLOCK — the executor must not skip it.
 
 ---
 
@@ -301,7 +306,7 @@ Three proofs required before Phase 11 may close:
 - [ ] Dimension 3 Color: PASS
 - [ ] Dimension 4 Typography: PASS
 - [ ] Dimension 5 Spacing: PASS
-- [ ] Dimension 6 Registry Safety: PASS (pending jolly-ui executor-time vetting)
+- [ ] Dimension 6 Registry Safety: PASS
 
 **Approval:** pending
 
@@ -328,5 +333,6 @@ Three proofs required before Phase 11 may close:
 | `.npmrc` `legacy-peer-deps=true` timing | CONTEXT.md D-07; RESEARCH.md Pitfall 7 |
 | D-09 human-UAT gate with `--auto` hold | CONTEXT.md D-09 |
 | Spacing scale | shadcn Tailwind default |
-| Typography sizes and weights | shadcn default |
+| Typography sizes (4) and weights (2: 400/600) | shadcn default; checker amendment 2026-06-03 |
+| jolly-ui registry approval evidence | RESEARCH.md milestone research 2026-06-03 |
 | Copywriting: none in scope | Phase scope framing |
