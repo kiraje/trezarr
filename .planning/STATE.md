@@ -3,8 +3,8 @@ gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: "UI v2: shadcn dashboard"
 status: planning
-stopped_at: Phase 13 context gathered
-last_updated: "2026-06-03T15:00:45.089Z"
+stopped_at: Phase 12 UI-SPEC approved
+last_updated: "2026-06-03T15:12:46.643Z"
 last_activity: 2026-06-03
 progress:
   total_phases: 16
@@ -176,6 +176,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-06-03T15:00:45.084Z
-Stopped at: Phase 13 context gathered
-Resume file: .planning/phases/13-backend-episodes-enrichment/13-CONTEXT.md
+Last session: 2026-06-03T15:12:46.637Z
+Stopped at: Phase 12 UI-SPEC approved
+Resume file: .planning/phases/12-app-shell-route-restructure/12-UI-SPEC.md
