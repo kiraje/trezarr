@@ -775,6 +775,15 @@ async def translate_file(
     flat_attributions: list = []
     bible = None  # populated below when Phase-5 path is active
 
+    # D-06: extract arr_series_id outside the session_factory guard so it is available
+    # for the Step 11 ledger.record() call regardless of whether session_factory is provided.
+    # When eligible_item is None (passthrough mode), arr_series_id stays 0 (falsy → None in ledger).
+    arr_series_id = (
+        getattr(eligible_item.media_item, "series_id", None) or 0
+        if eligible_item is not None
+        else 0
+    )
+
     if eligible_item is not None and session_factory is not None:
         from trezarr.bible.store import get_or_create_series, load_series_bible
         from trezarr.bible.analyze import analyze_file, merge_bible_analysis, BibleAnalysisError
@@ -783,7 +792,7 @@ async def translate_file(
 
         media_item = eligible_item.media_item
         arr_kind = getattr(media_item, "arr_kind", None) or "sonarr"
-        arr_series_id = getattr(media_item, "series_id", None) or 0
+        # arr_series_id already extracted above (D-06 fix) — reuse it here
         episode_key = derive_episode_key(media_item, path)
 
         # Build metadata snapshot (safe subset only — T-05-06-01)
@@ -1094,12 +1103,16 @@ async def translate_file(
     output_path = write_vi_sidecar(translated_doc, path)
 
     # Step 11: Record completion in ledger
+    _ledger_series_id: str | None = (
+        str(arr_series_id) if eligible_item is not None and arr_series_id else None
+    )
     await ledger.record(LedgerEntry(
         source_path=str(path),
         output_path=str(output_path),
         status="done",
         content_hash=content_hash,
         translated_at=datetime.now(timezone.utc).isoformat(),
+        series_id=_ledger_series_id,
     ))
 
     # Step 12: Return success result

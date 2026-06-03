@@ -487,18 +487,25 @@ async def test_ledger_records_series_id_on_success(tmp_path):
     mock_ledger = MagicMock()
     mock_ledger.record = AsyncMock(side_effect=lambda e: recorded_entries.append(e))
     mock_ledger.check = AsyncMock(return_value=None)
+    mock_ledger.check_by_output_path = AsyncMock(return_value=None)
     mock_ledger.content_hash = MagicMock(return_value="abc123")
 
-    # Build a settings object (uses defaults — no real *arr or LLM)
+    # Build a settings object with a writable quarantine dir so validation
+    # failures don't produce OSError on /config (test environment has no /config).
     from trezarr.config import TrezarrSettings  # noqa: PLC0415
-    settings = TrezarrSettings()
+    quarantine_dir = tmp_path / "quarantine"
+    settings = TrezarrSettings(translate_quarantine_dir=str(quarantine_dir))
 
-    # Mock LLM client to return a valid numbered response for 2 lines
+    # Mock LLM client to return a valid numbered response for 2 lines.
+    # Both lines use characters from U+1E00-U+1EFF (Vietnamese diacritic range)
+    # so the validate_subdoc diacritic-ratio gate passes at the default 0.70 threshold:
+    #   "Được rồi" → ợ (U+1EE3), ồ (U+1ED3) — VI range
+    #   "Thế giới" → ế (U+1EBF), ớ (U+1EDB) — VI range
     from trezarr.llm.client import LLMClient  # noqa: PLC0415
     llm_client = LLMClient(settings)
 
     async def _fake_call(messages, response_model=None, model=None):
-        return "[1] Xin chào\n[2] Thế giới"
+        return "[1] Được rồi\n[2] Thế giới"
 
     with patch.object(llm_client, "call", side_effect=_fake_call):
         # eligible_item with series_id / arr_series_id = 42
