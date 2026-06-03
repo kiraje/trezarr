@@ -75,49 +75,6 @@ function UnreachableBanner({ message }: { message: string }) {
   );
 }
 
-function SectionCard({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="bg-bg-surface border border-[#2d3148] rounded p-6 flex flex-col gap-4">
-      {children}
-    </div>
-  );
-}
-
-interface TextFieldProps {
-  id: string;
-  label: string;
-  value: string;
-  onChange: (v: string) => void;
-  placeholder?: string;
-  disabled?: boolean;
-}
-
-function TextField({
-  id,
-  label,
-  value,
-  onChange,
-  placeholder = "",
-  disabled = false,
-}: TextFieldProps) {
-  return (
-    <div className="flex flex-col gap-1">
-      <label htmlFor={id} className="text-xs text-text-muted">
-        {label}
-      </label>
-      <input
-        id={id}
-        type="text"
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        placeholder={placeholder}
-        disabled={disabled}
-        className="h-9 w-full bg-bg-surface border border-[#2d3148] rounded px-2 text-sm text-text-primary focus:outline-[#3b82f6] focus:outline-2 focus:outline-offset-2 disabled:opacity-60 disabled:cursor-not-allowed"
-      />
-    </div>
-  );
-}
-
 type Tab = "characters" | "address_map" | "terms" | "register" | "overrides";
 
 // ── Main page ─────────────────────────────────────────────────────────────────
@@ -1635,30 +1592,30 @@ function TermsSection({
   }
 
   return (
-    <SectionCard>
-      <div className="flex items-center justify-between">
-        <h2 className="text-base font-semibold text-text-primary">
-          Term Dictionary
-        </h2>
-        <button
+    <Card>
+      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+        <CardTitle>Term Dictionary</CardTitle>
+        <Button
           type="button"
-          className="text-sm text-accent px-3 py-1 rounded border border-[#3b82f6] hover:bg-[#1e3a5f]"
+          variant="outline"
+          size="sm"
           onClick={() => setShowAddForm(true)}
         >
           Add Term
-        </button>
-      </div>
-      <p className="text-xs text-text-muted italic -mt-2">
+        </Button>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-4">
+      <p className="text-xs text-muted-foreground italic">
         Source terms are case-sensitive. &apos;Minh&apos; and &apos;minh&apos; are stored separately.
       </p>
 
       {showAddForm && (
-        <div className="bg-bg-base border border-[#2d3148] rounded p-3 flex flex-wrap gap-3 items-end">
+        <div className="border border-border rounded p-3 flex flex-wrap gap-3 items-end">
           <div>
-            <label className="text-xs text-text-muted block mb-1">
+            <label className="text-xs text-muted-foreground block mb-1">
               Source term
             </label>
-            <input
+            <Input
               type="text"
               autoFocus
               value={addFields.source_term}
@@ -1666,14 +1623,14 @@ function TermsSection({
               onChange={(e) =>
                 setAddFields((f) => ({ ...f, source_term: e.target.value }))
               }
-              className="h-9 w-40 bg-bg-surface border border-[#2d3148] rounded px-2 text-sm text-text-primary focus:outline-[#3b82f6] focus:outline-2 focus:outline-offset-2"
+              className="w-40"
             />
           </div>
           <div>
-            <label className="text-xs text-text-muted block mb-1">
+            <label className="text-xs text-muted-foreground block mb-1">
               Vietnamese rendering
             </label>
-            <input
+            <Input
               type="text"
               value={addFields.vietnamese_rendering}
               placeholder="e.g. Minh Anh"
@@ -1683,11 +1640,11 @@ function TermsSection({
                   vietnamese_rendering: e.target.value,
                 }))
               }
-              className="h-9 w-40 bg-bg-surface border border-[#2d3148] rounded px-2 text-sm text-text-primary focus:outline-[#3b82f6] focus:outline-2 focus:outline-offset-2"
+              className="w-40"
             />
           </div>
           <div>
-            <label className="text-xs text-text-muted block mb-1">
+            <label className="text-xs text-muted-foreground block mb-1">
               Category
             </label>
             <select
@@ -1695,7 +1652,7 @@ function TermsSection({
               onChange={(e) =>
                 setAddFields((f) => ({ ...f, category: e.target.value }))
               }
-              className="h-9 bg-bg-surface border border-[#2d3148] rounded px-2 text-sm text-text-primary focus:outline-[#3b82f6] focus:outline-2 focus:outline-offset-2"
+              className="h-9 rounded-md border border-border bg-background px-3 text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
               <option value="">—</option>
               <option value="proper noun">proper noun</option>
@@ -1705,43 +1662,45 @@ function TermsSection({
             </select>
           </div>
           <div className="flex gap-2">
-            <button
+            <Button
               type="button"
-              className="text-sm text-accent"
+              variant="default"
+              size="sm"
               onClick={handleAddTerm}
             >
               Add Term
-            </button>
-            <button
+            </Button>
+            <Button
               type="button"
-              className="text-sm text-text-muted"
+              variant="ghost"
+              size="sm"
               onClick={() => setShowAddForm(false)}
             >
               Discard
-            </button>
+            </Button>
           </div>
         </div>
       )}
 
       {bible.terms.length === 0 ? (
-        <p className="text-xs text-text-muted">
+        <p className="text-xs text-muted-foreground">
           No terms. Click Add Term to add the first one.
         </p>
       ) : (
         <div className="overflow-x-auto">
           <table className="w-full">
             <thead>
-              <tr className="border-b border-[#2d3148]">
-                <th scope="col" className="px-3 py-2 text-left text-xs text-text-muted font-normal" style={{ width: "25%" }}>Source term</th>
-                <th scope="col" className="px-3 py-2 text-left text-xs text-text-muted font-normal" style={{ width: "30%" }}>Vietnamese rendering</th>
-                <th scope="col" className="px-3 py-2 text-left text-xs text-text-muted font-normal" style={{ width: "15%" }}>Category</th>
-                <th scope="col" className="px-3 py-2 text-left text-xs text-text-muted font-normal" style={{ width: "12%" }}>Lock</th>
-                <th scope="col" className="px-3 py-2 text-left text-xs text-text-muted font-normal" style={{ width: "8%" }}>History</th>
-                <th scope="col" className="px-3 py-2 text-left text-xs text-text-muted font-normal" style={{ width: "10%" }}>Actions</th>
+              <tr className="border-b border-border">
+                <th scope="col" className="px-3 py-2 text-left text-xs text-muted-foreground font-normal" style={{ width: "25%" }}>Source term</th>
+                <th scope="col" className="px-3 py-2 text-left text-xs text-muted-foreground font-normal" style={{ width: "30%" }}>Vietnamese rendering</th>
+                <th scope="col" className="px-3 py-2 text-left text-xs text-muted-foreground font-normal" style={{ width: "15%" }}>Category</th>
+                <th scope="col" className="px-3 py-2 text-left text-xs text-muted-foreground font-normal" style={{ width: "12%" }}>Lock</th>
+                <th scope="col" className="px-3 py-2 text-left text-xs text-muted-foreground font-normal" style={{ width: "8%" }}>History</th>
+                <th scope="col" className="px-3 py-2 text-left text-xs text-muted-foreground font-normal" style={{ width: "10%" }}>Actions</th>
               </tr>
             </thead>
             <tbody>
-              {bible.terms.map((term, idx) => {
+              {bible.terms.map((term) => {
                 const isLocked = term.locked_fields.length > 0;
                 const lockState: LockState = isLocked ? "locked" : "inference";
                 const isEditing = editingId === term.id;
@@ -1750,20 +1709,15 @@ function TermsSection({
                   <>
                     <tr
                       key={term.id}
-                      className={[
-                        "h-10 border-b border-[#2d3148]",
-                        idx % 2 === 1 ? "bg-bg-stripe" : "",
-                      ]
-                        .filter(Boolean)
-                        .join(" ")}
+                      className="h-10 border-b border-border"
                     >
                       {isEditing ? (
                         <>
-                          <td className="px-3 text-sm text-text-primary">
+                          <td className="px-3 text-sm text-foreground">
                             {term.source_term}
                           </td>
                           <td className="px-2">
-                            <input
+                            <Input
                               type="text"
                               autoFocus
                               value={editFields.vietnamese_rendering}
@@ -1773,7 +1727,7 @@ function TermsSection({
                                   vietnamese_rendering: e.target.value,
                                 }))
                               }
-                              className="h-8 w-full bg-bg-surface border border-[#2d3148] rounded px-1 text-xs text-text-primary focus:outline-[#3b82f6] focus:outline-2 focus:outline-offset-2"
+                              className="h-8 text-xs"
                             />
                           </td>
                           <td className="px-2">
@@ -1785,7 +1739,7 @@ function TermsSection({
                                   category: e.target.value,
                                 }))
                               }
-                              className="h-8 w-full bg-bg-surface border border-[#2d3148] rounded px-1 text-xs text-text-primary focus:outline-[#3b82f6] focus:outline-2 focus:outline-offset-2"
+                              className="h-8 w-full rounded-md border border-border bg-background px-1 text-xs text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                             >
                               <option value="">—</option>
                               <option value="proper noun">proper noun</option>
@@ -1801,74 +1755,80 @@ function TermsSection({
                             />
                           </td>
                           <td className="px-3">
-                            <button
+                            <Button
                               type="button"
+                              variant="ghost"
+                              size="icon"
                               aria-label="View field history"
                               onClick={() =>
                                 setHistoryOpenId(
                                   historyOpenId === term.id ? null : term.id,
                                 )
                               }
-                              className="text-text-muted hover:text-accent"
                             >
                               <Clock size={14} />
-                            </button>
+                            </Button>
                           </td>
                           <td className="px-3 flex items-center gap-1 h-10">
-                            <button
+                            <Button
                               type="button"
-                              className="text-xs text-accent whitespace-nowrap"
+                              variant="default"
+                              size="sm"
                               disabled={saving}
                               onClick={() => saveTerm(term)}
                             >
-                              {saving ? "Saving…" : "Save term"}
-                            </button>
-                            <button
+                              {saving ? "Saving…" : "Save"}
+                            </Button>
+                            <Button
                               type="button"
-                              className="text-xs text-text-muted whitespace-nowrap"
+                              variant="ghost"
+                              size="sm"
                               onClick={discardEdit}
                             >
-                              Discard changes
-                            </button>
+                              Discard
+                            </Button>
                           </td>
                         </>
                       ) : deleteConfirmId === term.id ? (
                         <>
                           <td
                             colSpan={4}
-                            className="px-3 text-xs text-text-primary"
+                            className="px-3 text-xs text-foreground"
                           >
                             Delete this term?
                           </td>
                           <td colSpan={2} className="px-3">
                             <div className="flex gap-2">
-                              <button
+                              <Button
                                 type="button"
+                                variant="ghost"
+                                size="sm"
                                 aria-label="Confirm delete"
-                                className="text-xs text-[#f87171]"
+                                className="text-destructive hover:text-destructive"
                                 onClick={() => handleDeleteTerm(term.id)}
                               >
                                 Delete term
-                              </button>
-                              <button
+                              </Button>
+                              <Button
                                 type="button"
-                                className="text-xs text-text-muted"
+                                variant="ghost"
+                                size="sm"
                                 onClick={() => setDeleteConfirmId(null)}
                               >
                                 Keep term
-                              </button>
+                              </Button>
                             </div>
                           </td>
                         </>
                       ) : (
                         <>
-                          <td className="px-3 text-sm text-text-primary">
+                          <td className="px-3 text-sm text-foreground">
                             {term.source_term}
                           </td>
-                          <td className="px-3 text-sm text-text-primary">
+                          <td className="px-3 text-sm text-foreground">
                             {term.vietnamese_rendering}
                           </td>
-                          <td className="px-3 text-xs text-text-muted">
+                          <td className="px-3 text-xs text-muted-foreground">
                             {term.category ?? "—"}
                           </td>
                           <td className="px-3">
@@ -1881,37 +1841,41 @@ function TermsSection({
                             </div>
                           </td>
                           <td className="px-3">
-                            <button
+                            <Button
                               type="button"
+                              variant="ghost"
+                              size="icon"
                               aria-label="View field history"
                               onClick={() =>
                                 setHistoryOpenId(
                                   historyOpenId === term.id ? null : term.id,
                                 )
                               }
-                              className="text-text-muted hover:text-accent"
                             >
                               <Clock size={14} />
-                            </button>
+                            </Button>
                           </td>
                           <td className="px-3">
                             <div className="flex items-center gap-1">
-                              <button
+                              <Button
                                 type="button"
+                                variant="ghost"
+                                size="icon"
                                 aria-label="Edit term"
                                 onClick={() => startEdit(term)}
-                                className="text-text-muted hover:text-accent"
                               >
                                 <Pencil size={14} />
-                              </button>
-                              <button
+                              </Button>
+                              <Button
                                 type="button"
+                                variant="ghost"
+                                size="icon"
                                 aria-label="Delete term"
+                                className="text-destructive hover:text-destructive"
                                 onClick={() => setDeleteConfirmId(term.id)}
-                                className="text-[#f87171] hover:text-[#ef4444]"
                               >
                                 <Trash2 size={14} />
-                              </button>
+                              </Button>
                             </div>
                           </td>
                         </>
@@ -1936,7 +1900,8 @@ function TermsSection({
           </table>
         </div>
       )}
-    </SectionCard>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -2011,42 +1976,46 @@ function RegisterSection({
   }
 
   return (
-    <SectionCard>
-      <h2 className="text-base font-semibold text-text-primary">Register</h2>
-      <p className="text-xs text-text-muted -mt-2">
+    <Card>
+      <CardHeader className="pb-2">
+        <CardTitle>Register</CardTitle>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-4">
+      <p className="text-xs text-muted-foreground">
         The register governs formality level across all translation passes.
         Locked register survives re-analysis.
       </p>
 
       <div className="flex items-end gap-3">
         <div className="flex-1">
-          <TextField
+          <label htmlFor="register_field" className="text-xs text-muted-foreground block mb-1">
+            Register value
+          </label>
+          <Input
             id="register_field"
-            label="Register value"
+            type="text"
             value={registerValue}
-            onChange={setRegisterValue}
+            onChange={(e) => setRegisterValue(e.target.value)}
             placeholder="e.g. formal, intimate, historical"
           />
         </div>
         <div ref={historyRef} className="flex items-center gap-1 mb-1">
           <LockBadge state={lockState} />
           <LockToggleButton state={lockState} onToggle={toggleLock} />
-          <button
+          <Button
             type="button"
+            variant="ghost"
+            size="icon"
             aria-label="View register history"
             onClick={() => setShowHistory((v) => !v)}
-            className="text-text-muted hover:text-accent w-8 h-8 flex items-center justify-center"
           >
             <Clock size={14} />
-          </button>
+          </Button>
         </div>
       </div>
 
       {!isLocked && (
-        <div
-          className="text-xs px-3 py-2 rounded"
-          style={{ backgroundColor: "#1e3a5f", color: "#60a5fa" }}
-        >
+        <div className="text-xs px-3 py-2 rounded bg-primary/15 text-primary">
           This value may be overwritten on the next episode analysis. Lock to
           pin it.
         </div>
@@ -2062,15 +2031,17 @@ function RegisterSection({
         />
       )}
 
-      <button
+      <Button
         type="button"
+        variant="default"
+        className="w-full"
         disabled={!dirty || saving}
         onClick={handleSave}
-        className="h-9 w-full bg-accent text-white text-sm rounded disabled:opacity-50 hover:bg-[#2563eb] focus:outline-[#3b82f6] focus:outline-2 focus:outline-offset-2 transition-colors duration-150"
       >
         {saving ? "Saving…" : "Save Register"}
-      </button>
-    </SectionCard>
+      </Button>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -2132,11 +2103,11 @@ function SourcePriorityEditor({
 
   return (
     <div className="flex flex-col gap-1">
-      <span className="text-xs text-text-muted">Source language preference</span>
+      <span className="text-xs text-muted-foreground">Source language preference</span>
       {isOverridden ? (
-        <span className="text-xs text-accent">Per-series override active</span>
+        <span className="text-xs text-primary">Per-series override active</span>
       ) : (
-        <span className="text-xs text-text-muted">
+        <span className="text-xs text-muted-foreground">
           Inherited from global config:{" "}
           {globalDefault.length > 0 ? globalDefault.join(", ") : "—"}
         </span>
@@ -2145,7 +2116,7 @@ function SourcePriorityEditor({
         {value.map((code) => (
           <span
             key={code}
-            className="flex items-center h-7 px-2 gap-2 bg-[#1e293b] text-xs text-text-primary border border-[#2d3148] rounded"
+            className="flex items-center h-7 px-2 gap-2 bg-card text-xs text-foreground border border-border rounded"
           >
             {code}
             <button
@@ -2153,13 +2124,13 @@ function SourcePriorityEditor({
               aria-label={`Remove ${code} from source priority`}
               disabled={disabled}
               onClick={() => handleRemove(code)}
-              className="text-text-muted hover:text-[#f87171] focus:outline-[#3b82f6] focus:outline-2 focus:outline-offset-2 disabled:opacity-60 disabled:cursor-not-allowed"
+              className="text-muted-foreground hover:text-destructive focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-60 disabled:cursor-not-allowed"
             >
               ×
             </button>
           </span>
         ))}
-        <input
+        <Input
           type="text"
           placeholder="+ Add"
           aria-label="Add language code"
@@ -2171,11 +2142,11 @@ function SourcePriorityEditor({
           }}
           onKeyDown={handleKeyDown}
           onBlur={handleBlur}
-          className="h-7 w-16 bg-bg-surface border border-[#2d3148] rounded px-2 text-xs text-text-primary focus:outline-[#3b82f6] focus:outline-2 focus:outline-offset-2 disabled:opacity-60 disabled:cursor-not-allowed"
+          className="h-7 w-16 text-xs"
         />
       </div>
       {inputError && (
-        <p role="alert" className="text-xs text-[#f87171]">
+        <p role="alert" className="text-xs text-destructive">
           {inputError}
         </p>
       )}
@@ -2184,7 +2155,7 @@ function SourcePriorityEditor({
           type="button"
           disabled={disabled}
           onClick={() => (onClear ? onClear() : onChange(null))}
-          className="text-xs text-accent self-start focus:outline-[#3b82f6] focus:outline-2 focus:outline-offset-2 disabled:opacity-60 disabled:cursor-not-allowed"
+          className="text-xs text-primary self-start focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-60 disabled:cursor-not-allowed"
         >
           Clear source override
         </button>
@@ -2392,9 +2363,12 @@ function OverridesSection({
   }
 
   return (
-    <SectionCard>
-      <h2 className="text-base font-semibold text-text-primary">Overrides</h2>
-      <p className="text-xs text-text-muted -mt-2">
+    <Card>
+      <CardHeader className="pb-2">
+        <CardTitle>Overrides</CardTitle>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-4">
+      <p className="text-xs text-muted-foreground">
         Per-series overrides take priority over global config. Leave blank to
         inherit the global default.
       </p>
@@ -2410,15 +2384,15 @@ function OverridesSection({
 
       {/* Model Override */}
       <div className="flex flex-col gap-1">
-        <span className="text-xs text-text-muted">Model override</span>
+        <span className="text-xs text-muted-foreground">Model override</span>
         {modelValue.trim() ? (
-          <span className="text-xs text-accent">Per-series override active</span>
+          <span className="text-xs text-primary">Per-series override active</span>
         ) : (
-          <span className="text-xs text-text-muted">
+          <span className="text-xs text-muted-foreground">
             Inherited: {globalModel || "—"}
           </span>
         )}
-        <input
+        <Input
           id="model_override"
           type="text"
           value={modelValue}
@@ -2429,10 +2403,9 @@ function OverridesSection({
           placeholder={globalModel || "e.g. gpt-4o"}
           disabled={saving}
           maxLength={300}
-          className="h-9 w-full bg-bg-surface border border-[#2d3148] rounded px-2 text-sm text-text-primary focus:outline-[#3b82f6] focus:outline-2 focus:outline-offset-2 disabled:opacity-60 disabled:cursor-not-allowed"
         />
         {modelError && (
-          <p role="alert" className="text-xs text-[#f87171]">
+          <p role="alert" className="text-xs text-destructive">
             {modelError}
           </p>
         )}
@@ -2441,7 +2414,7 @@ function OverridesSection({
             type="button"
             disabled={saving}
             onClick={handleClearModel}
-            className="text-xs text-accent self-start focus:outline-[#3b82f6] focus:outline-2 focus:outline-offset-2 disabled:opacity-60 disabled:cursor-not-allowed"
+            className="text-xs text-primary self-start focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-60 disabled:cursor-not-allowed"
           >
             Clear model override
           </button>
@@ -2449,14 +2422,17 @@ function OverridesSection({
       </div>
 
       {/* Register sub-section — independent save path via patchRegister (NOT patchSeriesOverrides) */}
-      <div className="flex flex-col gap-1 pt-2 border-t border-[#2d3148]">
+      <div className="flex flex-col gap-1 pt-2 border-t border-border">
         <div className="flex items-end gap-3">
           <div className="flex-1">
-            <TextField
+            <label htmlFor="register_override" className="text-xs text-muted-foreground block mb-1">
+              Register
+            </label>
+            <Input
               id="register_override"
-              label="Register"
+              type="text"
               value={registerValue}
-              onChange={setRegisterValue}
+              onChange={(e) => setRegisterValue(e.target.value)}
               placeholder="e.g. formal, intimate, historical"
               disabled={registerSaving}
             />
@@ -2470,33 +2446,33 @@ function OverridesSection({
           </div>
         </div>
         {!isRegisterLocked && (
-          <div
-            className="text-xs px-3 py-2 rounded"
-            style={{ backgroundColor: "#1e3a5f", color: "#60a5fa" }}
-          >
+          <div className="text-xs px-3 py-2 rounded bg-primary/15 text-primary">
             This value may be overwritten on the next episode analysis. Lock to
             pin it.
           </div>
         )}
-        <button
+        <Button
           type="button"
+          variant="default"
+          className="w-full"
           disabled={!registerDirty || registerSaving}
           onClick={handleSaveRegister}
-          className="h-9 w-full bg-accent text-white text-sm rounded disabled:opacity-50 hover:bg-[#2563eb] focus:outline-[#3b82f6] focus:outline-2 focus:outline-offset-2 transition-colors duration-150"
         >
           {registerSaving ? "Saving…" : "Save Register"}
-        </button>
+        </Button>
       </div>
 
       {/* Save Overrides button — controls source_lang_override + model_override ONLY (D-111) */}
-      <button
+      <Button
         type="button"
+        variant="default"
+        className="w-full"
         disabled={!dirty || saving}
         onClick={handleSave}
-        className="h-9 w-full bg-accent text-white text-sm rounded disabled:opacity-50 hover:bg-[#2563eb] focus:outline-[#3b82f6] focus:outline-2 focus:outline-offset-2 transition-colors duration-150"
       >
         {saving ? "Saving…" : "Save Overrides"}
-      </button>
-    </SectionCard>
+      </Button>
+      </CardContent>
+    </Card>
   );
 }
