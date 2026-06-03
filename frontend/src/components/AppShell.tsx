@@ -11,7 +11,7 @@
  */
 import { ReactNode } from "react";
 import { NavLink } from "react-router-dom";
-import { Settings, List, History, BookOpen } from "lucide-react";
+import { Settings, List, History, BookOpen, Film } from "lucide-react";
 
 interface AppShellProps {
   children: ReactNode;
@@ -84,6 +84,11 @@ export default function AppShell({ children }: AppShellProps) {
             to="/queue"
             icon={<List size={16} />}
             label="Queue"
+          />
+          <NavItem
+            to="/library"
+            icon={<Film size={16} />}
+            label="Library"
           />
           <NavItem
             to="/history"

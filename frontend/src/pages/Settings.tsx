@@ -197,6 +197,10 @@ export default function Settings() {
   const [svcSaving, setSvcSaving] = useState(false);
   const [svcRestart, setSvcRestart] = useState(false);
 
+  const [autoTranslate, setAutoTranslate] = useState(false);
+  const [autoTranslateDirty, setAutoTranslateDirty] = useState(false);
+  const [autoTranslateSaving, setAutoTranslateSaving] = useState(false);
+
   // Populate from loaded settings
   useEffect(() => {
     if (!settings) return;
@@ -224,6 +228,8 @@ export default function Settings() {
       poll_interval_seconds: getStr("poll_interval_seconds"),
       worker_max_concurrent_series: getStr("worker_max_concurrent_series"),
     });
+    const atVal = settings?.["auto_translate_enabled"];
+    setAutoTranslate(typeof atVal === "boolean" ? atVal : false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [settings]);
 
@@ -533,6 +539,53 @@ export default function Settings() {
             className="h-9 w-full bg-accent text-white text-sm rounded disabled:opacity-50 hover:bg-[#2563eb] focus:outline-[#3b82f6] focus:outline-2 focus:outline-offset-2 transition-colors duration-150"
           >
             {svcSaving ? "Saving…" : "Save Settings"}
+          </button>
+        </SectionCard>
+
+        {/* Section 7: Auto-translate safety gate */}
+        <SectionCard>
+          <SectionHeading>Auto-translate</SectionHeading>
+          <div className="flex flex-col gap-1">
+            <label className="flex items-center gap-3 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={autoTranslate}
+                onChange={(e) => {
+                  setAutoTranslate(e.target.checked);
+                  setAutoTranslateDirty(true);
+                }}
+                className="w-4 h-4 rounded border-[#2d3148] accent-[#3b82f6]"
+              />
+              <span className="text-sm text-[#e2e6f0]">
+                Auto-translate eligible library on a schedule
+              </span>
+            </label>
+            <p className="text-xs text-[#6b7280] ml-7">
+              When OFF, the daemon discovers items but never translates automatically.
+              Manual translate via Library is always available.
+            </p>
+          </div>
+          <button
+            type="button"
+            disabled={!autoTranslateDirty || autoTranslateSaving}
+            onClick={async () => {
+              setAutoTranslateSaving(true);
+              try {
+                await putSettings({ auto_translate_enabled: autoTranslate });
+                setAutoTranslateDirty(false);
+                showToast({ message: "Settings saved.", variant: "success" });
+              } catch {
+                showToast({
+                  message: "Failed to save settings. Check the server logs.",
+                  variant: "error",
+                });
+              } finally {
+                setAutoTranslateSaving(false);
+              }
+            }}
+            className="h-9 w-full bg-accent text-white text-sm rounded disabled:opacity-50 hover:bg-[#2563eb] focus:outline-[#3b82f6] focus:outline-2 focus:outline-offset-2 transition-colors duration-150"
+          >
+            {autoTranslateSaving ? "Saving…" : "Save Settings"}
           </button>
         </SectionCard>
       </div>

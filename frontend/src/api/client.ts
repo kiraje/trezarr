@@ -9,6 +9,7 @@
  */
 
 const TIMEOUT_MS = 5000;
+const LONG_TIMEOUT_MS = 30000;
 
 /** Execute a fetch with a 5-second timeout. Throws on timeout or network error. */
 async function fetchWithTimeout(
@@ -17,6 +18,22 @@ async function fetchWithTimeout(
 ): Promise<Response> {
   const controller = new AbortController();
   const id = setTimeout(() => controller.abort(), TIMEOUT_MS);
+  try {
+    const resp = await fetch(url, { ...options, signal: controller.signal });
+    return resp;
+  } finally {
+    clearTimeout(id);
+  }
+}
+
+/** Execute a fetch with a 30-second timeout. Used for library endpoints that
+ * may need to query live *arr APIs. */
+async function fetchWithLongTimeout(
+  url: string,
+  options?: RequestInit,
+): Promise<Response> {
+  const controller = new AbortController();
+  const id = setTimeout(() => controller.abort(), LONG_TIMEOUT_MS);
   try {
     const resp = await fetch(url, { ...options, signal: controller.signal });
     return resp;
@@ -445,5 +462,75 @@ export async function getFieldHistory(
 export async function getPronouns(): Promise<PronounsResponse> {
   const resp = await fetchWithTimeout("/api/pronouns");
   if (!resp.ok) throw new Error(`GET /api/pronouns: ${resp.status}`);
+  return resp.json();
+}
+
+// ── Library ───────────────────────────────────────────────────────────────────
+
+export interface LibrarySeriesItem {
+  kind: "series";
+  id: number;
+  title: string;
+  year: number | null;
+  monitored: boolean;
+  poster_url: string | null;
+}
+
+export interface LibraryMovieItem {
+  kind: "movie";
+  id: number;
+  title: string;
+  year: number | null;
+  monitored: boolean;
+  poster_url: string | null;
+  source_sub_found: boolean;
+}
+
+export interface LibraryResponse {
+  series: LibrarySeriesItem[];
+  movies: LibraryMovieItem[];
+  errors: { source: string; error: string }[];
+}
+
+export interface EpisodeRow {
+  episode_key: string;
+  title: string;
+  local_path: string;
+  status: "translated" | "has_source" | "nothing";
+  source_path: string | null;
+  source_lang: string | null;
+}
+
+export interface TranslateResponse {
+  enqueued: boolean;
+  source_path: string;
+}
+
+/** GET /api/library — list Sonarr series and Radarr movies. */
+export async function getLibrary(): Promise<LibraryResponse> {
+  const resp = await fetchWithLongTimeout("/api/library");
+  if (!resp.ok) throw new Error(`GET /api/library: ${resp.status}`);
+  return resp.json();
+}
+
+/** GET /api/library/series/{id}/episodes — episode file rows for one series. */
+export async function getSeriesEpisodes(id: number): Promise<EpisodeRow[]> {
+  const resp = await fetchWithLongTimeout(`/api/library/series/${id}/episodes`);
+  if (!resp.ok) throw new Error(`GET /api/library/series/${id}/episodes: ${resp.status}`);
+  return resp.json();
+}
+
+/** POST /api/translate — enqueue a single item for manual translation. */
+export async function postTranslate(
+  kind: "series" | "movie",
+  arrSeriesId: number | null,
+  sourcePath: string,
+): Promise<TranslateResponse> {
+  const resp = await fetchWithLongTimeout("/api/translate", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ kind, arr_series_id: arrSeriesId, source_path: sourcePath }),
+  });
+  if (!resp.ok) throw new Error(`POST /api/translate: ${resp.status}`);
   return resp.json();
 }

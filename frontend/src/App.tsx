@@ -18,6 +18,7 @@ import Settings from "./pages/Settings";
 import Queue from "./pages/Queue";
 import History from "./pages/History";
 import JobLogs from "./pages/JobLogs";
+import Library from "./pages/Library";
 import BibleList from "./pages/BibleList";
 import BibleEditor from "./pages/BibleEditor";
 
@@ -32,6 +33,7 @@ export default function App() {
           <Route path="/queue" element={<Queue />} />
           <Route path="/history" element={<History />} />
           <Route path="/jobs/:id/logs" element={<JobLogs />} />
+          <Route path="/library" element={<Library />} />
           <Route path="/bible" element={<BibleList />} />
           <Route path="/bible/:seriesId" element={<BibleEditor />} />
         </Routes>
