@@ -16,6 +16,17 @@
  *
  * NAV-02: exactly six nav items in locked order (Series/Movies/Queue/History/Bible/Settings);
  * /library is absent from NAV_ITEMS (D-03 — transitional route, not a nav item).
+ *
+ * NAV-03 (D-09/D-10 badge wiring, Phase 14 plan 02):
+ *   - Series/Movies rows show a count badge (purple) for items needing VI translation.
+ *     Auto-hides when count === 0 (renders nothing, not a "0" badge).
+ *   - Series/Movies rows show a LIVE badge (emerald) when the backing *arr service is connected.
+ *     Derivation is via getSeriesLiveBadge / getMoviesLiveBadge (D-10 rule in LibraryContext).
+ *   - Both badges use group-data-[collapsible=icon]:hidden to disappear in icon rail mode.
+ *
+ * WR-01 (Phase-12 carry-forward, Phase 14 plan 02):
+ *   SidebarContent > SidebarGroup > SidebarMenu — adds p-2 inset, prevents nav ul from
+ *   rendering flush to panel walls, fixes icon-mode padding transitions.
  */
 import { useLocation, useNavigate } from "react-router-dom";
 import { Captions, Tv, Film, List, History, BookOpen, Settings } from "lucide-react";
@@ -23,6 +34,7 @@ import {
   Sidebar,
   SidebarContent,
   SidebarFooter,
+  SidebarGroup,
   SidebarHeader,
   SidebarMenu,
   SidebarMenuItem,
@@ -30,6 +42,14 @@ import {
   SidebarRail,
   SidebarTrigger,
 } from "./ui/sidebar";
+import { Badge } from "./ui/badge";
+import {
+  useLibraryContext,
+  getSeriesLiveBadge,
+  getMoviesLiveBadge,
+  getSeriesNeedsViCount,
+  getMoviesNeedsViCount,
+} from "../contexts/LibraryContext";
 
 /** Locked six-item nav table (NAV-02 / UI-SPEC Interaction Contract 4). /library absent (D-03). */
 const NAV_ITEMS = [
@@ -45,6 +65,14 @@ export function AppSidebar() {
   const { pathname } = useLocation();
   const navigate = useNavigate();
 
+  // NAV-03: read shared library data from context — no additional fetch.
+  // When no library page has loaded yet, libraryData is null → all badges hidden (correct).
+  const { libraryData } = useLibraryContext();
+  const seriesCount = getSeriesNeedsViCount(libraryData);
+  const moviesCount = getMoviesNeedsViCount(libraryData);
+  const seriesLive = getSeriesLiveBadge(libraryData);
+  const moviesLive = getMoviesLiveBadge(libraryData);
+
   return (
     <Sidebar collapsible="icon">
       {/* Brand header (D-06 / NAV-01): Captions glyph tinted text-sidebar-primary + TREZARR pill */}
@@ -59,27 +87,59 @@ export function AppSidebar() {
         </div>
       </SidebarHeader>
 
-      {/* Nav (NAV-02): six locked items; accent bar via className (NAV-01) */}
+      {/* Nav (NAV-02): six locked items; accent bar via className (NAV-01).
+          WR-01: SidebarGroup adds p-2 inset, prevents flush-wall rendering. */}
       <SidebarContent>
-        <SidebarMenu>
-          {NAV_ITEMS.map(({ to, label, icon: Icon }) => {
-            // D-05: prefix-match keeps /series active on /series/:id and /bible active on /bible/:id
-            const isActive = pathname === to || pathname.startsWith(to + "/");
-            return (
-              <SidebarMenuItem key={to}>
-                <SidebarMenuButton
-                  isActive={isActive}
-                  tooltip={label}
-                  onClick={() => navigate(to)}
-                  className="border-l-2 border-transparent data-[active=true]:border-sidebar-primary"
-                >
-                  <Icon size={16} />
-                  <span>{label}</span>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-            );
-          })}
-        </SidebarMenu>
+        <SidebarGroup>
+          <SidebarMenu>
+            {NAV_ITEMS.map(({ to, label, icon: Icon }) => {
+              // D-05: prefix-match keeps /series active on /series/:id and /bible active on /bible/:id
+              const isActive = pathname === to || pathname.startsWith(to + "/");
+
+              // NAV-03: derive badge state for /series and /movies rows only.
+              const isLive = to === "/series" ? seriesLive : to === "/movies" ? moviesLive : false;
+              const count = to === "/series" ? seriesCount : to === "/movies" ? moviesCount : 0;
+
+              return (
+                <SidebarMenuItem key={to}>
+                  <SidebarMenuButton
+                    isActive={isActive}
+                    tooltip={label}
+                    onClick={() => navigate(to)}
+                    className="border-l-2 border-transparent data-[active=true]:border-sidebar-primary"
+                  >
+                    <Icon size={16} />
+                    <span className="flex-1">{label}</span>
+                    {/* NAV-03 badge slot — rendered only for /series and /movies.
+                        Both badges hidden in collapsed icon mode via group-data selector. */}
+                    {(to === "/series" || to === "/movies") && (
+                      <span className="flex items-center gap-1">
+                        {isLive && (
+                          <Badge
+                            className="ml-0 text-xs bg-emerald-600 text-white border-transparent
+                                       group-data-[collapsible=icon]:hidden"
+                            aria-label="Service connected"
+                          >
+                            LIVE
+                          </Badge>
+                        )}
+                        {count > 0 && (
+                          <Badge
+                            className="ml-0 text-xs bg-[hsl(var(--primary))] text-primary-foreground
+                                       border-transparent group-data-[collapsible=icon]:hidden"
+                            aria-label={`${count} items need Vietnamese translation`}
+                          >
+                            {count}
+                          </Badge>
+                        )}
+                      </span>
+                    )}
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              );
+            })}
+          </SidebarMenu>
+        </SidebarGroup>
       </SidebarContent>
 
       {/* Footer status (D-02): green dot verbatim from legacy AppShell:64-69; static semantics */}
