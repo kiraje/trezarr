@@ -71,6 +71,42 @@ Requirements for initial release. Each maps to roadmap phases.
 - [x] **SVC-04**: User can retry or re-run a failed/rejected item from the UI
 - [x] **SVC-05**: User can set per-series overrides (source-language preference, register, model)
 
+## v1.1 Requirements — UI v2: shadcn dashboard
+
+Milestone v1.1 (defined 2026-06-03). Big-bang dashboard rework on a shadcn/ui + jolly-ui foundation. The core translation engine is unchanged. Each maps to roadmap phases 11+.
+
+### UI — Foundation & Theme
+
+- [ ] **UI-01**: shadcn/ui + jolly-ui component foundation is installed on Tailwind v3 (`cn()` util, `@/` path alias, `components.json`, base primitives) and the SPA build stays green throughout the migration
+- [ ] **UI-02**: A purple CSS-variable theme (dark mode default) replaces the legacy custom hex tokens across every page
+
+### NAV — Navigation Shell
+
+- [ ] **NAV-01**: User sees a full-height sidebar shell with brand (logo glyph + "TREZARR" pill); the active section is marked with a left purple accent bar
+- [ ] **NAV-02**: Navigation exposes Series / Movies / Queue / History / Bible / Settings; the old `/library` splits into `/series` and `/movies`; `/` redirects to `/series`
+- [ ] **NAV-03**: Nav rows show a right-side count badge of items needing a Vietnamese subtitle (auto-hidden at zero) and a "LIVE" badge when the backing *arr service is connected
+
+### LIB — Library Browsing
+
+- [ ] **LIB-01**: User can browse all Sonarr series on a Series list page
+- [ ] **LIB-02**: User can browse all Radarr movies on a Movies list page showing source-subtitle and Vietnamese-subtitle status
+- [ ] **LIB-03**: User can open a series and see its episodes grouped by season in collapsible sections (latest season auto-expanded)
+- [ ] **LIB-04**: Each episode row shows an Audio-language badge and its subtitle-language badges (`CODE2` uppercase, with `:HI`/`:Forced` markers), color-coded amber = source / purple = Vietnamese, with a non-color (shape + `aria-label`) distinction for accessibility
+- [ ] **LIB-05**: User can trigger translation for a single episode or an entire season from the Series detail view (enqueues via `POST /api/translate`)
+- [ ] **LIB-06**: User can search, filter by subtitle status, and sort the Series and Movies lists
+- [ ] **LIB-07**: Series and Movies list items show a Vietnamese-subtitle translation-progress indicator (translated / total)
+
+### API — Backend Episode Data
+
+- [ ] **API-01**: `GET /api/library/series/{id}/episodes` returns episodes from Sonarr episode records grouped by season, each carrying `audio_languages` (Sonarr mediaInfo) + `subtitles[]` (Bazarr inventory incl. `hi`/`forced`) + Trezarr status; Bazarr failures degrade fail-soft (endpoint still returns HTTP 200 without subtitle badges)
+- [ ] **API-02**: The library Series + Movies list endpoints expose per-item `translated_count` / `total_count` for the progress indicators and nav badges
+
+### RSK — Reskin & Delivery
+
+- [ ] **RSK-01**: Queue, History, Settings, Bible List, and JobLogs pages are reskinned to shadcn with loading / empty / error states
+- [ ] **RSK-02**: The Bible Editor is reskinned in-place (primitives swapped; locking semantics and behavior unchanged; existing tests stay green)
+- [ ] **RSK-03**: The multi-stage Docker image is rebuilt and the new dashboard is live-smoke-tested on :6868 (SPA deep-link fallback intact)
+
 ## v2 Requirements
 
 Deferred to future release. Tracked but not in current roadmap.
@@ -84,6 +120,10 @@ Deferred to future release. Tracked but not in current roadmap.
 
 - **SCALE-01**: Support multiple Sonarr/Radarr instances
 - **COMM-01**: Series Bible / glossary import-export and sharing between users
+
+### UI / Library (deferred from v1.1)
+
+- **UIX-01**: Poster-artwork grid view for the Series/Movies lists (deferred from v1.1 — a dense text table ships in v1.1 instead; `poster_url` is already available from `/api/library` when this is picked up)
 
 ## Out of Scope
 
