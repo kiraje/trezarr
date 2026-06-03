@@ -103,8 +103,8 @@ Milestone v1.1 (defined 2026-06-03). Big-bang dashboard rework on a shadcn/ui + 
 
 ### RSK — Reskin & Delivery
 
-- [ ] **RSK-01**: Queue, History, Settings, Bible List, and JobLogs pages are reskinned to shadcn with loading / empty / error states
-- [ ] **RSK-02**: The Bible Editor is reskinned in-place (primitives swapped; locking semantics and behavior unchanged; existing tests stay green)
+- [x] **RSK-01**: Queue, History, Settings, Bible List, and JobLogs pages are reskinned to shadcn with loading / empty / error states
+- [x] **RSK-02**: The Bible Editor is reskinned in-place (primitives swapped; locking semantics and behavior unchanged; existing tests stay green)
 - [ ] **RSK-03**: The multi-stage Docker image is rebuilt and the new dashboard is live-smoke-tested on :6868 (SPA deep-link fallback intact)
 
 ## v2 Requirements
@@ -214,8 +214,8 @@ Which phases cover which requirements. Populated during roadmap creation.
 | LIB-05 | Phase 14 | Complete |
 | LIB-06 | Phase 14 | Complete |
 | LIB-07 | Phase 14 | Complete |
-| RSK-01 | Phase 15 | Pending |
-| RSK-02 | Phase 15 | Pending |
+| RSK-01 | Phase 15 | Complete |
+| RSK-02 | Phase 15 | Complete |
 | RSK-03 | Phase 16 | Pending |
 
 **v1.1 Coverage:**
