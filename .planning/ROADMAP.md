@@ -32,7 +32,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 
 - [x] **Phase 11: shadcn Foundation & Purple Theme** - Install shadcn@2.10.0 + jolly-ui on Tailwind v3, wire the `@/` alias, establish the HSL CSS-variable purple dark theme, and verify a green build with no page content changes (completed 2026-06-03)
 - [x] **Phase 12: App Shell + Route Restructure** - Replace the current AppShell with SidebarProvider + AppSidebar + Outlet, restructure routes so `/library` → `/series` + `/movies` + `/series/:id` and `/` → `/series` (completed 2026-06-03)
-- [ ] **Phase 13: Backend Episodes Enrichment** - Rewrite `GET /api/library/series/{id}/episodes` to return season-grouped episode records from Sonarr with audio languages and Bazarr subtitle inventory (fail-soft); expose `translated_count`/`total_count` on list endpoints
+- [x] **Phase 13: Backend Episodes Enrichment** - Rewrite `GET /api/library/series/{id}/episodes` to return season-grouped episode records from Sonarr with audio languages and Bazarr subtitle inventory (fail-soft); expose `translated_count`/`total_count` on list endpoints (completed 2026-06-03)
 - [ ] **Phase 14: New Library Pages + Nav Badge Wiring** - Build Series list, Series detail (season-grouped Accordion with audio/subtitle badges, translate actions, search/filter/sort), Movies list, and wire the sidebar count+LIVE badges to live API data
 - [ ] **Phase 15: Reskin Existing Pages** - Reskin-in-place Queue, History, Settings, Bible List, JobLogs, and Bible Editor onto shadcn primitives; remove legacy bridge tokens after all pages pass
 - [ ] **Phase 16: Docker Rebuild + Live Smoke Test** - Rebuild the multi-stage Docker image with `--no-cache`, run the new dashboard on :6868 against the live *arr stack, and verify all six nav routes, episode badges, translate flow, and deep-link fallback
@@ -408,7 +408,7 @@ Plans:
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-- [ ] 13-03-PLAN.md — Wave 2: Rewrite get_series_episodes (season-grouped envelope, asyncio.to_thread, Bazarr fail-soft, audio normalization via _ORIG_LANG_NAME_TO_CODE2) + extend get_library with translated_count/total_count (API-01, API-02)
+- [x] 13-03-PLAN.md — Wave 2: Rewrite get_series_episodes (season-grouped envelope, asyncio.to_thread, Bazarr fail-soft, audio normalization via _ORIG_LANG_NAME_TO_CODE2) + extend get_library with translated_count/total_count (API-01, API-02)
 
 ### Phase 14: New Library Pages + Nav Badge Wiring
 
@@ -476,7 +476,7 @@ v1.1 phases execute in numeric order: 11 → 12 → 13 (parallel-eligible with 1
 | 10. Source Selection & Per-Series Overrides | 4/4 | Complete | 2026-06-02 |
 | 11. shadcn Foundation & Purple Theme | 3/3 | Complete    | 2026-06-03 |
 | 12. App Shell + Route Restructure | 1/1 | Complete    | 2026-06-03 |
-| 13. Backend Episodes Enrichment | 2/3 | In Progress|  |
+| 13. Backend Episodes Enrichment | 3/3 | Complete   | 2026-06-03 |
 | 14. New Library Pages + Nav Badge Wiring | 0/TBD | Not started | - |
 | 15. Reskin Existing Pages | 0/TBD | Not started | - |
 | 16. Docker Rebuild + Live Smoke Test | 0/TBD | Not started | - |
