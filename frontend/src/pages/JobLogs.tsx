@@ -1,9 +1,13 @@
 /**
  * JobLogs page — per-job log trail view (SVC-03).
  *
- * Conforms to 07-UI-SPEC.md §Per-Job Logs View:
- * - Breadcrumb "← History" at top
- * - Job summary strip: source_path, status, trigger
+ * Conforms to 07-UI-SPEC.md §Per-Job Logs View and 15-UI-SPEC.md §JobLogs reskin:
+ * - Breadcrumb "← History" at top (Button variant="ghost" size="sm")
+ * - Heading: text-xl font-semibold text-foreground
+ * - Job summary strip: Card/CardContent replacing legacy bg-bg-surface border
+ * - Loading state: three Skeleton rows
+ * - Error state: <div role="alert"> with bg-destructive/10 text-destructive
+ * - Empty state: muted paragraph when no entries
  * - LogViewer with getJobLogs(id) data
  * - Route param: /jobs/:id/logs
  */
@@ -14,6 +18,9 @@ import { getJobLogs, getJobs, type JobLogEntry, type HistoryJob } from "../api/c
 import LogViewer from "../components/LogViewer";
 import StatusBadge from "../components/StatusBadge";
 import type { JobStatus } from "../components/StatusBadge";
+import { Button } from "../components/ui/button";
+import { Card, CardContent } from "../components/ui/card";
+import { Skeleton } from "../components/ui/skeleton";
 
 export default function JobLogs() {
   const { id } = useParams<{ id: string }>();
@@ -58,52 +65,64 @@ export default function JobLogs() {
     <div className="flex flex-col gap-4">
       {/* Breadcrumb */}
       <div>
-        <button
+        <Button
           type="button"
+          variant="ghost"
+          size="sm"
           onClick={() => navigate("/history")}
-          className="inline-flex items-center gap-1 text-xs text-accent hover:text-[#2563eb] focus:outline-[#3b82f6] focus:outline-2 focus:outline-offset-2 transition-colors duration-150"
+          className="text-primary"
         >
           <ChevronLeft size={14} aria-hidden="true" />
           History
-        </button>
+        </Button>
       </div>
 
-      <h1 className="text-lg font-semibold text-[#e2e6f0]">
+      <h1 className="text-xl font-semibold text-foreground">
         Job #{jobId} Logs
       </h1>
 
       {/* Job summary strip */}
       {job && (
-        <div
-          className="flex items-center gap-4 h-10 bg-bg-surface border border-[#2d3148] rounded px-4 text-xs text-[#6b7280]"
-        >
-          <span className="truncate max-w-xs" title={job.source_path}>
-            {job.source_path}
-          </span>
-          <StatusBadge status={job.status as JobStatus} />
-          <span className="text-[#6b7280]">trigger: {job.trigger}</span>
-          {job.finished_at && (
-            <span className="text-[#6b7280]">
-              finished:{" "}
-              {new Date(job.finished_at).toLocaleString()}
+        <Card>
+          <CardContent className="flex items-center gap-4 h-10 px-4 text-xs text-muted-foreground py-0">
+            <span className="truncate max-w-xs" title={job.source_path}>
+              {job.source_path}
             </span>
-          )}
-        </div>
+            <StatusBadge status={job.status as JobStatus} />
+            <span className="text-muted-foreground">trigger: {job.trigger}</span>
+            {job.finished_at && (
+              <span className="text-muted-foreground">
+                finished:{" "}
+                {new Date(job.finished_at).toLocaleString()}
+              </span>
+            )}
+          </CardContent>
+        </Card>
       )}
 
       {/* Log area */}
       {loading ? (
-        <div className="text-xs text-[#6b7280] py-4">Loading…</div>
+        <div className="flex flex-col gap-2">
+          <Skeleton className="h-8 w-32" />
+          <Skeleton className="h-10 w-full" />
+          <Skeleton className="h-64 w-full" />
+        </div>
       ) : error ? (
         <div
-          className="px-4 py-3 text-sm rounded"
-          style={{ backgroundColor: "#2d1515", color: "#f87171" }}
           role="alert"
+          className="px-4 py-3 text-sm rounded bg-destructive/10 text-destructive"
         >
           {error}
         </div>
       ) : (
-        <LogViewer entries={entries} />
+        <>
+          {!loading && !error && entries.length === 0 && (
+            <p className="text-sm text-muted-foreground py-8 text-center">
+              No log entries for this job.
+            </p>
+          )}
+          <LogViewer entries={entries} />
+        </>
       )}
     </div>
   );
