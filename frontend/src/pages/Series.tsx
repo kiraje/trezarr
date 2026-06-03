@@ -12,7 +12,7 @@
  *
  * Error/loading/empty states per 14-UI-SPEC.md §Loading, Empty, and Error States.
  */
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { getLibrary, type SeriesItem, type LibraryResponse } from "../api/client";
 import { useLibraryContext } from "../contexts/LibraryContext";
@@ -68,28 +68,35 @@ export default function Series() {
   const [filterStatus, setFilterStatus] = useState<FilterStatus>("all");
   const [sortField, setSortField] = useState<SortField>("title");
   const [sortDir, setSortDir] = useState<SortDir>("asc");
+  const [fetchTick, setFetchTick] = useState(0);
 
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // ── Fetch ──────────────────────────────────────────────────────────────────
-
-  const load = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const result = await getLibrary();
-      setData(result);
-      setLibraryData(result); // D-09 / NAV-03: populate context for sidebar badges
-    } catch (err) {
-      setError(String(err));
-    } finally {
-      setLoading(false);
-    }
-  }, [setLibraryData]);
+  // Cancelled flag prevents stale setState / setLibraryData (context setter) from
+  // firing after navigation. setLibraryData is stable so it needs no dep entry.
+  // fetchTick is incremented by the Retry button to force a re-run.
 
   useEffect(() => {
-    void load();
-  }, [load]);
+    let cancelled = false;
+    async function run() {
+      setLoading(true);
+      setError(null);
+      try {
+        const result = await getLibrary();
+        if (cancelled) return;
+        setData(result);
+        setLibraryData(result); // D-09 / NAV-03: populate context for sidebar badges
+      } catch (err) {
+        if (cancelled) return;
+        setError(String(err));
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
+    void run();
+    return () => { cancelled = true; };
+  }, [setLibraryData, fetchTick]);
 
   // ── Debounce search ────────────────────────────────────────────────────────
 
@@ -124,7 +131,7 @@ export default function Series() {
         <p className="text-muted-foreground">
           An error occurred while fetching the library. Try reloading.
         </p>
-        <Button onClick={() => void load()}>Retry</Button>
+        <Button onClick={() => setFetchTick((t) => t + 1)}>Retry</Button>
       </div>
     );
   }

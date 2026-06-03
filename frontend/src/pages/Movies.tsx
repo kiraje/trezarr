@@ -17,9 +17,9 @@
  *
  * Error/loading/empty states per 14-UI-SPEC.md §Loading, Empty, and Error States.
  */
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
-import { getLibrary, postTranslate, type MovieItem, type LibraryResponse } from "../api/client";
+import { getLibrary, type MovieItem, type LibraryResponse } from "../api/client";
 import { useLibraryContext } from "../contexts/LibraryContext";
 import { Input } from "../components/ui/input";
 import { Button } from "../components/ui/button";
@@ -80,30 +80,35 @@ export default function Movies() {
   const [filterStatus, setFilterStatus] = useState<FilterStatus>("all");
   const [sortField, setSortField] = useState<SortField>("title");
   const [sortDir, setSortDir] = useState<SortDir>("asc");
-  const [translatePending, setTranslatePending] = useState<string | null>(null);
-  const [translateErrors, setTranslateErrors] = useState<Record<number, string>>({});
+  const [fetchTick, setFetchTick] = useState(0);
 
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // ── Fetch ──────────────────────────────────────────────────────────────────
-
-  const load = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const result = await getLibrary();
-      setData(result);
-      setLibraryData(result); // D-09 / NAV-03: populate context for sidebar badges
-    } catch (err) {
-      setError(String(err));
-    } finally {
-      setLoading(false);
-    }
-  }, [setLibraryData]);
+  // Cancelled flag prevents stale setState / setLibraryData (context setter) from
+  // firing after navigation. setLibraryData is stable so it needs no dep entry.
+  // fetchTick is incremented by the Retry button to force a re-run.
 
   useEffect(() => {
-    void load();
-  }, [load]);
+    let cancelled = false;
+    async function run() {
+      setLoading(true);
+      setError(null);
+      try {
+        const result = await getLibrary();
+        if (cancelled) return;
+        setData(result);
+        setLibraryData(result); // D-09 / NAV-03: populate context for sidebar badges
+      } catch (err) {
+        if (cancelled) return;
+        setError(String(err));
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
+    void run();
+    return () => { cancelled = true; };
+  }, [setLibraryData, fetchTick]);
 
   // ── Debounce search ────────────────────────────────────────────────────────
 
@@ -114,30 +119,6 @@ export default function Movies() {
       if (timerRef.current) clearTimeout(timerRef.current);
     };
   }, [searchInput]);
-
-  // ── Translate handler ──────────────────────────────────────────────────────
-
-  async function handleTranslate(movie: MovieItem) {
-    // source_path not in API response — disabled with tooltip per 14-UI-SPEC.md.
-    // This handler only fires if the API is updated to return source_path in the future.
-    setTranslatePending(String(movie.id));
-    setTranslateErrors((prev) => {
-      const next = { ...prev };
-      delete next[movie.id];
-      return next;
-    });
-    try {
-      await postTranslate("movie", null, "");
-      navigate("/queue");
-    } catch {
-      setTranslateErrors((prev) => ({
-        ...prev,
-        [movie.id]: "Could not enqueue. Check source file exists.",
-      }));
-    } finally {
-      setTranslatePending(null);
-    }
-  }
 
   // ── Loading state ──────────────────────────────────────────────────────────
 
@@ -162,7 +143,7 @@ export default function Movies() {
         <p className="text-muted-foreground">
           An error occurred while fetching the library. Try reloading.
         </p>
-        <Button onClick={() => void load()}>Retry</Button>
+        <Button onClick={() => setFetchTick((t) => t + 1)}>Retry</Button>
       </div>
     );
   }
@@ -374,36 +355,27 @@ export default function Movies() {
                           Translated
                         </Badge>
                       ) : canTranslate ? (
-                        // source_path not in API response — disabled with tooltip per 14-UI-SPEC.md
-                        <div>
-                          <TooltipProvider>
-                            <Tooltip>
-                              <TooltipTrigger asChild>
-                                {/* wrapper span needed: disabled button doesn't fire events for tooltip */}
-                                <span>
-                                  <Button
-                                    size="sm"
-                                    disabled={true}
-                                    className="min-h-[44px]"
-                                    onClick={() => void handleTranslate(m)}
-                                  >
-                                    {translatePending === String(m.id)
-                                      ? "Queuing…"
-                                      : "Translate"}
-                                  </Button>
-                                </span>
-                              </TooltipTrigger>
-                              <TooltipContent>
-                                Source path unavailable
-                              </TooltipContent>
-                            </Tooltip>
-                          </TooltipProvider>
-                          {translateErrors[m.id] && (
-                            <span className="text-destructive text-xs block mt-1">
-                              {translateErrors[m.id]}
-                            </span>
-                          )}
-                        </div>
+                        // source_path not in API response — disabled with tooltip per 14-UI-SPEC.md.
+                        // handleTranslate removed until API exposes source_path (WR-08).
+                        <TooltipProvider>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              {/* wrapper span needed: disabled button doesn't fire events for tooltip */}
+                              <span>
+                                <Button
+                                  size="sm"
+                                  disabled
+                                  className="min-h-[44px]"
+                                >
+                                  Translate
+                                </Button>
+                              </span>
+                            </TooltipTrigger>
+                            <TooltipContent>
+                              Source path unavailable
+                            </TooltipContent>
+                          </Tooltip>
+                        </TooltipProvider>
                       ) : null}
                     </td>
                   </tr>
