@@ -9,7 +9,7 @@
  * - Hard-block on lock with empty term (D-87)
  * - FieldHistoryPanel inline expansion below rows
  *
- * Analog: Settings.tsx (load-on-mount, SectionCard, Toast pattern)
+ * Analog: Settings.tsx (load-on-mount, Card sections, Sonner toast)
  */
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useParams, Link } from "react-router-dom";
@@ -58,8 +58,8 @@ import { Button } from "../components/ui/button";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-// ToastState kept for section component prop compatibility (showToast signature)
-interface ToastState {
+// ShowToast message type — used by section component prop signatures
+interface ShowToastArg {
   message: string;
   variant: "success" | "error";
 }
@@ -93,7 +93,7 @@ export default function BibleEditor() {
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<Tab>("characters");
 
-  const showToast = useCallback((t: Omit<ToastState, "id">) => {
+  const showToast = useCallback((t: ShowToastArg) => {
     if (t.variant === "success") toast.success(t.message);
     else toast.error(t.message);
   }, []);
@@ -228,7 +228,7 @@ interface CharactersSectionProps {
   seriesId: number;
   bible: SeriesBibleDTO;
   setBible: React.Dispatch<React.SetStateAction<SeriesBibleDTO | null>>;
-  showToast: (t: Omit<ToastState, "id">) => void;
+  showToast: (t: ShowToastArg) => void;
 }
 
 function CharactersSection({
@@ -726,7 +726,7 @@ interface AddressMapSectionProps {
   bible: SeriesBibleDTO;
   setBible: React.Dispatch<React.SetStateAction<SeriesBibleDTO | null>>;
   pronounsData: PronounsResponse;
-  showToast: (t: Omit<ToastState, "id">) => void;
+  showToast: (t: ShowToastArg) => void;
 }
 
 interface PairEditState {
@@ -1404,7 +1404,7 @@ interface TermsSectionProps {
   seriesId: number;
   bible: SeriesBibleDTO;
   setBible: React.Dispatch<React.SetStateAction<SeriesBibleDTO | null>>;
-  showToast: (t: Omit<ToastState, "id">) => void;
+  showToast: (t: ShowToastArg) => void;
 }
 
 function TermsSection({
@@ -1911,7 +1911,7 @@ interface RegisterSectionProps {
   seriesId: number;
   bible: SeriesBibleDTO;
   setBible: React.Dispatch<React.SetStateAction<SeriesBibleDTO | null>>;
-  showToast: (t: Omit<ToastState, "id">) => void;
+  showToast: (t: ShowToastArg) => void;
 }
 
 function RegisterSection({
@@ -2170,7 +2170,7 @@ interface OverridesSectionProps {
   seriesId: number;
   bible: SeriesBibleDTO;
   setBible: React.Dispatch<React.SetStateAction<SeriesBibleDTO | null>>;
-  showToast: (t: Omit<ToastState, "id">) => void;
+  showToast: (t: ShowToastArg) => void;
 }
 
 function OverridesSection({
