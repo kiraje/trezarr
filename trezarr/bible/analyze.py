@@ -78,6 +78,7 @@ class CharacterInference(BaseModel):
     gender: str | None = None
     rough_age: str | None = None
     role: str | None = None
+    original_script_name: str | None = None  # CJK / non-Latin on-screen name (e.g. '樱')
 
 
 class TermInference(BaseModel):
@@ -206,13 +207,18 @@ def _build_analysis_prompt(
         "Analyze the dialogue sample above. Infer and return a JSON object with:\n"
         "  - register: overall tone/register of the series (e.g. 'formal', 'casual', 'romantic')\n"
         "  - characters: list of character objects with original_latin_name, gender (if determinable), "
-        "rough_age (if determinable), role (if determinable)\n"
+        "rough_age (if determinable), role (if determinable), "
+        "original_script_name (the original-script form of the name if non-Latin, "
+        "e.g. '樱' for a Chinese character named Sakura; omit for Latin-named characters)\n"
         "  - terms: list of proper nouns, titles, places, jargon with source_term and vietnamese_rendering\n"
         "  - address_map: list of directed pronoun pairs with speaker_name, addressee_name, self_term "
-        "(how speaker refers to themselves), address_term (how speaker addresses the other), confidence (0.0-1.0)\n"
+        "(how speaker refers to themselves), address_term (how speaker addresses the other), confidence (0.0-1.0) "
+        "— use the EXACT name string from the characters list (either original_latin_name or original_script_name). "
+        "Do NOT reference a character with a name form that was not listed in the characters list.\n"
         "  - relationship_events: list of relationship transitions detected in this episode\n"
         "    (ONLY emit when a relationship has CHANGED relative to the existing Bible context above).\n"
-        f"    Each entry: character_a_name, character_b_name, episode_marker (use \"{episode_key}\"),\n"
+        f"    Each entry: character_a_name, character_b_name (use the EXACT name string from the characters list), "
+        f"episode_marker (use \"{episode_key}\"),\n"
         "    description (narrative description, e.g. 'They become lovers in this episode'),\n"
         "    suggested_self_term (optional: new Vietnamese self-reference term for A→B),\n"
         "    suggested_address_term (optional: new Vietnamese address term for A→B).\n"
@@ -418,6 +424,10 @@ async def merge_bible_analysis(
                 source="inference",
             )
             name_to_id[char.original_latin_name.strip().lower()] = char_dto.id
+            # CJK fix: also index the original-script name so address_map / relationship_events
+            # that reference the on-screen name (e.g. '樱') resolve to the character ID (CR-01).
+            if char.original_script_name and char.original_script_name.strip():
+                name_to_id[char.original_script_name.strip().lower()] = char_dto.id
             logger.debug(
                 "Pass 1: upserted character %r (id=%d) for series %d",
                 char.original_latin_name,
