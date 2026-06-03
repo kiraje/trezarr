@@ -17,6 +17,7 @@ Design decisions:
 from __future__ import annotations
 
 import logging
+import re
 from pathlib import Path
 
 from fastapi import APIRouter, Request
@@ -25,6 +26,43 @@ from fastapi.responses import JSONResponse
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+
+def _episode_key_from_file(ep_file: dict, raw_path: str) -> str:
+    """Build an ``SxxExx`` display key for a Sonarr episode file.
+
+    Sonarr gives the authoritative ``seasonNumber`` on the file record; the
+    episode number is parsed from the file/scene name, tolerant of both
+    ``SxxExx`` and ``NxNN`` (e.g. ``6x01``) naming used by donghua/anime
+    releases. Falls back to the shared ``derive_episode_key`` parser only when
+    nothing matches (never reuse that parser's S00E00 default blindly).
+    """
+    name = ep_file.get("relativePath") or ep_file.get("sceneName") or raw_path
+    season = ep_file.get("seasonNumber")
+    ep_num: int | None = None
+
+    m = re.search(r"[sS](\d{1,3})[ ._-]*[eE](\d{1,4})", name)
+    if m:
+        if season is None:
+            season = int(m.group(1))
+        ep_num = int(m.group(2))
+    else:
+        # NxNN form (e.g. "6x01"); lookarounds avoid matching resolutions like 1920x1080
+        m = re.search(r"(?<!\d)(\d{1,3})\s*[xX]\s*(\d{1,4})(?!\d)", name)
+        if m:
+            if season is None:
+                season = int(m.group(1))
+            ep_num = int(m.group(2))
+        else:
+            m = re.search(r"(?<![A-Za-z\d])[eE](\d{1,4})(?!\d)", name)
+            if m:
+                ep_num = int(m.group(1))
+
+    if season is not None and ep_num is not None:
+        return f"S{int(season):02d}E{int(ep_num):02d}"
+
+    from trezarr.translate.engine import derive_episode_key  # noqa: PLC0415
+    return derive_episode_key(None, raw_path)
 
 
 # ── GET /api/library ───────────────────────────────────────────────────────────
@@ -128,7 +166,6 @@ async def get_series_episodes(series_id: int, request: Request) -> JSONResponse:
         from trezarr.arr.sonarr import build_sonarr_client  # noqa: PLC0415
         from trezarr.discover.scan import find_source_sub  # noqa: PLC0415
         from trezarr.paths import apply_path_mapping  # noqa: PLC0415
-        from trezarr.translate.engine import derive_episode_key  # noqa: PLC0415
         from pyarr.exceptions import PyarrError  # noqa: PLC0415
 
         client = build_sonarr_client(settings)
@@ -146,8 +183,9 @@ async def get_series_episodes(series_id: int, request: Request) -> JSONResponse:
             local_path: Path = apply_path_mapping(raw_path, settings.path_mappings)
             source_sub_result = find_source_sub(local_path, settings.source_lang_priority)
 
-            # derive_episode_key(media_item, source_sub_path) — pass None for media_item
-            episode_key: str = derive_episode_key(None, raw_path)
+            # Use Sonarr's authoritative seasonNumber + tolerant episode parse
+            # (handles SxxExx and NxNN donghua naming); falls back gracefully.
+            episode_key: str = _episode_key_from_file(ep_file, raw_path)
 
             # Determine status
             if source_sub_result is None:

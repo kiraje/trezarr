@@ -186,7 +186,8 @@ export default function Library() {
                         type="button"
                         disabled={
                           row.status !== "has_source" ||
-                          translatePending === row.source_path
+                          (translatePending !== null &&
+                            translatePending === row.source_path)
                         }
                         onClick={() => {
                           if (row.source_path) {
@@ -195,7 +196,9 @@ export default function Library() {
                         }}
                         className="px-3 py-1 text-xs rounded bg-[#3b82f6] text-white hover:bg-[#2563eb] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                       >
-                        {translatePending === row.source_path ? "Queuing…" : "Translate"}
+                        {translatePending !== null && translatePending === row.source_path
+                          ? "Queuing…"
+                          : "Translate"}
                       </button>
                     </td>
                   </tr>
