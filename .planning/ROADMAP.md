@@ -475,7 +475,7 @@ v1.1 phases execute in numeric order: 11 → 12 → 13 (parallel-eligible with 1
 | 9. Multi-Format — ASS/SSA + VTT | 5/6 | In Progress | |
 | 10. Source Selection & Per-Series Overrides | 4/4 | Complete | 2026-06-02 |
 | 11. shadcn Foundation & Purple Theme | 3/3 | Complete    | 2026-06-03 |
-| 12. App Shell + Route Restructure | 1/1 | Complete   | 2026-06-03 |
+| 12. App Shell + Route Restructure | 1/1 | Complete    | 2026-06-03 |
 | 13. Backend Episodes Enrichment | 0/3 | Not started | - |
 | 14. New Library Pages + Nav Badge Wiring | 0/TBD | Not started | - |
 | 15. Reskin Existing Pages | 0/TBD | Not started | - |
