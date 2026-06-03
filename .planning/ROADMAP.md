@@ -343,15 +343,26 @@ Decimal phases appear between their surrounding integers in numeric order.
 **Depends on**: Phase 10 (v1.0 complete)
 **Requirements**: UI-01, UI-02
 **Success Criteria** (what must be TRUE):
+
   1. Running `npm run build` after setup produces a green build with no TypeScript or Vite errors, and the built `trezarr/web/static/` is populated
   2. Opening the app in a browser shows the existing pages rendered on a dark purple background with the new CSS-variable theme (the `.dark` class on `<html>` is active)
   3. A shadcn `<Button variant="default">` renders with the purple primary color and correct opacity on `bg-primary/50` — confirming HSL channel-triple format is correct
   4. No existing page breaks or shows unstyled text; the bridge-period dual-token setup keeps legacy classes functional
+
 **Plans**: 3 plans
 Plans:
+**Wave 1**
+
 - [ ] 11-01-PLAN.md — Wave 1: .npmrc + deps + @/ alias + shadcn@2.10.0 init (pre-theme baseline)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
 - [ ] 11-02-PLAN.md — Wave 2: tailwind.config.js + src/index.css + index.html (purple theme tokens)
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
 - [ ] 11-03-PLAN.md — Wave 3: bulk shadcn add + jolly-ui Table + D-09 human visual UAT gate
+
 **UI hint**: yes
 
 ### Phase 12: App Shell + Route Restructure
@@ -360,15 +371,19 @@ Plans:
 **Depends on**: Phase 11
 **Requirements**: NAV-01, NAV-02
 **Success Criteria** (what must be TRUE):
+
   1. Navigating to `/` in the browser redirects to `/series`; refreshing `/series`, `/movies`, `/queue`, `/history`, `/bible`, or `/settings` loads the correct page (SPA deep-link fallback intact)
   2. The full-height sidebar is visible on all pages showing the Trezarr brand, all six nav items (Series / Movies / Queue / History / Bible / Settings), and a left 2-pixel purple accent bar on the active nav item
   3. All existing pages (Queue, History, Settings, Bible List, Bible Editor) remain navigable and fully functional inside the new shell with no regressions
   4. Stub Series, SeriesDetail, and Movies pages render a heading placeholder at their new routes without errors
+
 **Plans**: 3 plans
 Plans:
+
 - [ ] 11-01-PLAN.md — Wave 1: .npmrc + deps + @/ alias + shadcn@2.10.0 init (pre-theme baseline)
 - [ ] 11-02-PLAN.md — Wave 2: tailwind.config.js + src/index.css + index.html (purple theme tokens)
 - [ ] 11-03-PLAN.md — Wave 3: bulk shadcn add + jolly-ui Table + D-09 human visual UAT gate
+
 **UI hint**: yes
 
 ### Phase 13: Backend Episodes Enrichment
@@ -377,12 +392,15 @@ Plans:
 **Depends on**: Phase 11 (for deployment context; backend work is parallel-eligible with Phase 12)
 **Requirements**: API-01, API-02
 **Success Criteria** (what must be TRUE):
+
   1. `GET /api/library/series/{id}/episodes` returns a JSON envelope with `seasons[]` (grouped by season number), each episode carrying `audio_languages`, `subtitles[]` (with `code2`, `hi`), `episode_key`, and `status`; the endpoint always returns HTTP 200 even when Bazarr is down (`bazarr_available: false` in the envelope)
   2. When Bazarr is unreachable, the endpoint returns all episode records with `subtitles: []` for each and `bazarr_available: false` — no 502, no empty page
   3. `GET /api/library` series and movies list items include `translated_count` and `total_count` fields
   4. Backend tests cover the Bazarr fail-soft path, the correct `episode.id` (not `episodeFile.id`) join to Bazarr inventory, and the `audioLanguages` full-name-to-ISO lookup
+
 **Plans**: 3 plans
 Plans:
+
 - [ ] 11-01-PLAN.md — Wave 1: .npmrc + deps + @/ alias + shadcn@2.10.0 init (pre-theme baseline)
 - [ ] 11-02-PLAN.md — Wave 2: tailwind.config.js + src/index.css + index.html (purple theme tokens)
 - [ ] 11-03-PLAN.md — Wave 3: bulk shadcn add + jolly-ui Table + D-09 human visual UAT gate
@@ -393,16 +411,20 @@ Plans:
 **Depends on**: Phase 12 (shell + stubs), Phase 13 (stable API contract)
 **Requirements**: LIB-01, LIB-02, LIB-03, LIB-04, LIB-05, LIB-06, LIB-07, NAV-03
 **Success Criteria** (what must be TRUE):
+
   1. The Series list page shows all Sonarr series in a dense table with a "X/Y translated" progress bar per series; clicking a series navigates to `/series/:id`
   2. The Series detail page shows episodes grouped by season in collapsible sections with the latest season auto-expanded; each episode row shows an Audio badge (blue) and subtitle-language badges (`CODE2` uppercase, amber = source / purple = VI, `VI:HI` when `hi=true`); when `bazarr_available=false` the subtitle badge column is suppressed rather than showing all-empty badges
   3. A "Translate" button on an episode row or season header enqueues the item and navigates to the Queue page; the button is absent for episodes with no file
   4. The Movies page shows all Radarr movies with source-subtitle status and a Translate button
   5. The Series and Movies lists support search by title, filter by subtitle status, and sort; the sidebar Series and Movies nav rows show a count badge of items needing a Vietnamese subtitle (auto-hidden at zero) and a LIVE badge when the backing *arr service is connected
+
 **Plans**: 3 plans
 Plans:
+
 - [ ] 11-01-PLAN.md — Wave 1: .npmrc + deps + @/ alias + shadcn@2.10.0 init (pre-theme baseline)
 - [ ] 11-02-PLAN.md — Wave 2: tailwind.config.js + src/index.css + index.html (purple theme tokens)
 - [ ] 11-03-PLAN.md — Wave 3: bulk shadcn add + jolly-ui Table + D-09 human visual UAT gate
+
 **UI hint**: yes
 
 ### Phase 15: Reskin Existing Pages
@@ -411,14 +433,18 @@ Plans:
 **Depends on**: Phase 12 (new shell), Phase 14 (proves badge system on new code before touching high-risk BibleEditor)
 **Requirements**: RSK-01, RSK-02
 **Success Criteria** (what must be TRUE):
+
   1. Queue, History, Settings, Bible List, and JobLogs pages render on the new shadcn component system with no visible legacy hex colors; each page shows loading, empty, and error states correctly
   2. The Bible Editor renders identically to its pre-reskin behavior: all five tabs (Characters, Address Map, Term Dictionary, Register, Overrides) load, lock badges display provenance correctly, field history panels populate, and pronoun combos work — confirmed by the existing test suite (all tests green)
   3. After all pages are reskinned, a grep for `bg-[#` and `text-[#` in `src/` returns no results; legacy bridge tokens are removed from `tailwind.config.js`
+
 **Plans**: 3 plans
 Plans:
+
 - [ ] 11-01-PLAN.md — Wave 1: .npmrc + deps + @/ alias + shadcn@2.10.0 init (pre-theme baseline)
 - [ ] 11-02-PLAN.md — Wave 2: tailwind.config.js + src/index.css + index.html (purple theme tokens)
 - [ ] 11-03-PLAN.md — Wave 3: bulk shadcn add + jolly-ui Table + D-09 human visual UAT gate
+
 **UI hint**: yes
 
 ### Phase 16: Docker Rebuild + Live Smoke Test
@@ -427,12 +453,15 @@ Plans:
 **Depends on**: Phase 15 (all pages reskinned)
 **Requirements**: RSK-03
 **Success Criteria** (what must be TRUE):
+
   1. `docker build --no-cache` completes the full multi-stage build (node Vite build → python:3.12-slim) without error; the image starts on :6868 and `/api/health` returns 200
   2. Navigating to all six sidebar routes (/series, /movies, /queue, /history, /bible, /settings) in the browser at :6868 renders the new shadcn dashboard with no blank pages or missing styles
   3. The Series detail page for a real Sonarr series shows season-grouped episodes with audio and subtitle-language badges populated from Bazarr
   4. Triggering a translation from the Series detail view enqueues it and the Queue page shows the job; a hard-refresh on `/series/42` serves `index.html` (SPA deep-link fallback intact)
+
 **Plans**: 3 plans
 Plans:
+
 - [ ] 11-01-PLAN.md — Wave 1: .npmrc + deps + @/ alias + shadcn@2.10.0 init (pre-theme baseline)
 - [ ] 11-02-PLAN.md — Wave 2: tailwind.config.js + src/index.css + index.html (purple theme tokens)
 - [ ] 11-03-PLAN.md — Wave 3: bulk shadcn add + jolly-ui Table + D-09 human visual UAT gate
