@@ -35,9 +35,11 @@ import Settings from "./pages/Settings";
 import BibleList from "./pages/BibleList";
 import BibleEditor from "./pages/BibleEditor";
 import Library from "./pages/Library"; // transitional (D-03) — removed Phase 14
+import LibraryProvider from "./contexts/LibraryContext";
 
 export default function App() {
   return (
+    <LibraryProvider>
     <BrowserRouter>
       <Routes>
         {/* Layout route: AppShell hosts all pages via <Outlet/> (D-04) */}
@@ -57,5 +59,6 @@ export default function App() {
         </Route>
       </Routes>
     </BrowserRouter>
+    </LibraryProvider>
   );
 }
