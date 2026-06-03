@@ -55,6 +55,17 @@ class LLMClient:
         self._semaphore: asyncio.Semaphore = asyncio.Semaphore(settings.llm_max_concurrency)  # D-06
         self._mode: str = settings.llm_structured_output_mode  # D-04
         self._model: str = settings.llm_model
+        # Reasoning/"thinking" mode toggle: when disabled, inject
+        # extra_body={"thinking": {"type": "disabled"}} into EVERY tier (parse +
+        # both create() calls), not just one — auto-mode degradation means a single
+        # call may traverse any tier. Computed once; spread into each request below.
+        # An empty dict means "send nothing extra", keeping requests clean for
+        # endpoints that have no thinking mode.
+        self._call_kwargs: dict = (
+            {"extra_body": {"thinking": {"type": "disabled"}}}
+            if settings.llm_disable_thinking
+            else {}
+        )
 
     async def call(
         self,
@@ -131,6 +142,7 @@ class LLMClient:
                     model=effective_model,
                     messages=messages,
                     **parse_kwargs,
+                    **self._call_kwargs,  # thinking-mode toggle (empty unless disabled)
                 )
                 msg = parsed.choices[0].message
                 # CR-02: a model refusal carries no usable output — surface it
@@ -167,6 +179,7 @@ class LLMClient:
                     model=effective_model,
                     messages=messages,
                     response_format={"type": "json_object"},
+                    **self._call_kwargs,  # thinking-mode toggle (empty unless disabled)
                 )
                 content = resp.choices[0].message.content
                 if content is None:
@@ -181,6 +194,7 @@ class LLMClient:
         resp = await self._client.chat.completions.create(
             model=effective_model,
             messages=messages,
+            **self._call_kwargs,  # thinking-mode toggle (empty unless disabled)
         )
         content = resp.choices[0].message.content
         if content is None:

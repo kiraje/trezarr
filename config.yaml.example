@@ -51,6 +51,16 @@ llm_max_concurrency: 4
 # Default: "auto"
 llm_structured_output_mode: "auto"
 
+# --- Reasoning / "Thinking" Mode ---
+# When true, every LLM request carries extra_body={"thinking": {"type": "disabled"}}
+# to switch off the model's reasoning/thinking pass.
+# DeepSeek models (e.g. ds/deepseek-v4-pro) enable thinking by DEFAULT — turning it
+# off cuts latency and reasoning-token cost. Endpoints without a thinking mode ignore
+# the key, so this is safe to leave on for any backend.
+# Env override: TREZARR_LLM_DISABLE_THINKING=true
+# Default: false
+llm_disable_thinking: false
+
 # --- Context Window ---
 # Approximate context-window size (tokens) of the configured model.
 # Used by Phase 2+ batching logic to size translation chunks.
