@@ -467,6 +467,104 @@ export async function getPronouns(): Promise<PronounsResponse> {
 
 // ── Library ───────────────────────────────────────────────────────────────────
 
+// ── Phase-13 API types (D-01/D-02/D-03 per 14-01-PLAN.md) ───────────────────
+
+/** Series row from GET /api/library — mirrors library.py SeriesItem shape exactly. */
+export interface SeriesItem {
+  kind: "series";
+  id: number;
+  title: string;
+  year: number | null;
+  monitored: boolean;
+  poster_url: string | null;
+  /** Episodes with a VI sidecar file (ledger count, D-05 bulk query). */
+  translated_count: number;
+  /** episodeFileCount from Sonarr statistics (D-04). */
+  total_count: number;
+}
+
+/** Movie row from GET /api/library — mirrors library.py MovieItem shape exactly. */
+export interface MovieItem {
+  kind: "movie";
+  id: number;
+  title: string;
+  year: number | null;
+  monitored: boolean;
+  poster_url: string | null;
+  source_sub_found: boolean;
+  /** 1 if vi sidecar exists, 0 otherwise. */
+  translated_count: number;
+  /** 1 if hasFile, 0 otherwise. */
+  total_count: number;
+}
+
+/** Response from GET /api/library. */
+export interface LibraryResponse {
+  series: SeriesItem[];
+  movies: MovieItem[];
+  errors: Array<{ source: string; error: string }>;
+}
+
+/** One subtitle track entry from Bazarr (D-02 — path field intentionally absent). */
+export interface SubtitleEntry {
+  code2: string;
+  code3: string;
+  hi: boolean;
+  forced: boolean;
+}
+
+/** One episode row from GET /api/library/series/:id/episodes — Phase-13 shape. */
+export interface EpisodeEnrichedRow {
+  episode_id: number | null;
+  episode_file_id: number | null;
+  season_number: number;
+  episode_number: number;
+  /** "S01E01" format, built from authoritative Sonarr episode-record ints (D-03). */
+  episode_key: string;
+  title: string;
+  monitored: boolean;
+  has_file: boolean;
+  local_path: string | null;
+  source_path: string | null;
+  source_lang: string | null;
+  status: "nothing" | "has_source" | "translated";
+  /** ISO-639-1 code2 list, e.g. ["ko", "en"] (D-07). */
+  audio_languages: string[];
+  subtitles: SubtitleEntry[];
+}
+
+/** Season group within a SeriesEpisodesResponse. */
+export interface SeasonGroup {
+  season_number: number;
+  episodes: EpisodeEnrichedRow[];
+}
+
+/** Response envelope from GET /api/library/series/:id/episodes (Phase-13). */
+export interface SeriesEpisodesResponse {
+  series_id: number;
+  /** False when Bazarr is disabled or errored — subtitle column suppressed (D-05/D-08). */
+  bazarr_available: boolean;
+  seasons: SeasonGroup[];
+  errors: Array<{ source: string; error: string }>;
+}
+
+/** Request body for POST /api/translate. */
+export interface TranslateRequest {
+  kind: "series" | "movie";
+  source_path: string;
+  arr_series_id?: number;
+}
+
+export interface TranslateResponse {
+  enqueued: boolean;
+  source_path: string;
+}
+
+// ── Deprecated legacy types (Library.tsx still compiles through plan 05) ──────
+
+/**
+ * @deprecated Use SeriesItem — removed when Library.tsx is deleted in Phase 14 plan 06.
+ */
 export interface LibrarySeriesItem {
   kind: "series";
   id: number;
@@ -476,6 +574,9 @@ export interface LibrarySeriesItem {
   poster_url: string | null;
 }
 
+/**
+ * @deprecated Use MovieItem — removed when Library.tsx is deleted in Phase 14 plan 06.
+ */
 export interface LibraryMovieItem {
   kind: "movie";
   id: number;
@@ -486,12 +587,9 @@ export interface LibraryMovieItem {
   source_sub_found: boolean;
 }
 
-export interface LibraryResponse {
-  series: LibrarySeriesItem[];
-  movies: LibraryMovieItem[];
-  errors: { source: string; error: string }[];
-}
-
+/**
+ * @deprecated Use EpisodeEnrichedRow — removed when Library.tsx is deleted in Phase 14 plan 06.
+ */
 export interface EpisodeRow {
   episode_key: string;
   title: string;
@@ -501,10 +599,7 @@ export interface EpisodeRow {
   source_lang: string | null;
 }
 
-export interface TranslateResponse {
-  enqueued: boolean;
-  source_path: string;
-}
+// ── Fetch wrappers ────────────────────────────────────────────────────────────
 
 /** GET /api/library — list Sonarr series and Radarr movies. */
 export async function getLibrary(): Promise<LibraryResponse> {
@@ -513,8 +608,8 @@ export async function getLibrary(): Promise<LibraryResponse> {
   return resp.json();
 }
 
-/** GET /api/library/series/{id}/episodes — episode file rows for one series. */
-export async function getSeriesEpisodes(id: number): Promise<EpisodeRow[]> {
+/** GET /api/library/series/{id}/episodes — season-grouped episode records for one series. */
+export async function getSeriesEpisodes(id: number): Promise<SeriesEpisodesResponse> {
   const resp = await fetchWithLongTimeout(`/api/library/series/${id}/episodes`);
   if (!resp.ok) throw new Error(`GET /api/library/series/${id}/episodes: ${resp.status}`);
   return resp.json();

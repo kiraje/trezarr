@@ -91,7 +91,19 @@ export default function Library() {
       setEpisodesLoading(true);
       setEpisodesError(null);
       try {
-        const rows = await getSeriesEpisodes(selectedSeries!.id);
+        // getSeriesEpisodes now returns SeriesEpisodesResponse (Phase-13 envelope).
+        // Library.tsx is the legacy view (removed in plan 06); flatten seasons here.
+        const envelope = await getSeriesEpisodes(selectedSeries!.id);
+        const rows: EpisodeRow[] = envelope.seasons.flatMap((season) =>
+          season.episodes.map((ep) => ({
+            episode_key: ep.episode_key,
+            title: ep.title,
+            local_path: ep.local_path ?? "",
+            status: ep.status,
+            source_path: ep.source_path,
+            source_lang: ep.source_lang,
+          })),
+        );
         setEpisodes(rows);
       } catch (err) {
         setEpisodesError(String(err));
