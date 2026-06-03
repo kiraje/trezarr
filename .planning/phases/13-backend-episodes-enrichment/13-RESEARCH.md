@@ -632,7 +632,13 @@ The enriched endpoint requires two mock pyarr calls. Pattern: mock `client.episo
 
 ---
 
-## Open Questions
+## Open Questions (RESOLVED)
+
+> All three are addressed in-code with safe defaults; each has a live-integration
+> verification step documented in 13-VALIDATION.md §Manual-Only Verifications.
+> (Q1: `.get("statistics",{}).get("episodeFileCount",0)` safe default; Q2: bracketed
+> `seriesid[]` with unbracketed fallback comment; Q3: no backfill — counts reflect
+> future translations only.)
 
 1. **Sonarr `statistics.episodeFileCount` live presence**
    - What we know: Present in Sonarr v3 API spec; referenced in CONTEXT.md D-04
