@@ -36,7 +36,7 @@ config = context.config
 import sys as _sys
 _running_under_pytest = "_pytest" in _sys.modules
 if config.config_file_name is not None and not _running_under_pytest:
-    fileConfig(config.config_file_name)
+    fileConfig(config.config_file_name, disable_existing_loggers=False)
 del _sys, _running_under_pytest
 
 target_metadata = Base.metadata
