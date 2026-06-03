@@ -17,6 +17,19 @@ the right pronoun pair (anh/em, chị/em, ông/bà...) for every relationship, t
 names and terms from episode 1 to the finale — produced automatically. If everything else fails,
 this consistency must work.
 
+## Current Milestone: v1.1 UI v2 — shadcn dashboard
+
+**Goal:** Rebuild the web dashboard on a shadcn/ui + jolly-ui foundation (purple theme, dark mode), restructure navigation Bazarr-style, split the Library into separate Movies and Series sections, and add a season-grouped Series episode view with Audio + per-episode subtitle-language badges. Big-bang rollout — every page migrated to the new component system before shipping. The core translation engine is unchanged; this is a UI/UX and library-browsing milestone.
+
+**Target features:**
+- shadcn/ui + jolly-ui component foundation on Tailwind v3.4 (`cn()` util, `components.json`, CVA, shared purple CSS-variable theme migrated from the current custom hex tokens; dark mode default)
+- New full-height sidebar shell + nav (Series / Movies / Queue / History / Bible / Settings) with right-side badges and a left purple active-accent bar; `/library` splits into `/series` + `/movies`, `/` → `/series`
+- Series list + season-grouped episode **detail table** (collapsible Accordion; columns: translate action · Episode # · Title · Audio badge · subtitle-language badges; amber = source/foreign langs, purple = Vietnamese, `VI:HI` when `SubtitleEntry.hi=True`)
+- Movies page (reuses `GET /api/library` movies); reskin of Queue / History / Settings / Bible List / Bible Editor (reskin-in-place, NOT rebuilt) / JobLogs
+- Backend: enrich `GET /api/library/series/{id}/episodes` to source episodes from Sonarr episode records grouped by season, each carrying `audio_languages` (Sonarr mediaInfo), `subtitles[]` (Bazarr `BazarrInventoryItem`, incl. `hi`), and Trezarr status — Bazarr fail-soft (keep always-HTTP-200 partial-results)
+
+**Key context:** Stack is React 19 / react-router-dom 6.30 / Tailwind v3.4.19 / Vite 7 / lucide-react. A Bazarr client already exists (`trezarr/arr/bazarr.py`: `BazarrClient.fetch_episodes` + per-episode `BazarrInventoryItem` keyed by `sonarrEpisodeId`). Keep the new `SPAStaticFiles` deep-link fallback (quick task 260603-mc3). The final phase must rebuild the multi-stage Docker image and run a live smoke test on :6868. Component foundation, Bazarr-authoritative episode data, and big-bang rollout are locked decisions from brainstorming.
+
 ## Requirements
 
 ### Validated
@@ -124,6 +137,8 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
+*Last updated: 2026-06-03 — started milestone v1.1 (UI v2: shadcn dashboard). v1.0 shipped all 40 requirements through Phase 10; v1.1 continues phase numbering at 11.*
+
 *Last updated: 2026-06-02 after Phase 10 (Source Selection & Per-Series Overrides) — the final v1.0 phase; all 40 v1 requirements now landed.*
 
 *Phase 10 (Source Selection & Per-Series Overrides, 2026-06-02): the source-selection thesis shipped. **INTG-02:** a read-only httpx `BazarrClient` reads each item's existing source-language subtitle inventory (api-key redacted from errors; never re-downloads), as a **soft dependency** — disabled/unreachable degrades to the filesystem glob (D-104). **SRC-01/SRC-02:** `original_language` is captured from Sonarr/Radarr; a `source_selection` package (`rank.py`/`resolve.py`) ranks the full available-language set by a relational-richness tier (zh/ko/ja/th > … > en) biased so the **native original-language source always wins** (a native Spanish source is never displaced by a Korean fansub) — the chosen source is wired end-to-end through `process_one_item` → `select_source_for_item` → `translate_file`; the D-110 richer-source upgrade re-translates without clobbering a foreign `.vi` sidecar (D-26/27/28 intact via `LedgerSQLA.check_by_output_path`). **SVC-05:** nullable `source_lang_override`/`model_override` columns (Alembic 0003) + `PATCH /api/bible/series/{id}/overrides` (D-39 boundary) + a fifth "Overrides" tab in the Bible editor; register override reuses the Phase-8 lock; the model override threads per-call into the single `LLMClient` (D-06 semaphore unchanged). Discuss→plan→execute ran via the `--auto` chain (research + UI-SPEC + pattern-map + plan-check w/ one revision round). Post-execution code review caught that the override+selection chain was initially **dead code in the production path** (computed but not passed to `translate_file`) plus a Bazarr key-leak risk — 5 findings fixed (CR-01/02, WR-01/02/03) and re-verified. 335 tests GREEN; goal-backward verification 10/10 (4/4 success criteria); human UAT 13/13 approved. Known INFO follow-up: `set_series_overrides` logs `old_value=None` in its `bible_event` audit row (audit-trail completeness only — WR-04).*

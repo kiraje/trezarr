@@ -1,17 +1,16 @@
 ---
 gsd_state_version: 1.0
-milestone: v1.0
-milestone_name: milestone
-status: in_progress
-stopped_at: All 10 phases complete — Phase 9 human visual UAT PASSED (2026-06-03, 12/12). Milestone 10/10; pending /gsd-verify-work + /gsd-complete-milestone.
-last_updated: 2026-06-03T00:00:00Z
+milestone: v1.1
+milestone_name: "UI v2: shadcn dashboard"
+status: planning
+last_updated: "2026-06-03T10:03:08.166Z"
 last_activity: 2026-06-03
 progress:
-  total_phases: 10
-  completed_phases: 10
-  total_plans: 44
-  completed_plans: 44
-  percent: 100
+  total_phases: 0
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
+  percent: 0
 ---
 
 # Project State
@@ -25,14 +24,10 @@ See: .planning/PROJECT.md (updated 2026-05-31)
 
 ## Current Position
 
-Phase: 9 (COMPLETE — last phase)
-Plan: 09-06 — human visual UAT (final gate) PASSED
-Status: All 10 phases complete. Phase 9 visual UAT signed off 2026-06-03 (12/12); ASS via JASSUB/libass-wasm + VTT via native browser <track>. Milestone 10/10 — pending /gsd-verify-work + /gsd-complete-milestone.
-Last activity: 2026-06-03 - Completed quick task 260603-mc3: selective SPA fallback for deep-link refresh
-
-Progress: [██████████] 100%
-
-> NOTE (2026-06-03): Phase 9 closed cleanly — the human visual UAT (truth #12) passed, so 09-VERIFICATION.md is now `status: complete` (12/12) and 09-06-SUMMARY.md records the sign-off. The earlier 2026-06-02 `milestone_complete` write was a concurrent-write artifact and was correctly reverted; the milestone is now *legitimately* 10/10 with every phase verified. Next: run /gsd-verify-work, then /gsd-complete-milestone to archive v1.0.
+Phase: Not started (defining requirements)
+Plan: —
+Status: Defining requirements
+Last activity: 2026-06-03 — Milestone v1.1 started
 
 ## Performance Metrics
 
