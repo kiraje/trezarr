@@ -1,15 +1,12 @@
 /**
  * JobTable — parameterized table for Queue and History views.
  *
- * Conforms to 07-UI-SPEC.md §JobTable:
- * - <table> element with <thead> + <tbody> (semantic HTML, accessible)
- * - th scope="col" on all column headers
- * - 40px row height, alternating stripe (bg-stripe on odd rows)
- * - Row hover: bg-[#22263a]
- * - StatusBadge in status column
- * - Truncate file paths with title tooltip
- * - Icon-only action buttons with aria-label
- * - Empty state: full-width centered block
+ * Reskinned Phase 15 plan 02: CSS-var tokens + shadcn Button for log icon.
+ * - text-muted-foreground for headers / secondary text
+ * - text-foreground for primary cell text
+ * - border-border for table dividers
+ * - hover:bg-accent/50 for row hover (no zebra stripes)
+ * - Button variant="ghost" size="icon" for log icon button
  */
 import { useNavigate } from "react-router-dom";
 import { FileText } from "lucide-react";
@@ -17,6 +14,7 @@ import StatusBadge from "./StatusBadge";
 import type { JobStatus } from "./StatusBadge";
 import type { ToastState } from "./Toast";
 import RetryButton from "./RetryButton";
+import { Button } from "./ui/button";
 
 // ── Shared helpers ────────────────────────────────────────────────────────────
 
@@ -78,7 +76,7 @@ export function QueueTable({ jobs, lastUpdated }: QueueTableProps) {
   return (
     <div>
       {lastUpdated && (
-        <p className="text-xs text-[#6b7280] mb-2">
+        <p className="text-xs text-muted-foreground mb-2">
           Last updated {lastUpdated}
         </p>
       )}
@@ -91,45 +89,45 @@ export function QueueTable({ jobs, lastUpdated }: QueueTableProps) {
         <div className="overflow-x-auto">
           <table className="w-full border-collapse">
             <thead>
-              <tr className="h-10 border-b border-[#2d3148]">
+              <tr className="h-10 border-b border-border">
                 <th
                   scope="col"
-                  className="text-left text-xs font-normal text-[#6b7280] uppercase px-3"
+                  className="text-left text-xs font-normal text-muted-foreground uppercase px-3"
                   style={{ width: "25%" }}
                 >
                   Series
                 </th>
                 <th
                   scope="col"
-                  className="text-left text-xs font-normal text-[#6b7280] uppercase px-3"
+                  className="text-left text-xs font-normal text-muted-foreground uppercase px-3"
                   style={{ width: "10%" }}
                 >
                   Episode
                 </th>
                 <th
                   scope="col"
-                  className="text-left text-xs font-normal text-[#6b7280] uppercase px-3"
+                  className="text-left text-xs font-normal text-muted-foreground uppercase px-3"
                   style={{ width: "35%" }}
                 >
                   File
                 </th>
                 <th
                   scope="col"
-                  className="text-left text-xs font-normal text-[#6b7280] uppercase px-3"
+                  className="text-left text-xs font-normal text-muted-foreground uppercase px-3"
                   style={{ width: "12%" }}
                 >
                   Status
                 </th>
                 <th
                   scope="col"
-                  className="text-left text-xs font-normal text-[#6b7280] uppercase px-3"
+                  className="text-left text-xs font-normal text-muted-foreground uppercase px-3"
                   style={{ width: "10%" }}
                 >
                   Queued
                 </th>
                 <th
                   scope="col"
-                  className="text-right text-xs font-normal text-[#6b7280] uppercase px-3"
+                  className="text-right text-xs font-normal text-muted-foreground uppercase px-3"
                   style={{ width: "8%" }}
                 >
                   Logs
@@ -137,26 +135,23 @@ export function QueueTable({ jobs, lastUpdated }: QueueTableProps) {
               </tr>
             </thead>
             <tbody>
-              {jobs.map((job, idx) => (
+              {jobs.map((job) => (
                 <tr
                   key={job.id}
-                  className="h-10 hover:bg-[#22263a] transition-colors duration-150"
-                  style={{
-                    backgroundColor: idx % 2 === 1 ? "#1e2130" : undefined,
-                  }}
+                  className="h-10 border-b border-border hover:bg-accent/50 transition-colors duration-150"
                 >
                   <td
-                    className="px-3 text-sm text-[#e2e6f0] max-w-0 truncate"
+                    className="px-3 text-sm text-foreground max-w-0 truncate"
                     title={job.source_path}
                   >
                     {/* Use series_id as series identifier until series title is available */}
                     {job.series_id != null ? `Series ${job.series_id}` : "—"}
                   </td>
-                  <td className="px-3 text-sm text-[#e2e6f0]">
+                  <td className="px-3 text-sm text-foreground">
                     {job.episode_key || "—"}
                   </td>
                   <td
-                    className="px-3 text-sm text-[#e2e6f0] max-w-0 truncate"
+                    className="px-3 text-sm text-foreground max-w-0 truncate"
                     title={job.source_path}
                   >
                     {basename(job.source_path)}
@@ -164,18 +159,19 @@ export function QueueTable({ jobs, lastUpdated }: QueueTableProps) {
                   <td className="px-3">
                     <StatusBadge status={job.status as JobStatus} />
                   </td>
-                  <td className="px-3 text-sm text-[#6b7280]">
+                  <td className="px-3 text-sm text-muted-foreground">
                     {relativeTime(job.enqueued_at)}
                   </td>
                   <td className="px-3 text-right">
-                    <button
+                    <Button
                       type="button"
+                      variant="ghost"
+                      size="icon"
                       onClick={() => navigate(`/jobs/${job.id}/logs`)}
-                      className="inline-flex items-center justify-center w-8 h-8 text-[#6b7280] hover:text-accent focus:outline-[#3b82f6] focus:outline-2 focus:outline-offset-2 rounded transition-colors duration-150"
                       aria-label={`View logs for job ${job.id}`}
                     >
                       <FileText size={15} aria-hidden="true" />
-                    </button>
+                    </Button>
                   </td>
                 </tr>
               ))}
@@ -207,7 +203,7 @@ export function HistoryTable({
   return (
     <div>
       {lastUpdated && (
-        <p className="text-xs text-[#6b7280] mb-2">
+        <p className="text-xs text-muted-foreground mb-2">
           Last updated {lastUpdated}
         </p>
       )}
@@ -220,52 +216,52 @@ export function HistoryTable({
         <div className="overflow-x-auto">
           <table className="w-full border-collapse">
             <thead>
-              <tr className="h-10 border-b border-[#2d3148]">
+              <tr className="h-10 border-b border-border">
                 <th
                   scope="col"
-                  className="text-left text-xs font-normal text-[#6b7280] uppercase px-3"
+                  className="text-left text-xs font-normal text-muted-foreground uppercase px-3"
                   style={{ width: "22%" }}
                 >
                   Series
                 </th>
                 <th
                   scope="col"
-                  className="text-left text-xs font-normal text-[#6b7280] uppercase px-3"
+                  className="text-left text-xs font-normal text-muted-foreground uppercase px-3"
                   style={{ width: "10%" }}
                 >
                   Episode
                 </th>
                 <th
                   scope="col"
-                  className="text-left text-xs font-normal text-[#6b7280] uppercase px-3"
+                  className="text-left text-xs font-normal text-muted-foreground uppercase px-3"
                   style={{ width: "28%" }}
                 >
                   File
                 </th>
                 <th
                   scope="col"
-                  className="text-left text-xs font-normal text-[#6b7280] uppercase px-3"
+                  className="text-left text-xs font-normal text-muted-foreground uppercase px-3"
                   style={{ width: "12%" }}
                 >
                   Status
                 </th>
                 <th
                   scope="col"
-                  className="text-left text-xs font-normal text-[#6b7280] uppercase px-3"
+                  className="text-left text-xs font-normal text-muted-foreground uppercase px-3"
                   style={{ width: "10%" }}
                 >
                   Finished
                 </th>
                 <th
                   scope="col"
-                  className="text-left text-xs font-normal text-[#6b7280] uppercase px-3"
+                  className="text-left text-xs font-normal text-muted-foreground uppercase px-3"
                   style={{ width: "10%" }}
                 >
                   Reason
                 </th>
                 <th
                   scope="col"
-                  className="text-right text-xs font-normal text-[#6b7280] uppercase px-3"
+                  className="text-right text-xs font-normal text-muted-foreground uppercase px-3"
                   style={{ width: "8%" }}
                 >
                   Actions
@@ -273,25 +269,22 @@ export function HistoryTable({
               </tr>
             </thead>
             <tbody>
-              {jobs.map((job, idx) => (
+              {jobs.map((job) => (
                 <tr
                   key={job.id}
-                  className="h-10 hover:bg-[#22263a] transition-colors duration-150"
-                  style={{
-                    backgroundColor: idx % 2 === 1 ? "#1e2130" : undefined,
-                  }}
+                  className="h-10 border-b border-border hover:bg-accent/50 transition-colors duration-150"
                 >
                   <td
-                    className="px-3 text-sm text-[#e2e6f0] max-w-0 truncate"
+                    className="px-3 text-sm text-foreground max-w-0 truncate"
                     title={job.source_path}
                   >
                     {job.series_id != null ? `Series ${job.series_id}` : "—"}
                   </td>
-                  <td className="px-3 text-sm text-[#e2e6f0]">
+                  <td className="px-3 text-sm text-foreground">
                     {job.episode_key || "—"}
                   </td>
                   <td
-                    className="px-3 text-sm text-[#e2e6f0] max-w-0 truncate"
+                    className="px-3 text-sm text-foreground max-w-0 truncate"
                     title={job.source_path}
                   >
                     {basename(job.source_path)}
@@ -300,7 +293,7 @@ export function HistoryTable({
                     <StatusBadge status={job.status as JobStatus} />
                   </td>
                   <td
-                    className="px-3 text-sm text-[#6b7280]"
+                    className="px-3 text-sm text-muted-foreground"
                     title={
                       job.finished_at
                         ? new Date(job.finished_at).toLocaleString()
@@ -310,7 +303,7 @@ export function HistoryTable({
                     {relativeTime(job.finished_at)}
                   </td>
                   <td
-                    className="px-3 text-xs text-[#6b7280] max-w-0 truncate"
+                    className="px-3 text-xs text-muted-foreground max-w-0 truncate"
                     title={job.error_reason ?? undefined}
                   >
                     {job.error_reason
@@ -327,14 +320,15 @@ export function HistoryTable({
                           onRetried={onRefresh}
                         />
                       )}
-                      <button
+                      <Button
                         type="button"
+                        variant="ghost"
+                        size="icon"
                         onClick={() => navigate(`/jobs/${job.id}/logs`)}
-                        className="inline-flex items-center justify-center w-8 h-8 text-[#6b7280] hover:text-accent focus:outline-[#3b82f6] focus:outline-2 focus:outline-offset-2 rounded transition-colors duration-150"
                         aria-label={`View logs for job ${job.id}`}
                       >
                         <FileText size={15} aria-hidden="true" />
-                      </button>
+                      </Button>
                     </div>
                   </td>
                 </tr>
@@ -352,8 +346,8 @@ export function HistoryTable({
 function EmptyState({ heading, body }: { heading: string; body: string }) {
   return (
     <div className="flex flex-col items-center justify-center py-12 text-center">
-      <p className="text-sm font-semibold text-[#6b7280]">{heading}</p>
-      <p className="text-xs text-[#6b7280] mt-1 max-w-md">{body}</p>
+      <p className="text-sm font-semibold text-muted-foreground">{heading}</p>
+      <p className="text-xs text-muted-foreground mt-1 max-w-md">{body}</p>
     </div>
   );
 }
