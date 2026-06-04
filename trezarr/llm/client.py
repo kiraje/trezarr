@@ -173,7 +173,14 @@ class LLMClient:
                 # mode == "auto": SDK error → fall through to Tier 2
 
         # ── Tier 2: json_object ────────────────────────────────────────────────
-        if mode in ("auto", "json_object"):
+        # Guard: json_object only applies to structured/JSON callers.  When
+        # response_model is None the caller uses the delimited-text protocol
+        # (parse_numbered_response) and must receive plain text from Tier 3.
+        # Sending response_format={"type":"json_object"} for a non-JSON prompt
+        # causes deepseek (and other endpoints) to reject with a 400 "Prompt
+        # must contain the word 'json'" — breaking every translate/self-review
+        # call in pinned json_object mode (the deployed configuration).
+        if mode in ("auto", "json_object") and response_model is not None:
             try:
                 resp = await self._client.chat.completions.create(
                     model=effective_model,

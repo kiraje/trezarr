@@ -62,15 +62,29 @@ async def test_tier1_parse_carries_disabled_thinking(settings_factory):
 
 
 async def test_tier2_json_object_carries_disabled_thinking(settings_factory):
-    """Tier 2 (.create, json_object) forwards the disabled-thinking extra_body."""
+    """Tier 2 (.create, json_object) forwards the disabled-thinking extra_body.
+
+    Must use response_model!=None so the Tier 2 guard lets the call through.
+    (Tier 2 is only reached when response_model is not None in json_object mode —
+    this is the fix for the deepseek 400 bug where response_model=None calls
+    incorrectly received response_format=json_object.)
+    """
+    from pydantic import BaseModel
+
     from trezarr.llm.client import LLMClient
+
+    class Dummy(BaseModel):
+        v: str
 
     client = LLMClient(
         settings_factory(llm_structured_output_mode="json_object", llm_disable_thinking=True)
     )
     mock_create = _ok_create()
     with patch.object(client._client.chat.completions, "create", mock_create):
-        await client.call([{"role": "user", "content": "x"}])
+        await client.call(
+            [{"role": "user", "content": "return json with v field"}],
+            response_model=Dummy,
+        )
 
     kwargs = mock_create.call_args.kwargs
     assert kwargs.get("extra_body") == DISABLED_BODY["extra_body"]
