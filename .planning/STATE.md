@@ -194,7 +194,7 @@ Items acknowledged and carried forward from previous milestone close:
 
 | Category | Item | Status | Deferred At |
 |----------|------|--------|-------------|
-| *(none)* | | | |
+| v1.0 core-value | Translation core value (pronoun consistency) UNVERIFIED — needs a frontier model; deepseek-v4-pro insufficient. See v1.0-TRANSLATION-VERIFICATION-FINDINGS.md (5 pipeline bugs; 4 fixed, #5 orphan-sentinel open) | open | 2026-06-04 |
 
 ## Session Continuity
 
