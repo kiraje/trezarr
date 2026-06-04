@@ -382,12 +382,21 @@ async def _merge_inferred_in_session(
         fresh_snapshot = dto_cls.model_validate(fresh_row, from_attributes=True)
         return fresh_snapshot, []
 
+    # BibleEvent.series_id is the FK to the series. A Character/term_dictionary/
+    # address_map row carries that FK as `.series_id`, but a Series row IS the
+    # series — its PK is `.id` and it has no `.series_id` attribute. Resolving
+    # the wrong one made a series-level merge (register / source_lang / model
+    # overrides) raise 'Series' object has no attribute 'series_id' AFTER the
+    # setattr below, rolling back the whole transaction so the register never
+    # persisted (v1.0 live finding, 260604-gza).
+    event_series_id = fresh_row.id if entity_type == "series" else fresh_row.series_id
+
     # Apply changes and construct BibleEvent rows
     events: list[BibleEvent] = []
     for field, old_val, new_val in changes:
         setattr(fresh_row, field, new_val)
         evt = BibleEvent(
-            series_id=fresh_row.series_id,
+            series_id=event_series_id,
             episode_key=episode_key,
             entity_type=entity_type,
             entity_id=fresh_row.id,

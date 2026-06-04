@@ -691,3 +691,51 @@ async def test_clearing_field_to_none_via_merge(session_factory):
     assert evt.field == "role"
     assert evt.old_value == "detective"
     assert evt.new_value is None
+
+
+async def test_series_register_merge_persists_and_emits_event(session_factory):
+    """merge_inferred on a SeriesDTO must persist register + emit a bible_event.
+
+    Regression for the store.py series-entity bug (260604-gza live finding): a
+    Series row's PK is `.id`, not `.series_id`, so BibleEvent(series_id=fresh_row.series_id)
+    raised 'Series' object has no attribute 'series_id' AFTER setattr — rolling back
+    the transaction so the register never persisted. Only character/term merges were
+    tested before, so the series path slipped through.
+    """
+    from trezarr.bible.models import BibleEvent, Series  # noqa: PLC0415
+    from trezarr.bible.store import get_or_create_series  # noqa: PLC0415
+
+    series_dto = await get_or_create_series(
+        session_factory,
+        arr_kind="sonarr",
+        arr_instance="default",
+        arr_series_id=99,
+        arr_metadata_snapshot={"title": "Reg Test"},
+    )
+
+    # Must NOT raise; must persist + emit exactly one event.
+    updated, events = await merge_inferred(
+        session_factory, series_dto, {"register": "formal"},
+        episode_key="S01E01", source="inference",
+    )
+
+    assert len(events) == 1, "a register change must emit one bible_event"
+    assert events[0].entity_type == "series"
+    assert events[0].field == "register"
+    assert events[0].new_value == "formal"
+
+    # DB confirmation: the register actually persisted (the bug rolled it back),
+    # and the audit row's series_id is the Series PK (the fix).
+    async with session_factory() as session:
+        row = await session.get(Series, series_dto.id)
+        assert row.register == "formal", "register must persist (was rolled back by the bug)"
+        evt_series_id = await session.scalar(
+            select(BibleEvent.series_id).where(
+                BibleEvent.series_id == series_dto.id,
+                BibleEvent.entity_type == "series",
+                BibleEvent.field == "register",
+            )
+        )
+        assert evt_series_id == series_dto.id, (
+            "bible_event.series_id must equal the Series PK, not raise AttributeError"
+        )
