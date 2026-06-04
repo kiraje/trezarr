@@ -38,7 +38,7 @@ See: .planning/PROJECT.md (updated 2026-06-04)
 
 Milestone: none active (v1.0 + v1.1 archived)
 Status: milestone_archived
-Last activity: 2026-06-04 — quick 260604-gza: live-verified orphan-sentinel fix (thesis confirmed: harness was the blocker; deepseek produced output); found critical Pass-4 corruption bug
+Last activity: 2026-06-04 — quick 260604-ikq: name/term glossary injection fixed the Stage-2 consistency BLOCKERs; re-audit CONSISTENT/regression-free (protagonist 11→1 rendering). Core value single-episode-verified on deepseek; cross-episode (Phase-06) remains
 
 ```
 v1.0 MVP                  [##########] SHIPPED 2026-06-03 (phases 1-10, tag v1.0)
@@ -201,6 +201,7 @@ None yet.
 | 260604-hb4 | Orphan-sentinel (v1.0 #5): strip hallucinated <<TN>> instead of quarantining (codec-fidelity-guardian PASS) + v1.1 warnings W1 (LIVE-badge services flag), W2 (series_title string\|null), W3 (Bazarr seriesid[]→plain fallback; arr-integration-specialist PASS). 387 passed; frontend build green | 2026-06-04 | 730f062, 30d6b6b | [260604-hb4-fix-orphan-sentinel-and-v11-warnings](./quick/260604-hb4-fix-orphan-sentinel-and-v11-warnings/) |
 | 260604-gza | LIVE-VERIFY orphan-sentinel fix on S01E06 (.zh, series 62): rebuilt+redeployed on the fixed code, re-ran via manual translate → job **done, NO quarantine**, `.vi.srt` written (374/374 cue parity, **57 orphan sentinels stripped, 0 integrity failures**). **Thesis CONFIRMED: the harness — not deepseek — was the blocker** (deepseek DID drive the pipeline to output). NEW critical bug found: Pass-4 self-review corrupts ~28% of cues (leaks `(source: …)` scaffolding into output; gate misses it). Verify-only, no code commit. | 2026-06-04 | (verify-only) | [260604-gza-live-verify-sentinel-fix-s01e06](./quick/260604-gza-live-verify-sentinel-fix-s01e06/) |
 | 260604-hp2 | Fix the 2 bugs gza found: [CRITICAL] Pass-4 scaffolding-leak → splice guard (REVIEW_SCAFFOLD_RE, drop+keep clean Pass-3) + gate Check 8 (pipeline-reliability PASS); series-entity register merge AttributeError that silently dropped register/overrides (Series PK vs .series_id; bible-consistency PASS). 390 passed | 2026-06-04 | d651c5a, 562bad9 | [260604-hp2-fix-pass4-leak-and-register-merge](./quick/260604-hp2-fix-pass4-leak-and-register-merge/) |
+| 260604-ikq | Stage-2 name/term consistency fix: inject Bible glossary (Term Dictionary + character names) into Pass-3 + Pass-4 prompts (Pass-3 was glossary-blind; Pass-4 term filter never matched Latin keys vs Chinese source). Re-ran S01E06 + re-audited (vietnamese-linguist→finding-verifier, **11 VERIFIED / 0 REFUTED**): **CONSISTENT, regression-free** — protagonist 11 renderings→1 (`Daisy` ×56), Sakura/Rōsei/Tōchō snapped to canonical `Anh Đào`/`Lang Tinh`/`Đông Điệp`, 0 raw CJK; pronoun layer unaffected. BLOCKER 2→0, HIGH 3→0. TDD, 394 passed. | 2026-06-04 | 8ad599d | [260604-ikq-term-name-injection-fix](./quick/260604-ikq-term-name-injection-fix/) |
 
 ## Deferred Items
 
@@ -208,16 +209,20 @@ Items acknowledged at the v1.0 + v1.1 milestone close (2026-06-04). The v1.1 UI 
 clean (8/8 live smoke test); all open debt is v1.0-phase human-verify / core-value debt that
 requires a real run against a capable model.
 
-All known code-level bugs are now FIXED (260604-gfl + hb4 + hp2, 2026-06-04). The live
-re-verification (260604-gza) surfaced two more — the [CRITICAL] Pass-4 scaffolding-leak and a
-silent register-merge AttributeError — and both were fixed in 260604-hp2 (d651c5a, 562bad9),
-specialist-reviewed PASS. The remaining open items are all NON-code: a Stage-2 pronoun/term
-consistency audit on a clean run, cross-episode verification, human/live UAT, and one deferred
-hardening item. A frontier model is now an OPTIONAL quality lift, not a prerequisite.
+All known code-level bugs are now FIXED (260604-gfl + hb4 + hp2 + ikq, 2026-06-04). The live
+re-verification (260604-gza) surfaced two — Pass-4 scaffolding-leak + register-merge — fixed in
+hp2; the Stage-2 consistency audit then surfaced name/term drift, fixed in **ikq** (glossary
+injection) and re-audited **CONSISTENT, regression-free** (11 VERIFIED/0 REFUTED). So the core
+value is now single-episode-verified on deepseek (no frontier model). Remaining open items are
+NON-code: **cross-episode** consistency (needs ≥2 episode sources), a recommended bible-completeness
+follow-up (lock the protagonist's name), minor residuals, human/live UAT, and one hardening item.
 
 | Category | Item | Status | Deferred At |
 |----------|------|--------|-------------|
-| v1.0 core-value | Translation core value (pronoun consistency) PARTIALLY VERIFIED (260604-gza): with the orphan-sentinel fix, **deepseek-v4-pro DID drive the pipeline end-to-end to a written `.vi.srt`** (no quarantine) — disproving "needs a frontier model". The harness blockers are now ALL fixed (orphan-sentinel + Pass-4 scaffolding-leak + register merge), so a CLEAN output is achievable on deepseek. Remaining = NON-code verification: (a) re-run on the now-clean pipeline, (b) pronoun/term-consistency audit of the output ([[vietnamese-relational-correctness]]), (c) cross-episode (≥2 eps). A frontier model is OPTIONAL (quality lift), not a prerequisite. | **open (Stage-2 quality audit — non-code)** | 2026-06-04 |
+| v1.0 core-value | Translation core value **LARGELY VERIFIED on deepseek (single episode)** — 260604-gza + ikq. Clean `.vi.srt` produced (no frontier model); Stage-2 audit (linguist→verifier, 11 VERIFIED/0 REFUTED) = **CONSISTENT, regression-free**: pronoun/relational moat correct AND name/term moat fixed via glossary injection (ikq) — protagonist 11 renderings→1, named chars snapped to canonical. Remaining = **cross-episode consistency (Phase-06, needs ≥2 episode sources on the volume)** + the minor residuals/follow-ups below. The "needs a frontier model" claim is disproven; a frontier model is OPTIONAL quality lift. | **open (cross-episode only — single-episode verified)** | 2026-06-04 |
+| v1.0 bible-completeness | [recommended follow-up, from ikq audit] **Protagonist name not lock-enforced** — no `term_dictionary` row for 雏菊/Daisy; consistency is prompt-driven (glossary), not contract-locked → recurrence risk on a new episode/model. Have `bible/analyze.py` persist (+ ideally lock) a name-rendering term per character. | open (follow-up) | 2026-06-04 |
+| v1.0 Phase-6 reliability | [observation, from ikq audit] **Address-map mutates across re-runs of the SAME episode** — Daisy→Rōsei `em/anh`→`tôi/ngài`, Daisy→Sakura `chị/em`→`tôi/em`, etc., backed by 3 `relationship_event` rows created during the runs. Output is consistent with the *current* Bible, but whether these inferred relationship-events are CORRECT (vs spurious deepseek inferences flipping a lover-pair to formal) needs a Phase-6 audit. | open (needs ≥2 episodes) | 2026-06-04 |
+| v1.0 residuals | [from ikq re-audit, all minor] cue-240 Sakura→Daisy register slip (`em` vs deferential `ngài`); cue-79 lone `Daisy-sama` romaji; surname 姬鹰 `Himeotaka`/`Himehawk` split; `「」` corner-bracket punctuation carried from source. | open (LOW/MEDIUM polish) | 2026-06-04 |
 | v1.0 code bug | [CRITICAL] Pass-4 self-review scaffolding-leak corruption (`(source: 不要) Đừng` in ~28% of cues) | ✅ **FIXED d651c5a** (260604-hp2) — `_review_batch` splice guard (REVIEW_SCAFFOLD_RE) + gate Check 8 | — |
 | v1.0 code bug | Series-entity register/override merge raised `'Series' object has no attribute 'series_id'` → silently dropped register (gza finding #2) | ✅ **FIXED 562bad9** (260604-hp2) — Series uses `.id` for BibleEvent.series_id | — |
 | v1.0 UAT (Phase 04) | 1 open HUMAN-UAT scenario; VERIFICATION human_needed (live *arr smoke, asyncio teardown) | open (needs real run) | 2026-06-04 |
