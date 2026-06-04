@@ -11,7 +11,7 @@
  *
  * Analog: Settings.tsx (load-on-mount, Card sections, Sonner toast)
  */
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, Fragment } from "react";
 import { useParams, Link } from "react-router-dom";
 import { Clock, Pencil, Trash2 } from "lucide-react";
 import { toast } from "sonner";
@@ -535,9 +535,8 @@ function CharactersSection({
             </thead>
             <tbody>
               {bible.characters.map((char) => (
-                <>
+                <Fragment key={char.id}>
                   <tr
-                    key={char.id}
                     className="h-10 border-b border-border"
                   >
                     {editingId === char.id ? (
@@ -708,7 +707,7 @@ function CharactersSection({
                       </td>
                     </tr>
                   )}
-                </>
+                </Fragment>
               ))}
             </tbody>
           </table>
@@ -831,23 +830,30 @@ function AddressMapSection({
     );
   };
 
+  // Private helper — patches the pair in state but does NOT fire a toast or
+  // reset editingId. Used by handleConfirmReciprocal so the composite operation
+  // can issue a single success/failure toast after both writes settle.
+  async function savePairCore(pair: AddressMapDTO, lock?: boolean): Promise<void> {
+    const updated = await patchAddressMapPair(seriesId, pair.id, {
+      self_term: editFields.selfTerm,
+      address_term: editFields.addressTerm,
+      ...(lock !== undefined ? { lock } : {}),
+    });
+    setBible((prev) => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        address_map: prev.address_map.map((p) =>
+          p.id === pair.id ? updated : p,
+        ),
+      };
+    });
+  }
+
   async function savePair(pair: AddressMapDTO, lock?: boolean) {
     setSaving(true);
     try {
-      const updated = await patchAddressMapPair(seriesId, pair.id, {
-        self_term: editFields.selfTerm,
-        address_term: editFields.addressTerm,
-        ...(lock !== undefined ? { lock } : {}),
-      });
-      setBible((prev) => {
-        if (!prev) return prev;
-        return {
-          ...prev,
-          address_map: prev.address_map.map((p) =>
-            p.id === pair.id ? updated : p,
-          ),
-        };
-      });
+      await savePairCore(pair, lock);
       setEditingId(null);
       setShowReciprocalForId(null);
       showToast({ message: "Pair saved.", variant: "success" });
@@ -865,16 +871,18 @@ function AddressMapSection({
     pair: AddressMapDTO,
     rec: { self_term: string; address_term: string },
   ) {
-    // Save forward pair first
-    await savePair(pair);
-    // Find reverse pair
-    const reversePair = bible.address_map.find(
-      (p) =>
-        p.speaker_character_id === pair.addressee_character_id &&
-        p.addressee_character_id === pair.speaker_character_id,
-    );
-    if (reversePair) {
-      try {
+    setSaving(true);
+    try {
+      // Save forward pair (no toast, no row close yet)
+      await savePairCore(pair);
+
+      // Save or create the reverse pair
+      const reversePair = bible.address_map.find(
+        (p) =>
+          p.speaker_character_id === pair.addressee_character_id &&
+          p.addressee_character_id === pair.speaker_character_id,
+      );
+      if (reversePair) {
         const updated = await patchAddressMapPair(seriesId, reversePair.id, {
           self_term: rec.self_term,
           address_term: rec.address_term,
@@ -888,17 +896,7 @@ function AddressMapSection({
             ),
           };
         });
-      } catch {
-        showToast({
-          message:
-            "Pair saved, but reverse pair update failed. Set it manually.",
-          variant: "error",
-        });
-        return;
-      }
-    } else {
-      // Try to create reverse pair
-      try {
+      } else {
         const newPair = await addAddressMapPair(seriesId, {
           speaker_character_id: pair.addressee_character_id,
           addressee_character_id: pair.speaker_character_id,
@@ -912,15 +910,21 @@ function AddressMapSection({
             address_map: [...prev.address_map, newPair],
           };
         });
-      } catch {
-        showToast({
-          message:
-            "Pair saved, but reverse pair update failed. Set it manually.",
-          variant: "error",
-        });
       }
+
+      // Both writes succeeded — close the row and show a single success toast
+      setEditingId(null);
+      setShowReciprocalForId(null);
+      showToast({ message: "Both pairs saved.", variant: "success" });
+    } catch {
+      // Either write failed — do NOT close the row, do NOT show success
+      showToast({
+        message: "Failed to save changes. Check the server logs.",
+        variant: "error",
+      });
+    } finally {
+      setSaving(false);
     }
-    setShowReciprocalForId(null);
   }
 
   async function handleDeletePair(pairId: number) {
@@ -1122,9 +1126,8 @@ function AddressMapSection({
                     : null;
 
                 return (
-                  <>
+                  <Fragment key={pair.id}>
                     <tr
-                      key={pair.id}
                       className="h-10 border-b border-border"
                     >
                       {isEditing ? (
@@ -1386,7 +1389,7 @@ function AddressMapSection({
                         </td>
                       </tr>
                     )}
-                  </>
+                  </Fragment>
                 );
               })}
             </tbody>
@@ -1706,9 +1709,8 @@ function TermsSection({
                 const isEditing = editingId === term.id;
 
                 return (
-                  <>
+                  <Fragment key={term.id}>
                     <tr
-                      key={term.id}
                       className="h-10 border-b border-border"
                     >
                       {isEditing ? (
@@ -1893,7 +1895,7 @@ function TermsSection({
                         </td>
                       </tr>
                     )}
-                  </>
+                  </Fragment>
                 );
               })}
             </tbody>
