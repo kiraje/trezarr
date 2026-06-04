@@ -5,7 +5,7 @@ milestone_name: "(none — v1.0 + v1.1 archived)"
 status: milestone_archived
 stopped_at: v1.0 + v1.1 archived; git tags v1.0/v1.1 created; awaiting /gsd-new-milestone
 last_updated: 2026-06-04
-last_activity: 2026-06-04 -- v1.0 + v1.1 milestones closed and archived
+last_activity: 2026-06-04 -- Completed quick task 260604-gfl: P0 daemon crash-loop fix
 shipped_milestones:
   - version: v1.0
     name: "MVP"
@@ -197,6 +197,7 @@ None yet.
 | 260603-laj | Fix CJK character-name resolution in Series Bible analyze (dual-key name_to_id on original_script_name + prompt tightening + CJK regression test) | 2026-06-03 | 66a47ba | [260603-laj-fix-cjk-character-name-resolution-in-ser](./quick/260603-laj-fix-cjk-character-name-resolution-in-ser/) |
 | 260603-l8g | Library browser UI + manual single-item translate (arr-themed) + auto_translate poller safety gate; Bug 2 (alembic loggers) + Bug 3 (auto-enable *_enabled on save) | 2026-06-03 | 2fd17c7 | [260603-l8g-library-browser-manual-translate](./quick/260603-l8g-library-browser-manual-translate/) |
 | 260603-mc3 | Selective SPA fallback — deep-link/refresh on client-side routes (/library, /bible/:id) now serves index.html instead of {"detail":"Not Found"}; missing assets + unknown /api paths still 404 honestly | 2026-06-03 | cbf1ad3 | [260603-mc3-selective-spa-fallback-for-deep-link-ref](./quick/260603-mc3-selective-spa-fallback-for-deep-link-ref/) |
+| 260604-gfl | Fix P0 daemon startup crash-loop: reconcile_in_progress_from_ledger MultipleResultsFound (scalar_one_or_none→.first()) + enqueue_job auto-retry cap (job_max_auto_attempts, poll/webhook only) to bound duplicate Job rows. Specialist-reviewed PASS; full suite green | 2026-06-04 | 44543d0 | [260604-gfl-fix-daemon-crash-loop-job-dedup](./quick/260604-gfl-fix-daemon-crash-loop-job-dedup/) |
 
 ## Deferred Items
 
@@ -213,6 +214,7 @@ requires a real run against a capable model.
 | v1.0 UAT (Phase 07) | 12 open HUMAN-UAT scenarios (SPA browser conformance, real docker build/run + PUID/PGID ownership, live *arr webhook); VERIFICATION human_needed | open | 2026-06-04 |
 | v1.0 UAT (Phase 09) | 09-06 not executed — human visual UAT of positioned-sign rendering (.vi.ass {\pos}/{\an8}, .vi.vtt position:/line:) in mpv/Jellyfin; FMT-04 success criterion 3 unconfirmed | open | 2026-06-04 |
 | v1.1 tech debt | W1 LIVE-badge false-positive for a disabled *arr service (cosmetic); W2 series_title type drift (runtime-safe); W3 Bazarr seriesid[] confirmed-by-smoke not code-guaranteed (fail-soft). See milestones/v1.1-MILESTONE-AUDIT.md | open | 2026-06-04 |
+| reliability hardening | (from 260604-gfl review HIGH-1) enqueue_job auto-retry cap is a SOFT ceiling — no UNIQUE on Job.source_path, so concurrent poll+webhook sweeps can race the count and both insert. Post-fix this only bloats the table slightly (no longer crashes reconcile). Hard bound needs a partial-unique index + dedup-first Alembic migration (live DB already holds duplicate rows) | open | 2026-06-04 |
 
 > The 5 "missing" quick-tasks flagged by `audit-open` are false positives — all completed and
 > committed (754292f, 09890e3, 2fd17c7, 66a47ba, cbf1ad3); the scanner just couldn't parse a
