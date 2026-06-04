@@ -38,7 +38,7 @@ See: .planning/PROJECT.md (updated 2026-06-04)
 
 Milestone: none active (v1.0 + v1.1 archived)
 Status: milestone_archived
-Last activity: 2026-06-04 — milestones closed
+Last activity: 2026-06-04 — quick 260604-gza: live-verified orphan-sentinel fix (thesis confirmed: harness was the blocker; deepseek produced output); found critical Pass-4 corruption bug
 
 ```
 v1.0 MVP                  [##########] SHIPPED 2026-06-03 (phases 1-10, tag v1.0)
@@ -199,6 +199,7 @@ None yet.
 | 260603-mc3 | Selective SPA fallback — deep-link/refresh on client-side routes (/library, /bible/:id) now serves index.html instead of {"detail":"Not Found"}; missing assets + unknown /api paths still 404 honestly | 2026-06-03 | cbf1ad3 | [260603-mc3-selective-spa-fallback-for-deep-link-ref](./quick/260603-mc3-selective-spa-fallback-for-deep-link-ref/) |
 | 260604-gfl | Fix P0 daemon startup crash-loop: reconcile_in_progress_from_ledger MultipleResultsFound (scalar_one_or_none→.first()) + enqueue_job auto-retry cap (job_max_auto_attempts, poll/webhook only) to bound duplicate Job rows. Specialist-reviewed PASS; full suite green | 2026-06-04 | 44543d0 | [260604-gfl-fix-daemon-crash-loop-job-dedup](./quick/260604-gfl-fix-daemon-crash-loop-job-dedup/) |
 | 260604-hb4 | Orphan-sentinel (v1.0 #5): strip hallucinated <<TN>> instead of quarantining (codec-fidelity-guardian PASS) + v1.1 warnings W1 (LIVE-badge services flag), W2 (series_title string\|null), W3 (Bazarr seriesid[]→plain fallback; arr-integration-specialist PASS). 387 passed; frontend build green | 2026-06-04 | 730f062, 30d6b6b | [260604-hb4-fix-orphan-sentinel-and-v11-warnings](./quick/260604-hb4-fix-orphan-sentinel-and-v11-warnings/) |
+| 260604-gza | LIVE-VERIFY orphan-sentinel fix on S01E06 (.zh, series 62): rebuilt+redeployed on the fixed code, re-ran via manual translate → job **done, NO quarantine**, `.vi.srt` written (374/374 cue parity, **57 orphan sentinels stripped, 0 integrity failures**). **Thesis CONFIRMED: the harness — not deepseek — was the blocker** (deepseek DID drive the pipeline to output). NEW critical bug found: Pass-4 self-review corrupts ~28% of cues (leaks `(source: …)` scaffolding into output; gate misses it). Verify-only, no code commit. | 2026-06-04 | (verify-only) | [260604-gza-live-verify-sentinel-fix-s01e06](./quick/260604-gza-live-verify-sentinel-fix-s01e06/) |
 
 ## Deferred Items
 
@@ -206,13 +207,16 @@ Items acknowledged at the v1.0 + v1.1 milestone close (2026-06-04). The v1.1 UI 
 clean (8/8 live smoke test); all open debt is v1.0-phase human-verify / core-value debt that
 requires a real run against a capable model.
 
-All code-level bugs from the live test + v1.1 audit are now FIXED (2026-06-04, quick tasks
-260604-gfl + 260604-hb4). The items below that remain OPEN are NOT code bugs — they need a
-frontier-model endpoint + real/human runs, or are deferred hardening.
+The live-test + v1.1-audit bugs were fixed via 260604-gfl + 260604-hb4. HOWEVER, the live
+re-verification (260604-gza, 2026-06-04) surfaced ONE NEW critical code bug — **Pass-4
+self-review corrupts ~28% of output cues** (see the "v1.0 code bug (NEW)" row below). So the
+"all code bugs fixed" status no longer holds; that fix is the immediate next step. The other
+open items remain non-code (frontier-model quality lift now OPTIONAL, human runs, hardening).
 
 | Category | Item | Status | Deferred At |
 |----------|------|--------|-------------|
-| v1.0 core-value | Translation core value (pronoun consistency) UNVERIFIED end-to-end — needs a **frontier model**; deepseek-v4-pro insufficient. All 5 pipeline bugs are now fixed (orphan-sentinel #5 → strip, 730f062), so the pipeline runs clean; the remaining gap is purely the model + a real-series run + cross-episode audit. See milestones/v1.0-TRANSLATION-VERIFICATION-FINDINGS.md | **open (needs frontier model + run — not code)** | 2026-06-04 |
+| v1.0 core-value | Translation core value (pronoun consistency) PARTIALLY VERIFIED (260604-gza, 2026-06-04): with the orphan-sentinel fix, **deepseek-v4-pro DID drive the pipeline end-to-end to a written `.vi.srt`** (no quarantine) — so the "needs a frontier model / model is insufficient" conclusion was confounded by harness brittleness, now disproven. Remaining gap is NOT "purely the model": (a) Pass-4 corruption must be fixed to get a clean output, then (b) a pronoun/term-consistency audit of the clean output, and (c) cross-episode (≥2 eps). A frontier model is now OPTIONAL (quality lift), not a prerequisite. See 260604-gza-SUMMARY.md | **open (Stage-2 quality audit; harness fix first)** | 2026-06-04 |
+| v1.0 code bug (NEW) | **[CRITICAL] Pass-4 self-review corrupts ~28% of cues** — `build_review_prompt` uses `[N] (source: <orig>) <vi>`; deepseek echoes the scaffolding back, `parse_numbered_response` accepts it, `_splice_review_corrections` overwrites good Pass-3 VI with the scaffolded line; the 7-check gate misses it (trailing VI still clears the diacritic ratio). Output literally contains `(source: 不要) Đừng`. Fix: defensive splice (reject corrections containing scaffolding/raw-CJK/over-divergent) + gate check for `(source:` literal. Stopgap: `enable_self_review=false` (D-60) → clean Pass-3 output. Corrects the "all code bugs fixed" claim below. | **open (critical code bug)** | 2026-06-04 |
 | v1.0 UAT (Phase 04) | 1 open HUMAN-UAT scenario; VERIFICATION human_needed (live *arr smoke, asyncio teardown) | open (needs real run) | 2026-06-04 |
 | v1.0 UAT (Phase 05) | 2 open HUMAN-UAT scenarios (real-episode pronoun quality; enable_pass1/enable_attribution toggle in prod); VERIFICATION human_needed | open (needs frontier-model run) | 2026-06-04 |
 | v1.0 UAT (Phase 06) | 2 open HUMAN-UAT scenarios (real-episode relationship-shift pronoun change; self-review quality on real output); VERIFICATION human_needed | open (needs frontier-model run, ≥2 episodes) | 2026-06-04 |
