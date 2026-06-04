@@ -9,8 +9,8 @@ Covers:
   D-12 — <i>word</i> tag is extracted; cleaned text contains <<T0>> not <i>
   D-12 — Multiple different tags each get a unique <<TN>> key
   D-12 — Extracted text reinserted returns original with integrity_ok=True
-  D-12 — Sentinel removed from translated text → integrity_ok=False
-  D-12 — Orphan sentinel remaining in text → integrity_ok=False
+  D-12 — Sentinel removed from translated text (lost real tag) → integrity_ok=False
+  v1.0 #5 — Hallucinated orphan sentinel (no map entry) → stripped, integrity_ok=True
   D-12 — ASS override tag {\an8} is extracted correctly
 """
 import pytest
@@ -123,21 +123,76 @@ def test_reinsert_missing_sentinel():
     )
 
 
-def test_reinsert_orphan_sentinel():
-    """If an orphan <<T0>> remains in text after reinsert, integrity_ok=False (D-12).
+def test_reinsert_strips_hallucinated_orphan():
+    """A <<TN>> with no sentinel_map entry is a hallucination — strip it, integrity_ok=True.
 
-    Simulates a sentinel that was never matched to a tag in the map.
+    v1.0 verification finding #5: the weak model invents <<TN>> tokens into
+    untagged cues (empty sentinel_map). The old contract quarantined the whole
+    file; the new contract strips the never-extracted token and keeps the
+    otherwise-valid translation. A LOST REAL sentinel still fails
+    (test_reinsert_missing_sentinel).
     """
     sentinel_mod = pytest.importorskip("trezarr.translate.sentinel")
     reinsert_sentinels = sentinel_mod.reinsert_sentinels
 
-    # Pass an empty sentinel_map so <<T0>> in the text is an orphan
-    text_with_orphan = "Hello <<T0>> world"
-    _, integrity_ok = reinsert_sentinels(text_with_orphan, {})
+    # Empty sentinel_map so <<T0>> in the text is an orphan (never extracted).
+    restored, integrity_ok = reinsert_sentinels("Hello <<T0>> world", {})
 
-    assert integrity_ok is False, (
-        "Expected integrity_ok=False when orphan <<TN>> sentinel remains in text"
+    assert integrity_ok is True, "hallucinated orphan must be stripped, not quarantined"
+    assert "<<T0>>" not in restored, "orphan token must be removed"
+    assert restored == "Hello world", f"expected clean strip, got {restored!r}"
+
+
+def test_reinsert_strips_orphan_but_keeps_real_sentinel():
+    """A real sentinel is restored AND a co-occurring hallucinated orphan is stripped."""
+    sentinel_mod = pytest.importorskip("trezarr.translate.sentinel")
+    reinsert_sentinels = sentinel_mod.reinsert_sentinels
+
+    # Map has one real tag (<<T0>> -> <i>); the model also hallucinated <<T1>>.
+    restored, integrity_ok = reinsert_sentinels("<<T0>>Xin chào<<T1>>", {"<<T0>>": "<i>"})
+
+    assert integrity_ok is True
+    assert restored == "<i>Xin chào", f"real tag kept, orphan stripped; got {restored!r}"
+
+
+def test_reinsert_lost_real_sentinel_still_fails():
+    """A sentinel present in the map but missing from text is a LOST REAL tag → integrity_ok=False.
+
+    This must NOT be confused with the orphan-strip path — a dropped real tag
+    must still quarantine (we cannot emit output missing a real formatting tag).
+    """
+    sentinel_mod = pytest.importorskip("trezarr.translate.sentinel")
+    reinsert_sentinels = sentinel_mod.reinsert_sentinels
+
+    # Map expects <<T0>> but the translated text dropped it entirely.
+    _, integrity_ok = reinsert_sentinels("Xin chào", {"<<T0>>": "<i>"})
+
+    assert integrity_ok is False, "a lost real sentinel must still fail (not be silently dropped)"
+
+
+def test_reinsert_never_deletes_source_lookalike_token():
+    """A literal <<TN>>-shaped token in SOURCE text must NOT be silently deleted.
+
+    Codec-fidelity BLOCKER guard: TAG_RE's `<[^>]+>` arm over-matches a literal
+    "<<T1000>>" out of source, so it becomes a sentinel_map VALUE. The orphan
+    strip must run BEFORE reinsertion (on raw model output, by key set-difference)
+    so it never deletes that legitimately-restored content. Acceptable outcomes:
+    round-trip (ideal) or quarantine (safe) — NEVER strip to "Designation approaching".
+    """
+    sentinel_mod = pytest.importorskip("trezarr.translate.sentinel")
+    extract_sentinels = sentinel_mod.extract_sentinels
+    reinsert_sentinels = sentinel_mod.reinsert_sentinels
+
+    original = "Designation <<T1000>> approaching"
+    cleaned, smap = extract_sentinels(original)
+    # Model returns the cleaned text verbatim (preserves the extracted token).
+    restored, integrity_ok = reinsert_sentinels(cleaned, smap)
+
+    assert restored != "Designation approaching", (
+        "source content must never be silently stripped (the BLOCKER regression)"
     )
+    if integrity_ok:
+        assert "1000" in restored, "if it passes, the source token content must survive"
 
 
 def test_extract_ass_override_tag():

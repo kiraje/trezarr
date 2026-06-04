@@ -316,19 +316,18 @@ async def _review_batch(
         # Step 4: Parse numbered-line response
         corrected_texts = parse_numbered_response(str(raw_response), len(review_batch.cues))
 
-        # Step 5: Reinsert sentinels — return None on integrity failure (D-59)
+        # Step 5: Reinsert sentinels — return None on integrity failure (D-59).
+        # Always call (even for an empty smap) so a hallucinated orphan <<TN>> is
+        # stripped; integrity_ok is False only on a LOST REAL sentinel.
         restored: list[str] = []
         for text, smap in zip(corrected_texts, sentinel_maps):
-            if smap:
-                restored_text, integrity_ok = reinsert_sentinels(text, smap)
-                if not integrity_ok:
-                    logger.warning(
-                        "Pass 4: sentinel integrity failure — using pre-review output for this batch (D-59)"
-                    )
-                    return None  # fallback, not exception
-                restored.append(restored_text)
-            else:
-                restored.append(text)
+            restored_text, integrity_ok = reinsert_sentinels(text, smap)
+            if not integrity_ok:
+                logger.warning(
+                    "Pass 4: sentinel integrity failure — using pre-review output for this batch (D-59)"
+                )
+                return None  # fallback, not exception
+            restored.append(restored_text)
 
         return restored
 
@@ -473,19 +472,20 @@ def _make_translate_batch_fn(settings: "TrezarrSettings"):
         # Step 4: Parse the numbered-line response
         translated_texts = parse_numbered_response(str(raw_response), len(batch.cues))
 
-        # Step 5: Reinsert sentinels
+        # Step 5: Reinsert sentinels. Always call (even for an empty smap) so a
+        # hallucinated orphan <<TN>> in an untagged cue is stripped rather than
+        # surviving to the document gate → whole-file quarantine (v1.0 #5).
+        # integrity_ok is False only on a LOST REAL sentinel — that still
+        # quarantines (we must not emit output missing a real tag).
         restored: list[str] = []
         for i, (text, smap) in enumerate(zip(translated_texts, sentinel_maps)):
-            if smap:
-                restored_text, integrity_ok = reinsert_sentinels(text, smap)
-                if not integrity_ok:
-                    raise BatchValidationError(
-                        f"Sentinel integrity failure for cue {i}: "
-                        f"sentinel(s) not found or orphan tokens remain in {restored_text!r}"
-                    )
-                restored.append(restored_text)
-            else:
-                restored.append(text)
+            restored_text, integrity_ok = reinsert_sentinels(text, smap)
+            if not integrity_ok:
+                raise BatchValidationError(
+                    f"Sentinel integrity failure for cue {i}: "
+                    f"real sentinel(s) lost from {restored_text!r}"
+                )
+            restored.append(restored_text)
 
         return restored
 

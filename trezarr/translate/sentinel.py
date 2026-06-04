@@ -9,7 +9,10 @@ Design decisions honoured:
 """
 from __future__ import annotations
 
+import logging
 import re
+
+logger = logging.getLogger(__name__)
 
 # Matches SRT inline tags (<i>, <b>, <u>, <font color="…">, </i> etc.),
 # inline ASS override tags ({\anX}, {\pos(x,y)}, {\an8} etc.), and
@@ -63,17 +66,52 @@ def reinsert_sentinels(text: str, sentinel_map: dict[str, str]) -> tuple[str, bo
                       returned by extract_sentinels().
 
     Returns:
-        (restored_text, integrity_ok).  integrity_ok is True only when every
-        sentinel in sentinel_map was found exactly once in text AND no orphan
-        <<T\\d+>> tokens remain after reinsertion.  Returns (text, False) at the
-        first integrity violation — the caller is responsible for retry/quarantine.
+        (restored_text, integrity_ok).
+
+        integrity_ok is False ONLY when a *real* sentinel is lost — a key present
+        in sentinel_map that is not found in text (the model dropped a tag we must
+        restore). The caller retries/quarantines, since silently emitting output
+        missing a real formatting tag would corrupt fidelity.
+
+        *Orphan* tokens — `<<T\\d+>>` still present after every map key is
+        reinserted — are NOT in sentinel_map and so were never extracted by us:
+        the (weak) model hallucinated them into an untagged or already-restored
+        cue (v1.0 verification finding #5). These are STRIPPED and integrity_ok
+        stays True, rather than quarantining an otherwise-valid translation. A
+        lost real sentinel still fails above, so this only ever removes
+        never-extracted tokens.
     """
+    # Strip hallucinated orphans FIRST, on the raw model output, BEFORE reinserting
+    # any tag values. Orphans = <<TN>> tokens the model produced that are not keys
+    # we extracted. Doing this before reinsertion is critical: a real tag VALUE can
+    # itself contain a <<TN>>-shaped substring (TAG_RE over-matches a literal
+    # "<<T1000>>" out of source text), and stripping after reinsertion would delete
+    # that legitimately-restored content. We strip only the specific orphan tokens,
+    # never the bare <<T\d+>> pattern (the real keys are still present here).
+    orphans = {m for m in re.findall(r'<<T\d+>>', text)} - set(sentinel_map)
+    if orphans:
+        orphan_re = re.compile(
+            r'\s*(?:' + '|'.join(re.escape(o) for o in sorted(orphans)) + r')\s*'
+        )
+        cleaned = orphan_re.sub(' ', text).strip()
+        logger.warning(
+            "reinsert_sentinels: stripped hallucinated orphan sentinel(s) %s "
+            "(not in sentinel_map): %r -> %r",
+            sorted(orphans), text, cleaned,
+        )
+        text = cleaned
+
     for key, original in sentinel_map.items():
         if key not in text:
-            return text, False  # sentinel was lost — gate will catch this
+            return text, False  # real sentinel was lost — gate will catch this
         text = text.replace(key, original, 1)
 
-    # No orphan sentinels must remain after all map entries are reinserted
+    # Any residual <<TN>> after reinserting every real key means either a
+    # duplicated real key (model emitted a real token more than once) or a tag
+    # VALUE that itself contains a <<TN>>-shaped substring (TAG_RE over-match of
+    # literal source). Either way the document gate's Check 6 (identical
+    # <<T\d+>> pattern) would quarantine the file, so fail here too — honest and
+    # in agreement with the gate, and it lets the batch-level retry try again.
     if re.search(r'<<T\d+>>', text):
         return text, False
 
