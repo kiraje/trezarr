@@ -19,13 +19,13 @@ Decimal phases appear between their surrounding integers in numeric order.
 
 - [x] **Phase 1: Codec & LLM Client Foundation** - Parse/serialize SRT and call the user's OpenAI-compatible endpoint as isolated, testable leaves (completed 2026-05-31)
 - [x] **Phase 2: Mechanical Translation Core + Validation Gate** - Single-pass translate a parsed file and write a valid sidecar, gated by a hard pre-write quality check (completed 2026-05-31)
-- [ ] **Phase 3: \*arr Integration + First Vertical Slice** - Discover a real episode via Sonarr/Radarr and translate it to a sidecar end-to-end (de-risk path-mapping & permissions)
+- [x] **Phase 3: \*arr Integration + First Vertical Slice** - Discover a real episode via Sonarr/Radarr and translate it to a sidecar end-to-end (de-risk path-mapping & permissions)
 - [x] **Phase 4: Series Bible Store & Schema** - Persistent, versioned, lockable per-series consistency store carried forward across episodes (completed 2026-06-01)
 - [x] **Phase 5: Three-Pass Pronoun Engine** - Analyze → translate with the directed Address Map + speaker/addressee attribution to apply correct Vietnamese pronouns (completed 2026-06-01)
 - [x] **Phase 6: Relationship Evolution + Self-Review** - Track relationship shifts across episodes and run an LLM self-critique pass before finalizing (completed 2026-06-01)
 - [x] **Phase 7: Web UI & Service Hardening** - Dockerized long-running service with config/queue/history/logs/retry, monitoring, and crash-safe resumption (completed 2026-06-01)
 - [x] **Phase 8: Editable Series Bible UI** - View, correct, and lock Bible fields so human overrides propagate forward (the override valve) (completed 2026-06-02)
-- [ ] **Phase 9: Multi-Format — ASS/SSA + VTT** - Translate ASS/SSA and VTT while preserving styling, tags, positioning, and cue settings byte-identical
+- [x] **Phase 9: Multi-Format — ASS/SSA + VTT** - Translate ASS/SSA and VTT while preserving styling, tags, positioning, and cue settings byte-identical
 - [x] **Phase 10: Source Selection & Per-Series Overrides** - Read Bazarr's subtitle inventory and pick the source language whose relational system best serves Vietnamese; per-series tuning (completed 2026-06-02)
 
 ### v1.1 Phases (UI v2: shadcn dashboard)
@@ -493,17 +493,17 @@ v1.1 phases execute in numeric order: 11 → 12 → 13 (parallel-eligible with 1
 |-------|----------------|--------|-----------|
 | 1. Codec & LLM Client Foundation | 3/3 | Complete | 2026-05-31 |
 | 2. Mechanical Translation Core + Validation Gate | 3/3 | Complete | 2026-05-31 |
-| 3. \*arr Integration + First Vertical Slice | 5/5 | Awaiting Verification | |
+| 3. \*arr Integration + First Vertical Slice | 5/5 | Complete    | |
 | 4. Series Bible Store & Schema | 4/4 | Complete | 2026-06-01 |
 | 5. Three-Pass Pronoun Engine | 6/6 | Complete | 2026-06-01 |
 | 6. Relationship Evolution + Self-Review | 3/3 | Complete | 2026-06-01 |
 | 7. Web UI & Service Hardening | 6/6 | Complete | 2026-06-01 |
 | 8. Editable Series Bible UI | 4/4 | Complete | 2026-06-02 |
-| 9. Multi-Format — ASS/SSA + VTT | 5/6 | In Progress | |
+| 9. Multi-Format — ASS/SSA + VTT | 6/6 | Complete    | |
 | 10. Source Selection & Per-Series Overrides | 4/4 | Complete | 2026-06-02 |
 | 11. shadcn Foundation & Purple Theme | 3/3 | Complete    | 2026-06-03 |
 | 12. App Shell + Route Restructure | 1/1 | Complete    | 2026-06-03 |
 | 13. Backend Episodes Enrichment | 3/3 | Complete    | 2026-06-03 |
 | 14. New Library Pages + Nav Badge Wiring | 6/6 | Complete    | 2026-06-03 |
 | 15. Reskin Existing Pages | 7/7 | Complete    | 2026-06-03 |
-| 16. Docker Rebuild + Live Smoke Test | 0/0 | Complete    | 2026-06-04 |
+| 16. Docker Rebuild + Live Smoke Test | 1/1 | Complete    | 2026-06-04 |

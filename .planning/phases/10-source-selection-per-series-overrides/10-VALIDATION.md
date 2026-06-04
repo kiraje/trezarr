@@ -54,7 +54,7 @@ created: 2026-06-02
 | 10-02-02 | 02 | 1 | SRC-01, SRC-02, SVC-05, D-110 | T-10-03 | Bazarr paths traversal-guarded; D-26/D-27/D-28 non-regression | unit | `uv run pytest tests/discover/test_gap.py -v` | ✅ green | ✅ green |
 | 10-03-01 | 03 | 1 | SVC-05, D-111, D-114, D-39 | T-10-06, T-10-07 | 2-letter code validation; store returns DTO not ORM row | unit | `uv run pytest tests/db/test_migration_0003.py tests/web/test_bible_api.py -v` | ✅ green | ✅ green |
 | 10-03-02 | 03 | 1 | SVC-05, D-113, D-112, D-06 | T-10-08 | Single semaphore; BazarrClient degrades on error | unit | `uv run pytest tests/llm/test_client.py -v` | ✅ green | ✅ green |
-| 10-04-01 | 04 | 2 | SVC-05, D-114 | T-10-10, T-10-11, T-10-12 | Save Overrides excludes register; client validates 2-letter codes | build | `cd frontend && npm run build` | ❌ pre-impl | ⬜ pending |
+| 10-04-01 | 04 | 2 | SVC-05, D-114 | T-10-10, T-10-11, T-10-12 | Save Overrides excludes register; client validates 2-letter codes | build | `cd frontend && npm run build` | ✅ green | ✅ green |
 | 10-04-02 | 04 | 2 | SVC-05 | — | End-to-end Overrides tab functional | human-UAT | (checkpoint in 10-04) | N/A | ⬜ pending |
 
 *Status: ⬜ pending · ✅ green · ❌ red · ⚠️ flaky*

@@ -1,9 +1,16 @@
 ---
 phase: 09-multi-format-ass-ssa-vtt
-verified: 2026-06-02T00:00:00Z
-status: human_needed
-score: 11/12 must-haves verified
+verified: 2026-06-03T00:00:00Z
+status: complete
+score: 12/12 must-haves verified
 overrides_applied: 0
+human_uat:
+  signed_off: 2026-06-03
+  signed_off_by: user (dustin)
+  result: PASS
+  renderer: "ASS via JASSUB (libass-wasm, same engine as Jellyfin web client); VTT via native browser <track>"
+  pre_uat_gate: "uv run pytest tests/ -> 346 passed, 1 skipped, 3 xfailed, 43 xpassed"
+  notes: "Both visual checks passed: positioned ASS sign ({\\an8}{\\pos(960,50)}) renders top-center identical to source with Vietnamese dialogue; all 3 VTT cues (position:/line:/size:) render in source position. Byte-identity of all positioning tags / cue settings was machine-confirmed via diff before the render. Record: 09-06-SUMMARY.md."
 re_verification:
   previous_status: gaps_found
   previous_score: 8/12
@@ -59,9 +66,9 @@ Test suite: `uv run pytest -q` → **343 passed**, 1 skipped, 3 xfailed, 43 xpas
 | 9 | write_ass/write_vtt always write UTF-8 output regardless of source encoding (D-19 / FMT-05) | ✓ VERIFIED (was FAILED) | **CR-01 RESOLVED.** ass.py L220 `result.encode(doc.encoding)`; vtt.py L223 `result.encode(doc.encoding)`. read_* set SubDoc.encoding == envelope.encoding (ass.py L135/138, L176/179; vtt.py L168/171) so round-trip byte-identity is unchanged. write_vi_sidecar builds doc_out with encoding='utf-8' (write.py L144). New test tests/codec/test_encoding_contract.py pins the non-latin-1 case (would raise UnicodeEncodeError pre-fix). |
 | 10 | Karaoke lines round-trip without corruption when Pass-4 self-review is enabled (FMT-03) | ✓ VERIFIED (was FAILED) | **CR-02 RESOLVED.** engine.py L1012-1043: the splice now flattens corrections to one entry per non-raw cue, then walks ALL of translated_doc.lines and advances `_corr_iter` ONLY on non-raw cues (raw cues are appended verbatim before any `next()`). This exactly mirrors batch_subdoc's raw-skip contract (batching.py L146-147). The old `corrected_lines[offset+i]` misalignment is gone. Envelope is carried forward (engine.py L1052). Verified by inspection — see WARNING re: missing dedicated regression test. |
 | 11 | ASS/VTT source subtitles are discoverable in production — operator sees eligible items | ✓ VERIFIED (was FAILED) | **WR-01 RESOLVED.** scan.py L43 `_SOURCE_SUFFIXES=("srt","ass","ssa","vtt")`; L51-54 `_LANG_SIDECAR_RE` joins all suffixes; L57-68 `_glob_source_sidecars()` globs all four; used by BOTH find_source_sub (L190) AND select_source_for_item (L469). New tests test_find_source_sub_discovers_non_srt_sources (parametrized ass/ssa/vtt), test_find_source_sub_priority_across_extensions, test_lang_sidecar_re_matches_all_supported_suffixes. |
-| 12 | Signs render in their original screen position in a media player (FMT-04 SC-3 / FMT-02 SC-3) | ? UNCERTAIN (human needed) | Byte-identity of positioning tags is verified by codec structure and round-trip tests. Player rendering requires human visual UAT (09-06-PLAN.md task 2; UAT artifacts staged at /tmp/trezarr_uat/). NOT marked verified — only a real player confirms the renderer interprets the preserved tags. |
+| 12 | Signs render in their original screen position in a media player (FMT-04 SC-3 / FMT-02 SC-3) | ✓ VERIFIED (human UAT) | **PASSED 2026-06-03.** ASS sign rendered via JASSUB (libass-wasm) appears top-center identical to source with Vietnamese dialogue; all 3 VTT cues render in source position. Byte-identity of positioning tags / cue settings machine-confirmed via diff pre-render. See 09-06-SUMMARY.md + frontmatter `human_uat`. |
 
-**Score:** 11/12 truths verified (all 3 code blockers RESOLVED; 1 UNCERTAIN pending human visual UAT)
+**Score:** 12/12 truths verified (all 3 code blockers RESOLVED; human visual UAT PASSED 2026-06-03)
 
 ---
 
@@ -201,7 +208,7 @@ No `TBD`/`FIXME`/`XXX` debt markers in phase-modified files. The previously-flag
 
 ## Verdict
 
-**Status: human_needed**
+**Status: complete** (was `human_needed` — human visual UAT PASSED 2026-06-03; see frontmatter `human_uat` + 09-06-SUMMARY.md)
 
 All three code blockers from the initial verification are **RESOLVED** in commit 4052d90, confirmed against the current code on `main` (not the SUMMARY narrative):
 
