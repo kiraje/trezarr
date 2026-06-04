@@ -53,7 +53,7 @@ async def get_series_list(request: Request) -> JSONResponse:
     from trezarr.bible.store import load_all_series  # noqa: PLC0415
 
     dtos = await load_all_series(session_factory)
-    return JSONResponse([d.model_dump(by_alias=True) for d in dtos])
+    return JSONResponse([d.model_dump(mode="json", by_alias=True) for d in dtos])
 
 
 # ── GET /api/series/{id}/bible ────────────────────────────────────────────────────
@@ -71,7 +71,7 @@ async def get_series_bible(series_id: int, request: Request) -> JSONResponse:
         dto = await load_series_bible(session_factory, series_id)
     except Exception:
         raise HTTPException(status_code=404, detail="Series not found")
-    return JSONResponse(dto.model_dump(by_alias=True))
+    return JSONResponse(dto.model_dump(mode="json", by_alias=True))
 
 
 # ── PATCH /api/series/{id}/characters/{cid} ───────────────────────────────────────
@@ -115,7 +115,7 @@ async def patch_character(
             )
         except ValueError as exc:
             raise HTTPException(status_code=404, detail=str(exc))
-    return JSONResponse(dto.model_dump(by_alias=True))
+    return JSONResponse(dto.model_dump(mode="json", by_alias=True))
 
 
 # ── POST /api/series/{id}/characters ──────────────────────────────────────────────
@@ -146,7 +146,7 @@ async def add_character(series_id: int, request: Request) -> JSONResponse:
             role=body.get("role"),
             source=body.get("source", "import"),
         )
-    return JSONResponse(dto.model_dump(by_alias=True))
+    return JSONResponse(dto.model_dump(mode="json", by_alias=True))
 
 
 # ── PATCH /api/series/{id}/address-map/{aid} ─────────────────────────────────────
@@ -198,7 +198,7 @@ async def patch_address_map(
             )
         except ValueError as exc:
             raise HTTPException(status_code=404, detail=str(exc))
-    return JSONResponse(dto.model_dump(by_alias=True))
+    return JSONResponse(dto.model_dump(mode="json", by_alias=True))
 
 
 # ── POST /api/series/{id}/address-map ────────────────────────────────────────────
@@ -225,7 +225,7 @@ async def add_address_pair(series_id: int, request: Request) -> JSONResponse:
         episode_key=body.get("episode_key"),
         source=body.get("source", "import"),
     )
-    return JSONResponse(dto.model_dump(by_alias=True))
+    return JSONResponse(dto.model_dump(mode="json", by_alias=True))
 
 
 # ── DELETE /api/series/{id}/address-map/{aid} ────────────────────────────────────
@@ -294,7 +294,7 @@ async def patch_term(series_id: int, term_id: int, request: Request) -> JSONResp
             )
         except ValueError as exc:
             raise HTTPException(status_code=404, detail=str(exc))
-    return JSONResponse(dto.model_dump(by_alias=True))
+    return JSONResponse(dto.model_dump(mode="json", by_alias=True))
 
 
 # ── POST /api/series/{id}/terms ───────────────────────────────────────────────────
@@ -319,7 +319,7 @@ async def add_term(series_id: int, request: Request) -> JSONResponse:
         episode_key=body.get("episode_key"),
         source=body.get("source", "import"),
     )
-    return JSONResponse(dto.model_dump(by_alias=True))
+    return JSONResponse(dto.model_dump(mode="json", by_alias=True))
 
 
 # ── DELETE /api/series/{id}/terms/{tid} ───────────────────────────────────────────
@@ -381,7 +381,7 @@ async def patch_series_register(series_id: int, request: Request) -> JSONRespons
             )
         except ValueError as exc:
             raise HTTPException(status_code=404, detail=str(exc))
-    return JSONResponse(dto.model_dump(by_alias=True))
+    return JSONResponse(dto.model_dump(mode="json", by_alias=True))
 
 
 # ── PATCH /api/bible/series/{id}/overrides ────────────────────────────────────────
@@ -440,7 +440,7 @@ async def patch_series_overrides(
             )
         except ValueError as exc:
             raise HTTPException(status_code=404, detail=str(exc))
-    return JSONResponse(dto.model_dump(by_alias=True))
+    return JSONResponse(dto.model_dump(mode="json", by_alias=True))
 
 
 # ── GET /api/series/{id}/bible/{entity_type}/{entity_id}/history ─────────────────
@@ -476,8 +476,11 @@ async def get_field_history(
     )
     # mode="json" serializes datetime (created_at) to an ISO string; a plain
     # model_dump() leaves a datetime object that Starlette's JSONResponse cannot
-    # encode → 500. BibleEventDTO is the only DTO with a datetime field, which is
-    # why only the history endpoint hit this. (Phase-8 live-UAT finding.)
+    # encode → 500. INVARIANT (this module): every DTO handed to JSONResponse uses
+    # mode="json". Multiple DTOs now carry datetime — BibleEventDTO.created_at AND
+    # RelationshipEventDTO.created_at, the latter nested in SeriesBibleDTO via the
+    # Phase-6 additive relationship_events list, which is what regressed the
+    # /bible aggregate endpoint after the original Phase-8 fix landed here.
     return JSONResponse([d.model_dump(mode="json", by_alias=True) for d in dtos])
 
 

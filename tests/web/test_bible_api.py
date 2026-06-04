@@ -127,6 +127,52 @@ async def test_field_history_dto_is_json_serializable():
         json.dumps([dto.model_dump(by_alias=True)])
 
 
+async def test_series_bible_dto_is_json_serializable():
+    """Regression (this fix): GET /api/series/{id}/bible must serialize the aggregate
+    SeriesBibleDTO via model_dump(mode="json"). The Phase-6 additive relationship_events
+    list nests RelationshipEventDTO, whose created_at is a datetime — so once a series has
+    a relationship event, the aggregate transitively carries a datetime that Starlette's
+    JSONResponse cannot encode -> 500. This is the SAME class as the history-endpoint bug
+    (test_field_history_dto_is_json_serializable) on a different, previously-untested surface:
+    the existing get_series_bible tests only hit the no-DB 404 path, never a populated DTO.
+    """
+    import json  # noqa: PLC0415
+    from datetime import datetime, timezone  # noqa: PLC0415
+
+    import pytest  # noqa: PLC0415
+
+    from trezarr.bible.dto import RelationshipEventDTO, SeriesBibleDTO  # noqa: PLC0415
+
+    dto = SeriesBibleDTO(
+        id=1,
+        arr_kind="sonarr",
+        arr_instance="default",
+        arr_series_id=42,
+        register_value="neutral",
+        relationship_events=[
+            RelationshipEventDTO(
+                id=7,
+                series_id=1,
+                character_a_id=1,
+                character_b_id=2,
+                episode_marker="S01E06",
+                created_at=datetime(2026, 6, 4, 12, 0, tzinfo=timezone.utc),
+            )
+        ],
+    )
+
+    # What the route now does — must be JSON-serializable (no raise) and keep the
+    # CR-02 'register' alias (by_alias) intact alongside mode="json".
+    payload = dto.model_dump(mode="json", by_alias=True)
+    rendered = json.dumps(payload)
+    assert "2026-06-04T12:00:00" in rendered
+    assert "register" in payload
+
+    # The original bug: a plain model_dump() leaves a datetime that json.dumps rejects.
+    with pytest.raises(TypeError):
+        json.dumps(dto.model_dump(by_alias=True))
+
+
 async def test_bible_route_does_not_import_sqla():
     """D-39: bible route module must not import SQLAlchemy models or sqlalchemy directly."""
     import inspect  # noqa: PLC0415
