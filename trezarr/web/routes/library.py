@@ -423,13 +423,23 @@ async def post_translate(request: Request) -> JSONResponse:
     When media_roots is configured, validates path stays within allowed roots
     (T-l8g-01 path-traversal guard — mirrors cli.py ``if media_roots:`` guard).
     Returns { enqueued, source_path } on success.
+
+    Bible-aware path (fix #3): constructs a media_item carrying arr_kind/series_id/
+    source_type so _execute_job takes the Bible-aware branch instead of the mechanical
+    fallback.  Sonarr enrichment (title/tvdb_id/arr_metadata) is fetched fail-soft —
+    if *arr is unavailable, a minimal media_item is still passed so Bible-aware runs
+    with safe-default register.
     """
+    import asyncio  # noqa: PLC0415
+    from types import SimpleNamespace  # noqa: PLC0415
+
     body: dict = await request.json()
 
     source_path: str | None = body.get("source_path")
     if not source_path:
         return JSONResponse({"error": "source_path_required"}, status_code=400)
 
+    kind: str = body.get("kind") or "series"
     arr_series_id: int | None = body.get("arr_series_id")
 
     p = Path(source_path)
@@ -455,6 +465,70 @@ async def post_translate(request: Request) -> JSONResponse:
 
     session_factory = getattr(request.app.state, "session_factory", None)
 
+    # ── Build media_item for Bible-aware path (fix #3) ───────────────────────
+    # Derive source_type from the subtitle file extension (matches poll-path convention
+    # in discover_sonarr_items: "episode" for series, "movie" for movies).
+    # source_type is used by translate_file's register/genre signal; safe fallback
+    # when the extension is ambiguous is the `kind` from the request body.
+    _suffix = p.suffix.lower()
+    if kind == "movie":
+        arr_kind = "radarr"
+        source_type = "movie"
+    else:
+        arr_kind = "sonarr"
+        source_type = "episode"
+
+    # Minimal media_item — always safe even if Sonarr fetch fails below.
+    media_item_ns = SimpleNamespace(
+        arr_kind=arr_kind,
+        series_id=arr_series_id,
+        source_type=source_type,
+        # enrichment fields populated by Sonarr fetch below (default None is safe —
+        # getattr(media_item, field, None) is the snapshot contract in worker.py)
+        title=None,
+        tvdb_id=None,
+        tmdb_id=None,
+        season_number=None,
+        arr_metadata=None,
+    )
+
+    # ── Sonarr enrichment (fail-soft) ────────────────────────────────────────
+    # Fetch series record for title/tvdb_id/arr_metadata (the register/genre signal).
+    # Uses asyncio.to_thread (Phase-13 convention) so the blocking pyarr call does not
+    # hold the event loop.  Any failure (PyarrError, settings not configured, etc.)
+    # is caught and logged; the minimal media_item above is used instead.
+    if kind != "movie" and arr_series_id is not None:
+        from trezarr.config import TrezarrSettings  # noqa: PLC0415
+        settings: TrezarrSettings = getattr(request.app.state, "settings", None) or TrezarrSettings()
+        if settings.sonarr_enabled:
+            try:
+                from trezarr.arr.sonarr import build_sonarr_client, _normalize_arr_host  # noqa: PLC0415
+                client = build_sonarr_client(settings)
+                series_raw = await asyncio.to_thread(client.series.get, arr_series_id)
+                # pyarr may return a list or dict for a single-id fetch
+                if isinstance(series_raw, list):
+                    series_raw = series_raw[0] if series_raw else {}
+                if isinstance(series_raw, dict) and series_raw:
+                    media_item_ns.title = series_raw.get("title")
+                    media_item_ns.tvdb_id = series_raw.get("tvdbId")
+                    # arr_metadata mirrors the snapshot fields captured by discover_sonarr_items
+                    media_item_ns.arr_metadata = {
+                        "genres": series_raw.get("genres"),
+                        "overview": series_raw.get("overview"),
+                        "year": series_raw.get("year"),
+                        "network": series_raw.get("network"),
+                        "runtime": series_raw.get("runtime"),
+                    }
+            except Exception:  # noqa: BLE001
+                # Fail-soft: log without host/credentials, proceed with minimal media_item
+                display = _normalize_arr_host(settings.sonarr_host) if settings.sonarr_enabled else "sonarr"
+                logger.warning(
+                    "post_translate: Sonarr enrichment failed for series_id=%s at %s "
+                    "(proceeding with minimal media_item — Bible-aware still runs with safe-default register)",
+                    arr_series_id,
+                    display,
+                )
+
     from trezarr.web.worker import enqueue_job  # noqa: PLC0415
 
     enqueued: bool = await enqueue_job(
@@ -462,7 +536,7 @@ async def post_translate(request: Request) -> JSONResponse:
         source_path=source_path,
         series_id=arr_series_id,
         trigger="manual",
-        media_item=None,
+        media_item=media_item_ns,
     )
 
     return JSONResponse({"enqueued": enqueued, "source_path": source_path})

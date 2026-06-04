@@ -74,6 +74,135 @@ async def test_post_translate_nonexistent_path_returns_400():
     assert "error" in data
 
 
+# ── Fix #3 regression tests: post_translate builds media_item for Bible-aware path ──
+
+
+async def test_post_translate_series_builds_media_item(tmp_path):
+    """POST /api/translate (series) enqueues with arr_kind+series_id in media_item (fix #3).
+
+    Regression: manual translate used to call enqueue_job(media_item=None), causing
+    _execute_job to take the mechanical (non-Bible-aware) path.  After fix #3 it must
+    pass a media_item SimpleNamespace with at least arr_kind and series_id populated
+    so the worker can build a Bible-aware eligible_stub.
+    """
+    import json  # noqa: PLC0415
+    from unittest.mock import AsyncMock, MagicMock, patch  # noqa: PLC0415
+    from trezarr.web.app import create_app  # noqa: PLC0415
+    from trezarr.config import TrezarrSettings  # noqa: PLC0415
+    from httpx import AsyncClient, ASGITransport  # noqa: PLC0415
+
+    # Create a real subtitle file so the existence check passes
+    srt_file = tmp_path / "show.S01E01.en.srt"
+    srt_file.write_text("1\n00:00:01,000 --> 00:00:03,000\nHello\n")
+
+    app = create_app()
+    app.state.settings = TrezarrSettings(
+        llm_base_url="http://localhost:1234/v1",
+        llm_api_key="test-key",
+        llm_model="test-model",
+        sonarr_enabled=False,  # disable enrichment fetch; test minimal media_item path
+    )
+
+    captured_calls: list[dict] = []
+
+    async def mock_enqueue_job(session_factory, source_path, series_id=None, trigger="poll", media_item=None):
+        captured_calls.append({
+            "source_path": source_path,
+            "series_id": series_id,
+            "trigger": trigger,
+            "media_item": media_item,
+        })
+        return True
+
+    # patch at the module that defines it (the deferred import resolves to this)
+    with patch("trezarr.web.worker.enqueue_job", side_effect=mock_enqueue_job):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            resp = await client.post(
+                "/api/translate",
+                content=json.dumps({
+                    "kind": "series",
+                    "source_path": str(srt_file),
+                    "arr_series_id": 42,
+                }),
+                headers={"Content-Type": "application/json"},
+            )
+
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["enqueued"] is True
+
+    # Verify that enqueue_job was called with a media_item that carries arr_kind + series_id
+    assert len(captured_calls) == 1, f"Expected exactly 1 enqueue_job call, got {captured_calls}"
+    mi = captured_calls[0]["media_item"]
+    assert mi is not None, "media_item must not be None for Bible-aware path"
+    assert getattr(mi, "arr_kind", None) == "sonarr", f"Expected arr_kind='sonarr', got {getattr(mi, 'arr_kind', None)!r}"
+    assert getattr(mi, "series_id", None) == 42, f"Expected series_id=42, got {getattr(mi, 'series_id', None)!r}"
+    assert getattr(mi, "source_type", None) == "episode", f"Expected source_type='episode', got {getattr(mi, 'source_type', None)!r}"
+
+
+async def test_post_translate_series_failsoft_when_sonarr_unavailable(tmp_path):
+    """POST /api/translate still enqueues with minimal media_item when Sonarr fetch fails (fix #3).
+
+    Regression: if Sonarr enrichment raises, the route must NOT 500 — it should log a
+    warning and enqueue with the minimal media_item (arr_kind/series_id/source_type) so
+    the Bible-aware path still runs with safe-default register.
+    """
+    import json  # noqa: PLC0415
+    from unittest.mock import AsyncMock, MagicMock, patch  # noqa: PLC0415
+    from trezarr.web.app import create_app  # noqa: PLC0415
+    from trezarr.config import TrezarrSettings  # noqa: PLC0415
+    from httpx import AsyncClient, ASGITransport  # noqa: PLC0415
+
+    srt_file = tmp_path / "show.S01E02.en.srt"
+    srt_file.write_text("1\n00:00:01,000 --> 00:00:03,000\nHello\n")
+
+    app = create_app()
+    app.state.settings = TrezarrSettings(
+        llm_base_url="http://localhost:1234/v1",
+        llm_api_key="test-key",
+        llm_model="test-model",
+        sonarr_enabled=True,
+        sonarr_host="http://sonarr:8989",
+        sonarr_api_key="fake-key",
+    )
+
+    captured_calls: list[dict] = []
+
+    async def mock_enqueue_job(session_factory, source_path, series_id=None, trigger="poll", media_item=None):
+        captured_calls.append({"media_item": media_item})
+        return True
+
+    # Make the Sonarr client raise on .series.get() — simulates *arr unavailable
+    mock_sonarr = MagicMock()
+    mock_sonarr.series.get.side_effect = Exception("connection refused")
+
+    with patch("trezarr.web.worker.enqueue_job", side_effect=mock_enqueue_job), \
+         patch("trezarr.arr.sonarr.build_sonarr_client", return_value=mock_sonarr):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            resp = await client.post(
+                "/api/translate",
+                content=json.dumps({
+                    "kind": "series",
+                    "source_path": str(srt_file),
+                    "arr_series_id": 7,
+                }),
+                headers={"Content-Type": "application/json"},
+            )
+
+    # Must not 500 — fail-soft means still enqueues
+    assert resp.status_code == 200, f"Expected 200, got {resp.status_code}: {resp.text}"
+    data = resp.json()
+    assert data["enqueued"] is True
+
+    # media_item still populated with minimal fields (arr_kind + series_id + source_type)
+    assert len(captured_calls) == 1
+    mi = captured_calls[0]["media_item"]
+    assert mi is not None, "media_item must not be None even when Sonarr fetch fails"
+    assert getattr(mi, "arr_kind", None) == "sonarr"
+    assert getattr(mi, "series_id", None) == 7
+    assert getattr(mi, "source_type", None) == "episode"
+
+
 # ── Phase 13 RED stubs (Wave 0) ───────────────────────────────────────────────
 #
 # All 8 tests below are xfail stubs that document the Phase-13 API contract
