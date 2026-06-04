@@ -74,7 +74,7 @@ export function AppSidebar() {
   const moviesLive = getMoviesLiveBadge(libraryData);
 
   return (
-    <Sidebar collapsible="icon">
+    <Sidebar collapsible="icon" aria-keyshortcuts="Meta+b Control+b">
       {/* Brand header (D-06 / NAV-01): Captions glyph tinted text-sidebar-primary + TREZARR pill */}
       <SidebarHeader>
         <div className="flex items-center gap-2 px-1">
