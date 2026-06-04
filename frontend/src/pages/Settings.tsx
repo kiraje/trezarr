@@ -307,7 +307,7 @@ export default function Settings() {
             />
           </FieldGrid>
           <div className="flex items-center gap-4">
-            <ConnectionTestButton svc="llm" params={llmFields} />
+            <ConnectionTestButton svc="llm" params={llmFields} resetKey={JSON.stringify(llmFields)} />
           </div>
           {llmRestart && <RestartBanner />}
           <Button
@@ -363,7 +363,7 @@ export default function Settings() {
               }}
             />
           </FieldGrid>
-          <ConnectionTestButton svc="sonarr" params={sonarrFields} />
+          <ConnectionTestButton svc="sonarr" params={sonarrFields} resetKey={JSON.stringify(sonarrFields)} />
           {sonarrRestart && <RestartBanner />}
           <Button
             type="button"
@@ -418,7 +418,7 @@ export default function Settings() {
               }}
             />
           </FieldGrid>
-          <ConnectionTestButton svc="radarr" params={radarrFields} />
+          <ConnectionTestButton svc="radarr" params={radarrFields} resetKey={JSON.stringify(radarrFields)} />
           {radarrRestart && <RestartBanner />}
           <Button
             type="button"
@@ -473,7 +473,7 @@ export default function Settings() {
               }}
             />
           </FieldGrid>
-          <ConnectionTestButton svc="bazarr" params={bazarrFields} />
+          <ConnectionTestButton svc="bazarr" params={bazarrFields} resetKey={JSON.stringify(bazarrFields)} />
           {bazarrRestart && <RestartBanner />}
           <Button
             type="button"

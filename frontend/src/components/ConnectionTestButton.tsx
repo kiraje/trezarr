@@ -6,7 +6,7 @@
  * - ResultChip: 28px, ok=green chip with check, error=red chip with X
  * - Result chip clears when form fields are edited
  */
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Check, X, RefreshCw } from "lucide-react";
 import { testConnection } from "../api/client";
 import { Button } from "./ui/button";
@@ -23,9 +23,16 @@ interface ConnectionTestButtonProps {
 export default function ConnectionTestButton({
   svc,
   params,
+  resetKey,
 }: ConnectionTestButtonProps) {
   const [status, setStatus] = useState<TestStatus>("idle");
   const [errorMsg, setErrorMsg] = useState<string>("");
+
+  // Clear the result chip whenever resetKey changes (i.e., form fields changed)
+  useEffect(() => {
+    setStatus("idle");
+    setErrorMsg("");
+  }, [resetKey]);
 
   async function handleTest() {
     setStatus("pending");

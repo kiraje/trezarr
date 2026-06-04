@@ -10,7 +10,9 @@
  * - Not a modal — inline expansion below the triggering row
  */
 import { useEffect, useState } from "react";
+import { X } from "lucide-react";
 import { getFieldHistory, type BibleEventDTO } from "../api/client";
+import { Button } from "./ui/button";
 
 interface FieldHistoryPanelProps {
   seriesId: number;
@@ -50,6 +52,7 @@ export default function FieldHistoryPanel({
   entityType,
   entityId,
   field,
+  onClose,
 }: FieldHistoryPanelProps) {
   const [events, setEvents] = useState<BibleEventDTO[]>([]);
   const [loading, setLoading] = useState(true);
@@ -75,6 +78,17 @@ export default function FieldHistoryPanel({
 
   return (
     <div className="bg-card border border-border rounded p-4 max-h-80 overflow-y-auto">
+      <div className="flex justify-end mb-2">
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          aria-label="Close history"
+          onClick={onClose}
+        >
+          <X size={14} />
+        </Button>
+      </div>
       {loading ? (
         <p className="text-xs text-muted-foreground">Loading…</p>
       ) : events.length === 0 ? (
