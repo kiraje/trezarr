@@ -5,7 +5,7 @@ milestone_name: "(none — v1.0 + v1.1 archived)"
 status: milestone_archived
 stopped_at: v1.0 + v1.1 archived; git tags v1.0/v1.1 created; awaiting /gsd-new-milestone
 last_updated: 2026-06-04
-last_activity: 2026-06-04 -- Completed quick task 260604-gfl: P0 daemon crash-loop fix
+last_activity: 2026-06-04 -- Completed quick tasks 260604-gfl + 260604-hb4: all code-level debt fixed
 shipped_milestones:
   - version: v1.0
     name: "MVP"
@@ -198,6 +198,7 @@ None yet.
 | 260603-l8g | Library browser UI + manual single-item translate (arr-themed) + auto_translate poller safety gate; Bug 2 (alembic loggers) + Bug 3 (auto-enable *_enabled on save) | 2026-06-03 | 2fd17c7 | [260603-l8g-library-browser-manual-translate](./quick/260603-l8g-library-browser-manual-translate/) |
 | 260603-mc3 | Selective SPA fallback — deep-link/refresh on client-side routes (/library, /bible/:id) now serves index.html instead of {"detail":"Not Found"}; missing assets + unknown /api paths still 404 honestly | 2026-06-03 | cbf1ad3 | [260603-mc3-selective-spa-fallback-for-deep-link-ref](./quick/260603-mc3-selective-spa-fallback-for-deep-link-ref/) |
 | 260604-gfl | Fix P0 daemon startup crash-loop: reconcile_in_progress_from_ledger MultipleResultsFound (scalar_one_or_none→.first()) + enqueue_job auto-retry cap (job_max_auto_attempts, poll/webhook only) to bound duplicate Job rows. Specialist-reviewed PASS; full suite green | 2026-06-04 | 44543d0 | [260604-gfl-fix-daemon-crash-loop-job-dedup](./quick/260604-gfl-fix-daemon-crash-loop-job-dedup/) |
+| 260604-hb4 | Orphan-sentinel (v1.0 #5): strip hallucinated <<TN>> instead of quarantining (codec-fidelity-guardian PASS) + v1.1 warnings W1 (LIVE-badge services flag), W2 (series_title string\|null), W3 (Bazarr seriesid[]→plain fallback; arr-integration-specialist PASS). 387 passed; frontend build green | 2026-06-04 | 730f062, 30d6b6b | [260604-hb4-fix-orphan-sentinel-and-v11-warnings](./quick/260604-hb4-fix-orphan-sentinel-and-v11-warnings/) |
 
 ## Deferred Items
 
@@ -205,16 +206,20 @@ Items acknowledged at the v1.0 + v1.1 milestone close (2026-06-04). The v1.1 UI 
 clean (8/8 live smoke test); all open debt is v1.0-phase human-verify / core-value debt that
 requires a real run against a capable model.
 
+All code-level bugs from the live test + v1.1 audit are now FIXED (2026-06-04, quick tasks
+260604-gfl + 260604-hb4). The items below that remain OPEN are NOT code bugs — they need a
+frontier-model endpoint + real/human runs, or are deferred hardening.
+
 | Category | Item | Status | Deferred At |
 |----------|------|--------|-------------|
-| v1.0 core-value | Translation core value (pronoun consistency) UNVERIFIED — needs a frontier model; deepseek-v4-pro insufficient. See milestones/v1.0-TRANSLATION-VERIFICATION-FINDINGS.md (5 pipeline bugs; 4 fixed, #5 orphan-sentinel open) | open | 2026-06-04 |
-| v1.0 UAT (Phase 04) | 1 open HUMAN-UAT scenario; VERIFICATION human_needed (live *arr smoke, asyncio teardown) | open | 2026-06-04 |
-| v1.0 UAT (Phase 05) | 2 open HUMAN-UAT scenarios (real-episode pronoun quality; enable_pass1/enable_attribution toggle in prod); VERIFICATION human_needed | open | 2026-06-04 |
-| v1.0 UAT (Phase 06) | 2 open HUMAN-UAT scenarios (real-episode relationship-shift pronoun change; self-review quality on real output); VERIFICATION human_needed | open | 2026-06-04 |
-| v1.0 UAT (Phase 07) | 12 open HUMAN-UAT scenarios (SPA browser conformance, real docker build/run + PUID/PGID ownership, live *arr webhook); VERIFICATION human_needed | open | 2026-06-04 |
-| v1.0 UAT (Phase 09) | 09-06 not executed — human visual UAT of positioned-sign rendering (.vi.ass {\pos}/{\an8}, .vi.vtt position:/line:) in mpv/Jellyfin; FMT-04 success criterion 3 unconfirmed | open | 2026-06-04 |
-| v1.1 tech debt | W1 LIVE-badge false-positive for a disabled *arr service (cosmetic); W2 series_title type drift (runtime-safe); W3 Bazarr seriesid[] confirmed-by-smoke not code-guaranteed (fail-soft). See milestones/v1.1-MILESTONE-AUDIT.md | open | 2026-06-04 |
-| reliability hardening | (from 260604-gfl review HIGH-1) enqueue_job auto-retry cap is a SOFT ceiling — no UNIQUE on Job.source_path, so concurrent poll+webhook sweeps can race the count and both insert. Post-fix this only bloats the table slightly (no longer crashes reconcile). Hard bound needs a partial-unique index + dedup-first Alembic migration (live DB already holds duplicate rows) | open | 2026-06-04 |
+| v1.0 core-value | Translation core value (pronoun consistency) UNVERIFIED end-to-end — needs a **frontier model**; deepseek-v4-pro insufficient. All 5 pipeline bugs are now fixed (orphan-sentinel #5 → strip, 730f062), so the pipeline runs clean; the remaining gap is purely the model + a real-series run + cross-episode audit. See milestones/v1.0-TRANSLATION-VERIFICATION-FINDINGS.md | **open (needs frontier model + run — not code)** | 2026-06-04 |
+| v1.0 UAT (Phase 04) | 1 open HUMAN-UAT scenario; VERIFICATION human_needed (live *arr smoke, asyncio teardown) | open (needs real run) | 2026-06-04 |
+| v1.0 UAT (Phase 05) | 2 open HUMAN-UAT scenarios (real-episode pronoun quality; enable_pass1/enable_attribution toggle in prod); VERIFICATION human_needed | open (needs frontier-model run) | 2026-06-04 |
+| v1.0 UAT (Phase 06) | 2 open HUMAN-UAT scenarios (real-episode relationship-shift pronoun change; self-review quality on real output); VERIFICATION human_needed | open (needs frontier-model run, ≥2 episodes) | 2026-06-04 |
+| v1.0 UAT (Phase 07) | 12 open HUMAN-UAT scenarios (SPA browser conformance, real docker build/run + PUID/PGID ownership, live *arr webhook); VERIFICATION human_needed | open (needs live deployment run) | 2026-06-04 |
+| v1.0 UAT (Phase 09) | 09-06 not executed — human visual UAT of positioned-sign rendering (.vi.ass {\pos}/{\an8}, .vi.vtt position:/line:) in mpv/Jellyfin; FMT-04 success criterion 3 unconfirmed | open (needs human visual check) | 2026-06-04 |
+| v1.1 tech debt | W1 LIVE-badge false-positive / W2 series_title type drift / W3 Bazarr seriesid[] fallback | ✅ **FIXED 30d6b6b** (260604-hb4) | — |
+| reliability hardening | (from 260604-gfl review HIGH-1) enqueue_job auto-retry cap is a SOFT ceiling — no UNIQUE on Job.source_path, so concurrent poll+webhook sweeps can race the count and both insert. Post-fix this only bloats the table slightly (no longer crashes reconcile). Hard bound needs a partial-unique index + dedup-first Alembic migration (live DB already holds duplicate rows) | open (deferred hardening — not a crash) | 2026-06-04 |
 
 > The 5 "missing" quick-tasks flagged by `audit-open` are false positives — all completed and
 > committed (754292f, 09890e3, 2fd17c7, 66a47ba, cbf1ad3); the scanner just couldn't parse a
