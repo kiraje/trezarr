@@ -17,11 +17,12 @@ Design decisions honoured:
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
-from trezarr.bible.store import upsert_character, upsert_term, upsert_address_pair, merge_inferred, record_relationship_event, load_series_bible
+from trezarr.bible.store import upsert_character, upsert_term, upsert_address_pair, merge_inferred, record_relationship_event, load_series_bible, apply_human_edit_term
 
 if TYPE_CHECKING:
     from trezarr.config import TrezarrSettings
@@ -110,6 +111,59 @@ class BibleAnalysis(BaseModel):
     terms: list[TermInference] = []
     address_map: list[AddressMapInference] = []
     relationship_events: list[RelationshipEventInference] = []  # [Phase 6 ADDITIVE — safe default []]
+
+
+@dataclass(frozen=True)
+class NameTermSpec:
+    """A character-name Term Dictionary entry to create-and-lock (on-screen name → canonical)."""
+
+    source_term: str
+    vietnamese_rendering: str
+
+
+def plan_character_name_terms(
+    characters: "list[CharacterInference]",
+    existing_terms: list,
+) -> "list[NameTermSpec]":
+    """Plan LOCKED name terms so every character's on-screen name pins to a canonical rendering.
+
+    260604-ikq follow-up (consistency moat): the protagonist had no Term Dictionary row, so her
+    name was consistent-by-prompt only. For each character, the source form to pin is its
+    ``original_script_name`` (the on-screen, often non-Latin name, e.g. '雏菊') when present, else
+    its ``original_latin_name``. The canonical rendering is the existing Term Dictionary rendering
+    for that character's Latin name when one exists (e.g. 'Sakura' → 'Anh Đào'), else the Latin
+    name itself (e.g. 'Daisy'). A source form already present in ``existing_terms`` is skipped —
+    idempotent, and it never clobbers an existing or human-edited term.
+
+    Pure function. ``existing_terms`` is duck-typed on ``.source_term`` / ``.vietnamese_rendering``
+    (works for both TermDTO and TermInference).
+    """
+    rendering_by_latin: dict[str, str] = {}
+    existing_sources: set[str] = set()
+    for t in existing_terms or []:
+        src = (getattr(t, "source_term", "") or "").strip()
+        if not src:
+            continue
+        existing_sources.add(src.lower())
+        ren = (getattr(t, "vietnamese_rendering", "") or "").strip()
+        if ren:
+            rendering_by_latin[src.lower()] = ren
+
+    specs: "list[NameTermSpec]" = []
+    seen: set[str] = set()
+    for ch in characters or []:
+        latin = (getattr(ch, "original_latin_name", "") or "").strip()
+        if not latin:
+            continue
+        script = (getattr(ch, "original_script_name", "") or "").strip()
+        canonical = rendering_by_latin.get(latin.lower()) or latin
+        source = script or latin
+        key = source.lower()
+        if key in existing_sources or key in seen:
+            continue
+        specs.append(NameTermSpec(source_term=source, vietnamese_rendering=canonical))
+        seen.add(key)
+    return specs
 
 
 # ---------------------------------------------------------------------------
@@ -477,6 +531,43 @@ async def merge_bible_analysis(
             f"Pass 1 merge: ALL {term_fail_count} term upserts failed for series {series_id} "
             f"episode {episode_key!r} — likely a systemic DB failure (WR-06)"
         )
+
+    # Step 3.5: Lock each character's on-screen name → canonical rendering (260604-ikq).
+    # Makes name consistency contract-protected (a LOCKED Term Dictionary row injected into the
+    # translate-prompt glossary, safe from future inference drift) rather than prompt-only — the
+    # protagonist 雏菊 previously had no term row. Idempotent + respects existing/human-edited
+    # terms (plan_character_name_terms skips source forms already present). Best-effort: a failure
+    # here must never abort the merge or quarantine the episode.
+    # PROVENANCE NOTE (bible-consistency audit LOW nit): apply_human_edit_term stamps the audit
+    # event source="lock" + episode_key=None, so these system auto-locks are not distinguishable
+    # from human UI locks in bible_event. Accepted for now; the preferred fix (a source="system"
+    # kwarg on apply_human_edit_term) is recorded as a follow-up.
+    try:
+        existing_terms = (await load_series_bible(session_factory, series_id=series_id)).terms
+    except Exception as exc:
+        existing_terms = []
+        logger.warning(
+            "Pass 1 Step 3.5: could not load terms for name-lock (series %d): %s", series_id, exc
+        )
+    for spec in plan_character_name_terms(analysis.characters, existing_terms):
+        try:
+            await apply_human_edit_term(
+                session_factory,
+                series_id=series_id,
+                source_term=spec.source_term,
+                field="vietnamese_rendering",
+                new_value=spec.vietnamese_rendering,
+                lock=True,
+            )
+            logger.debug(
+                "Pass 1 Step 3.5: locked name term %r → %r for series %d",
+                spec.source_term, spec.vietnamese_rendering, series_id,
+            )
+        except Exception as exc:
+            logger.warning(
+                "Pass 1 Step 3.5: failed to lock name term %r for series %d: %s",
+                spec.source_term, series_id, exc,
+            )
 
     # Step 4: Upsert address pairs — resolve names to character IDs
     # Use same case-insensitive normalisation as reconcile.py / engine.py (CR-01)

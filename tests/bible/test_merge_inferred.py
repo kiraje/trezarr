@@ -739,3 +739,76 @@ async def test_series_register_merge_persists_and_emits_event(session_factory):
         assert evt_series_id == series_dto.id, (
             "bible_event.series_id must equal the Series PK, not raise AttributeError"
         )
+
+
+# ---------------------------------------------------------------------------
+# Character name-term locking (260604-ikq follow-up: consistency-by-contract)
+# ---------------------------------------------------------------------------
+
+def test_plan_character_name_terms():
+    """plan_character_name_terms maps each character's on-screen name → canonical, dedup'd.
+
+    - protagonist with a script name + NO existing term → (script → original_latin_name)
+    - character whose Latin name HAS a term → (script → that term's vietnamese_rendering)
+    - character with no script name → (latin → canonical) fallback
+    - a source form already present in existing terms is NOT re-proposed (idempotent)
+    """
+    from trezarr.bible.analyze import (
+        plan_character_name_terms,
+        CharacterInference,
+        TermInference,
+    )
+
+    existing = [TermInference(source_term="Sakura", vietnamese_rendering="Anh Đào")]
+    chars = [
+        CharacterInference(original_latin_name="Daisy", original_script_name="雏菊"),
+        CharacterInference(original_latin_name="Sakura", original_script_name="樱"),
+        CharacterInference(original_latin_name="Bob"),  # no script name
+    ]
+    pairs = {(s.source_term, s.vietnamese_rendering) for s in plan_character_name_terms(chars, existing)}
+    assert ("雏菊", "Daisy") in pairs, "protagonist script name pins to its Latin canonical"
+    assert ("樱", "Anh Đào") in pairs, "script name pins to the existing Vietnamese canonical"
+    assert ("Bob", "Bob") in pairs, "no-script character falls back to latin→latin"
+
+    # idempotency: if the script term already exists, don't re-propose it
+    existing2 = existing + [TermInference(source_term="雏菊", vietnamese_rendering="Daisy")]
+    specs2 = plan_character_name_terms(chars, existing2)
+    assert all(s.source_term != "雏菊" for s in specs2), (
+        "an existing source-term must not be re-proposed (idempotent)"
+    )
+
+
+async def test_merge_bible_analysis_locks_character_name_terms(session_factory):
+    """merge_bible_analysis auto-creates a LOCKED name term for the character's on-screen name.
+
+    Reproduces the gza/ikq audit gap: the protagonist 雏菊 had no term_dictionary row, so her name
+    was consistent-by-prompt only. After merge, there must be a LOCKED `雏菊 → Daisy` term so the
+    canonical is contract-protected from future inference drift.
+    """
+    from trezarr.bible.analyze import (
+        merge_bible_analysis,
+        BibleAnalysis,
+        CharacterInference,
+    )
+    from trezarr.bible.store import get_term
+
+    series_id = await _create_series(session_factory)
+    analysis = BibleAnalysis(
+        characters=[
+            CharacterInference(
+                original_latin_name="Daisy",
+                original_script_name="雏菊",
+                gender="female",
+            ),
+        ],
+    )
+    await merge_bible_analysis(
+        session_factory, series_id=series_id, analysis=analysis, episode_key="S01E06"
+    )
+
+    term = await get_term(session_factory, series_id, "雏菊")
+    assert term is not None, "merge must auto-create a name term for the on-screen (script) name"
+    assert term.vietnamese_rendering == "Daisy", "name term renders to the Latin canonical"
+    assert "vietnamese_rendering" in (term.locked_fields or []), (
+        "the auto-created name term's rendering must be LOCKED (contract, not prompt)"
+    )
