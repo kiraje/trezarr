@@ -4,7 +4,7 @@ Design decisions honoured:
   D-69  New job + job_log tables via Alembic 0002 migration. Keeps the frozen
         D-20 LedgerEntry↔ProcessedFile-column contract untouched. job.status
         ∈ {queued, running, done, failed, quarantined}. job.trigger ∈
-        {poll, webhook, manual-retry, startup-reconcile}.
+        {poll, webhook, manual, manual-retry, startup-reconcile}.
   D-68  Per-series asyncio.Lock serializes translation; job.series_id is the
         serialization key. No second asyncio.Semaphore (Pitfall C).
   D-75  job_log rows capture per-job logging output so the UI can render a
@@ -41,7 +41,7 @@ class Job(Base):
     to it — the two tables serve different concerns (D-69).
 
     status ∈ {queued, running, done, failed, quarantined}
-    trigger ∈ {poll, webhook, manual-retry, startup-reconcile}
+    trigger ∈ {poll, webhook, manual, manual-retry, startup-reconcile}
     """
 
     __tablename__ = "job"
@@ -51,7 +51,7 @@ class Job(Base):
             name="ck_job_status",
         ),
         CheckConstraint(
-            "trigger IN ('poll','webhook','manual-retry','startup-reconcile')",
+            "trigger IN ('poll','webhook','manual','manual-retry','startup-reconcile')",
             name="ck_job_trigger",
         ),
     )

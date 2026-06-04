@@ -159,7 +159,7 @@ async def enqueue_job(
                          set (_no_db_enqueued) so the D-66 contract holds in tests.
         source_path:     Subtitle file path to translate.
         series_id:       Series identifier for per-series lock (D-68); None for movies.
-        trigger:         Job origin ∈ {poll, webhook, manual-retry, startup-reconcile}.
+        trigger:         Job origin ∈ {poll, webhook, manual, manual-retry, startup-reconcile}.
         media_item:      Optional discovery MediaItem. When provided, a safe snapshot
                          of its fields is persisted on the Job row as media_item_json
                          so _execute_job can reconstruct the Bible-aware path (CR-01).
