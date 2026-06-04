@@ -48,6 +48,30 @@ def _settings():
     )
 
 
+def test_gate_review_scaffolding_leak():
+    """A cue carrying leaked Pass-4 '(source: …)' review scaffolding raises GateError(check=8).
+
+    Defense-in-depth backstop for the 260604-gza finding: even if the engine's
+    splice guard were bypassed, a sidecar containing the review-prompt scaffolding
+    must never ship — the gate quarantines it. The VI 'Đừng' clears Check 3's
+    per-line diacritic test, so the file reaches Check 8.
+    """
+    validate_mod = pytest.importorskip("trezarr.translate.validate")
+    GateError = validate_mod.GateError
+    validate_subdoc = validate_mod.validate_subdoc
+
+    src = _make_doc([_make_line(1, text="不要")])
+    trn = _make_doc([_make_line(1, text="(source: 不要) Đừng")])  # scaffolding echoed into output
+
+    with pytest.raises(GateError) as exc_info:
+        validate_subdoc(trn, src, _settings())
+
+    assert exc_info.value.failure.check == 8, (
+        f"Expected GateError.failure.check == 8 (review scaffolding leak), "
+        f"got {exc_info.value.failure.check}"
+    )
+
+
 def test_gate_count_mismatch():
     """Translated SubDoc with one fewer line than source raises GateError(check=1) (ENG-06)."""
     validate_mod = pytest.importorskip("trezarr.translate.validate")

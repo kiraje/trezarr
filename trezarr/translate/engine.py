@@ -46,7 +46,7 @@ from trezarr.subtitles.model import SubDoc, SubLine
 from trezarr.subtitles.dispatch import read_subtitle
 from trezarr.translate.batching import Batch, batch_subdoc
 from trezarr.translate.sentinel import extract_sentinels, reinsert_sentinels
-from trezarr.translate.validate import GateError, validate_subdoc
+from trezarr.translate.validate import REVIEW_SCAFFOLD_RE, GateError, validate_subdoc
 
 if TYPE_CHECKING:
     from trezarr.config import TrezarrSettings
@@ -262,6 +262,24 @@ def build_review_prompt(
     return "\n".join(parts)
 
 
+def _reject_scaffolded_correction(corrected: str, fallback: str) -> str:
+    """Drop a Pass-4 "correction" that leaked the review-prompt scaffolding.
+
+    build_review_prompt formats each line as "[N] (source: <orig>) <vi>"; a weak
+    model sometimes echoes the whole scaffolded line back as its "correction".
+    parse_numbered_response cannot tell that apart from a real correction, and the
+    validation gate's diacritic ratio misses it (the trailing VI text clears the
+    threshold), so it would splice e.g. "(source: 不要) Đừng" into the final
+    subtitle (v1.0 live-verify, 260604-gza). If ``corrected`` matches the shared
+    REVIEW_SCAFFOLD_RE, discard it and keep the clean pre-review (Pass-3)
+    ``fallback`` — the per-line analogue of D-59: never make a line worse than
+    the pre-review translation. (Gate Check 8 uses the same RE as a backstop.)
+    """
+    if REVIEW_SCAFFOLD_RE.search(corrected):
+        return fallback
+    return corrected
+
+
 # ── Pass-4 self-review batch handler ──────────────────────────────────────────
 # No asyncio.Semaphore here. LLMClient._semaphore is the sole gate (D-06, Pitfall 1).
 
@@ -315,6 +333,14 @@ async def _review_batch(
 
         # Step 4: Parse numbered-line response
         corrected_texts = parse_numbered_response(str(raw_response), len(review_batch.cues))
+
+        # Step 4.5: Scaffolding-leak guard — discard any "correction" that echoed
+        # the review-prompt "(source: …)" scaffolding and keep the clean pre-review
+        # (Pass-3) text for that cue (per-line D-59; never make a line worse).
+        corrected_texts = [
+            _reject_scaffolded_correction(corr, clean)
+            for corr, clean in zip(corrected_texts, cleaned_texts)
+        ]
 
         # Step 5: Reinsert sentinels — return None on integrity failure (D-59).
         # Always call (even for an empty smap) so a hallucinated orphan <<TN>> is

@@ -529,3 +529,18 @@ async def test_ledger_records_series_id_on_success(tmp_path):
     assert done_entries[0].series_id == "42", (
         f"Expected series_id='42' (str), got {done_entries[0].series_id!r}"
     )
+
+
+def test_reject_scaffolded_correction():
+    """Pass-4 guard: a 'correction' leaking the '(source: …)' scaffolding is dropped.
+
+    Regression for the 260604-gza live finding: deepseek echoed the review-prompt
+    line back verbatim, so the splice overwrote good Pass-3 VI with
+    '(source: 不要) Đừng'. The guard keeps the clean pre-review text instead.
+    """
+    from trezarr.translate.engine import _reject_scaffolded_correction  # noqa: PLC0415
+
+    # Leaked scaffolding → fall back to the clean Pass-3 text.
+    assert _reject_scaffolded_correction("(source: 不要) Đừng", "Đừng") == "Đừng"
+    # A genuine correction (no scaffolding) is kept verbatim.
+    assert _reject_scaffolded_correction("Đừng làm thế", "Đừng") == "Đừng làm thế"

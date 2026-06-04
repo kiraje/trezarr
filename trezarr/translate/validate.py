@@ -47,6 +47,14 @@ SENTINEL_ONLY_RE = re.compile(r'^(<<T\d+>>\s*)*$')
 # Backstop check for orphan sentinel tokens that were not reinserted (D-12/D-16 check 6)
 SENTINEL_RE = re.compile(r'<<T\d+>>')
 
+# Pass-4 review-prompt scaffolding signature. build_review_prompt emits each line
+# as "[N] (source: <orig>) <vi>"; a weak model sometimes echoes that back as its
+# "correction". Case-insensitive + whitespace-tolerant after "(" so a recased or
+# spaced echo ("(Source:", "( source:") is still caught. Shared by the engine's
+# Pass-4 splice guard and gate Check 8 so the two defense layers never drift.
+# (A *translated* scaffold token, e.g. "(nguồn:", is residual risk — not matched.)
+REVIEW_SCAFFOLD_RE = re.compile(r'\(\s*source\s*:', re.IGNORECASE)
+
 @dataclass
 class GateFailure:
     """Structured description of a validation gate failure.
@@ -170,7 +178,7 @@ def validate_subdoc(
     source: SubDoc,
     settings: "TrezarrSettings",
 ) -> None:
-    """Run all 7 gate checks on a translated SubDoc.  Raises GateError on first failure.
+    """Run all 8 gate checks on a translated SubDoc.  Raises GateError on first failure.
 
     Checks (fail-fast — stops at first failure):
       1. Cue count equals source
@@ -180,6 +188,7 @@ def validate_subdoc(
       5. Monotonic, non-overlapping timestamps
       6. No orphan sentinel tokens (<<TN>>)
       7. All cue texts encode as valid UTF-8
+      8. No Pass-4 review-prompt scaffolding ("(source: …)") leaked into output
 
     Args:
         translated: The translated SubDoc produced by the engine.
@@ -191,7 +200,7 @@ def validate_subdoc(
 
     Raises:
         GateError: On the first check that fails, with failure.check set to the
-                   check number (1–7).
+                   check number (1–8).
     """
     # Check 1: cue count equals source
     if len(translated.lines) != len(source.lines):
@@ -255,3 +264,17 @@ def validate_subdoc(
                 f"UTF-8 encode error at cue {i}: {exc}",
                 failing_indices=[i],
             )) from exc
+
+    # Check 8: no Pass-4 review-prompt scaffolding leaked into output. The
+    # _review_batch splice guard should already strip any "(source: …)" echo, so
+    # this is defense-in-depth: it guarantees that review-scaffolding corruption
+    # can NEVER ship a sidecar even if a future path reintroduces it (the blind-
+    # trust bar). A lone "(source:" is English prompt scaffolding, not Vietnamese
+    # dialogue, so quarantining on it is safe.
+    for i, sl in enumerate(translated.lines):
+        if REVIEW_SCAFFOLD_RE.search(sl.text):
+            raise GateError(GateFailure(
+                8,
+                f"Review-prompt scaffolding leaked into cue {i}: {sl.text!r}",
+                failing_indices=[i],
+            ))
