@@ -168,14 +168,21 @@ def test_gate_timecode_mutation():
     )
 
 
-def test_gate_nonmonotonic():
-    """Two adjacent lines where start_tc[1] < end_tc[0] raises GateError(check=5) (ENG-06)."""
+def test_gate_overlapping_source_cues_preserved_timing_passes():
+    """Overlapping source cues with timing preserved by translation PASS Check 5.
+
+    Regression for the codec-fidelity invariant (D-08/D-09): simultaneous/overlapping
+    cues (e.g. dual-speaker lines, song karaoke layers) are legitimate in source SRTs.
+    Translation copies timing verbatim.  The gate must NOT quarantine such files.
+
+    Line 1: 00:00:05,000 → 00:00:10,000
+    Line 2: 00:00:08,000 → 00:00:12,000 — overlaps with line 1 in BOTH source and translated.
+    Both source and translated have identical timing → PASS (no GateError).
+    """
     validate_mod = pytest.importorskip("trezarr.translate.validate")
-    GateError = validate_mod.GateError
     validate_subdoc = validate_mod.validate_subdoc
 
-    # Line 1: 00:00:05,000 → 00:00:10,000
-    # Line 2: 00:00:08,000 → 00:00:12,000 — overlaps with line 1
+    # Both source and translated carry the same overlapping timecodes.
     src_line1 = _make_line(1, start_tc="00:00:05,000", end_tc="00:00:10,000", text="Xin chào bạn")
     src_line2 = _make_line(2, start_tc="00:00:08,000", end_tc="00:00:12,000", text="Tôi ổn cảm ơn")
     trn_line1 = _make_line(1, start_tc="00:00:05,000", end_tc="00:00:10,000", text="Xin chào bạn")
@@ -184,27 +191,60 @@ def test_gate_nonmonotonic():
     src = _make_doc([src_line1, src_line2])
     trn = _make_doc([trn_line1, trn_line2])
 
-    with pytest.raises(GateError) as exc_info:
-        validate_subdoc(trn, src, _settings())
-
-    assert exc_info.value.failure.check == 5, (
-        f"Expected GateError.failure.check == 5 (non-monotonic timestamps), "
-        f"got {exc_info.value.failure.check}"
+    # Must NOT raise — overlapping cues that are present in the source are faithfully
+    # preserved by translation and must pass the gate.
+    result = validate_subdoc(trn, src, _settings())
+    assert result is None, (
+        f"Expected None (overlapping SOURCE cues with preserved timing should PASS), got {result}"
     )
 
 
-def test_gate_backward_jump():
-    """Cue that starts before previous cue (backward jump) raises GateError(check=5) (WR-01).
+def test_gate_timing_mutation_fails():
+    """Translated doc whose timing was mutated relative to source FAILS Check 5.
 
-    cue0 = [5000ms, 10000ms], cue1 = [3000ms, 4000ms]: cue1 starts before cue0,
-    which is a non-monotonic ordering violation.  The original overlap check missed
-    this because 3000 > 5000 is False (the first conjunct was false).
+    If the engine somehow altered a cue's start_ms or end_ms, Check 5 must catch it
+    even when Check 4 (byte-identity of timecode strings) passed (e.g. a codec that
+    re-formats the timecode string identically but shifts the underlying milliseconds).
+    Here we simulate a direct ms-level mutation that produces a different timecode string.
     """
     validate_mod = pytest.importorskip("trezarr.translate.validate")
     GateError = validate_mod.GateError
     validate_subdoc = validate_mod.validate_subdoc
 
-    # cue0: 5000ms–10000ms, cue1: 3000ms–4000ms (backward start)
+    # Source: cue at [5000ms, 10000ms]
+    src_line = _make_line(1, start_tc="00:00:05,000", end_tc="00:00:10,000", text="Xin chào bạn")
+    # Translated: start_tc shifted by 1 s → timecodes differ from source
+    trn_line = _make_line(1, start_tc="00:00:06,000", end_tc="00:00:10,000", text="Xin chào bạn")
+
+    src = _make_doc([src_line])
+    trn = _make_doc([trn_line])
+
+    # Check 4 catches the timecode string mutation first; Check 5 would also catch it
+    # if Check 4 didn't.  Either way, a GateError must be raised.
+    with pytest.raises(GateError) as exc_info:
+        validate_subdoc(trn, src, _settings())
+
+    # Check 4 fires first for a timecode string mismatch; accept either check 4 or 5.
+    assert exc_info.value.failure.check in (4, 5), (
+        f"Expected GateError.failure.check in (4, 5) for timing mutation, "
+        f"got {exc_info.value.failure.check}"
+    )
+
+
+def test_gate_backward_jump_preserved_from_source_passes():
+    """Backward-jump in SOURCE with timing preserved by translation PASSES Check 5.
+
+    Under the codec-fidelity invariant (D-08/D-09), Check 5 only catches timing
+    mutations introduced by translation.  A backward jump that already exists in the
+    source file is faithfully preserved — it is a SOURCE quality issue, not a
+    translation error.  The gate must not quarantine such files.
+
+    cue0 = [5000ms, 10000ms], cue1 = [3000ms, 4000ms] — both in source and translated.
+    Timing is preserved verbatim → PASS.
+    """
+    validate_mod = pytest.importorskip("trezarr.translate.validate")
+    validate_subdoc = validate_mod.validate_subdoc
+
     src_line1 = _make_line(1, start_tc="00:00:05,000", end_tc="00:00:10,000", text="Xin chào bạn")
     src_line2 = _make_line(2, start_tc="00:00:03,000", end_tc="00:00:04,000", text="Tôi ổn cảm ơn")
     trn_line1 = _make_line(1, start_tc="00:00:05,000", end_tc="00:00:10,000", text="Xin chào bạn")
@@ -213,12 +253,10 @@ def test_gate_backward_jump():
     src = _make_doc([src_line1, src_line2])
     trn = _make_doc([trn_line1, trn_line2])
 
-    with pytest.raises(GateError) as exc_info:
-        validate_subdoc(trn, src, _settings())
-
-    assert exc_info.value.failure.check == 5, (
-        f"Expected GateError.failure.check == 5 (backward jump in timestamps), "
-        f"got {exc_info.value.failure.check}"
+    # Must NOT raise — backward jump was in the source; translation preserved it faithfully.
+    result = validate_subdoc(trn, src, _settings())
+    assert result is None, (
+        f"Expected None (backward-jump in SOURCE with preserved timing should PASS), got {result}"
     )
 
 

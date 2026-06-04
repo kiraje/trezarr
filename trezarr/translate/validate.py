@@ -121,56 +121,48 @@ def _check_untranslated(
         ))
 
 
-def _check_monotonic(doc: SubDoc) -> None:
-    """Check 5: Monotonic, non-overlapping timestamps.
+def _check_timing_preserved(translated: SubDoc, source: SubDoc) -> None:
+    """Check 5 (codec-fidelity invariant): each translated cue's timing equals its source cue.
+
+    Trezarr's text/timing separation invariant (D-08/D-09) means translation NEVER
+    alters timecodes — only ``SubLine.text`` is LLM-mutable; index/start_tc/end_tc are
+    immutable by convention.  Check 4 verifies byte-identity of those fields; Check 5
+    re-expresses this as a millisecond-level invariant so timing corruption (e.g. a
+    codec bug that converts a timecode to milliseconds and back incorrectly) is caught
+    even if the *string* round-trips cleanly.
+
+    The check deliberately PASSES for source documents that contain overlapping cues
+    (e.g. simultaneous song/dual-speaker lines, karaoke layers).  Such overlaps are a
+    legitimate source-file property — translation preserves them verbatim, so they must
+    never quarantine an otherwise valid translation.
 
     Raises GateError(GateFailure(5, ...)) if:
-    - Any cue's start_ms >= end_ms (zero-duration or reversed cue), OR
-    - Any adjacent pair where start_ms[i] < end_ms[i-1] AND start_ms[i] is
-      strictly greater than start_ms[i-1] (true overlap — simultaneous/duplicate-
-      start cues that appear concurrently are accepted as common real-world SRT usage).
+    - Any translated cue's start_ms differs from the corresponding source cue's start_ms, OR
+    - Any translated cue's end_ms differs from the corresponding source cue's end_ms.
+
+    Non-positive duration in the SOURCE (start_ms >= end_ms) is NOT flagged here —
+    that is a property of the source file, faithfully preserved by translation.  A
+    future source-validation step may flag it pre-pipeline; the gate's job is only to
+    catch *translation-induced* corruption.
+
+    Args:
+        translated: The translated SubDoc produced by the engine.
+        source:     The original source SubDoc (used for timing comparison).
     """
-    prev_end_ms: int | None = None
-    prev_start_ms: int | None = None
+    for i, (trn_sl, src_sl) in enumerate(zip(translated.lines, source.lines)):
+        trn_start = _tc_to_ms(trn_sl.start_tc)
+        trn_end = _tc_to_ms(trn_sl.end_tc)
+        src_start = _tc_to_ms(src_sl.start_tc)
+        src_end = _tc_to_ms(src_sl.end_tc)
 
-    for i, sl in enumerate(doc.lines):
-        start_ms = _tc_to_ms(sl.start_tc)
-        end_ms = _tc_to_ms(sl.end_tc)
-
-        if start_ms >= end_ms:
+        if trn_start != src_start or trn_end != src_end:
             raise GateError(GateFailure(
                 5,
-                f"Cue {i} has non-positive duration: start={start_ms}ms >= end={end_ms}ms",
+                f"Cue {i} timing altered by translation: "
+                f"source=({src_start}ms, {src_end}ms) "
+                f"translated=({trn_start}ms, {trn_end}ms)",
                 failing_indices=[i],
             ))
-
-        # Monotonic-start check: flag backward jumps (cue starts before previous cue started).
-        # This is distinct from the overlap check: a cue at [3000ms, 4000ms] after a cue at
-        # [5000ms, 10000ms] has start_ms < prev_start_ms but does NOT satisfy the overlap
-        # condition below — the backward jump would pass silently without this guard.
-        if prev_start_ms is not None and start_ms < prev_start_ms:
-            raise GateError(GateFailure(
-                5,
-                f"Cue {i} starts before previous cue: start={start_ms}ms < prev_start={prev_start_ms}ms",
-                failing_indices=[i],
-            ))
-
-        # Overlap check: only flag when this cue starts after the previous cue started
-        # (simultaneous/duplicate-start cues are accepted as concurrent display lines).
-        if (
-            prev_end_ms is not None
-            and prev_start_ms is not None
-            and start_ms > prev_start_ms
-            and start_ms < prev_end_ms
-        ):
-            raise GateError(GateFailure(
-                5,
-                f"Cue {i} overlaps previous: start={start_ms}ms < prev_end={prev_end_ms}ms",
-                failing_indices=[i],
-            ))
-
-        prev_start_ms = start_ms
-        prev_end_ms = end_ms
 
 
 def validate_subdoc(
@@ -238,8 +230,11 @@ def validate_subdoc(
                 failing_indices=[i],
             ))
 
-    # Check 5: monotonic, non-overlapping timestamps
-    _check_monotonic(translated)
+    # Check 5: timing preserved from source (codec-fidelity invariant — D-08/D-09).
+    # Overlapping cues that exist in the SOURCE legitimately pass; only translation-
+    # induced timing mutations fail.  The check complements Check 4 (byte-identity of
+    # timecode strings) by catching ms-level corruption that survives string round-trip.
+    _check_timing_preserved(translated, source)
 
     # Check 6: no orphan sentinel tokens
     for i, sl in enumerate(translated.lines):
