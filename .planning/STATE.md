@@ -1,15 +1,26 @@
 ---
 gsd_state_version: 1.0
-milestone: v1.1
-milestone_name: "UI v2: shadcn dashboard"
-status: milestone_complete
-stopped_at: Milestone complete (Phase 16 was final phase)
-last_updated: 2026-06-04T02:25:50.254Z
-last_activity: 2026-06-03 -- Phase 16 execution started
+milestone: none
+milestone_name: "(none — v1.0 + v1.1 archived)"
+status: milestone_archived
+stopped_at: v1.0 + v1.1 archived; git tags v1.0/v1.1 created; awaiting /gsd-new-milestone
+last_updated: 2026-06-04
+last_activity: 2026-06-04 -- v1.0 + v1.1 milestones closed and archived
+shipped_milestones:
+  - version: v1.0
+    name: "MVP"
+    phases: "1-10"
+    shipped: 2026-06-03
+    tag: v1.0
+  - version: v1.1
+    name: "UI v2: shadcn dashboard"
+    phases: "11-16"
+    shipped: 2026-06-04
+    tag: v1.1
 progress:
   total_phases: 16
   completed_phases: 16
-  total_plans: 64
+  total_plans: 65
   completed_plans: 65
   percent: 100
 ---
@@ -18,24 +29,23 @@ progress:
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-06-03)
+See: .planning/PROJECT.md (updated 2026-06-04)
 
 **Core value:** Vietnamese subtitles that stay consistent and relationally correct (right pronoun pair, stable names/terms) across an entire series — produced automatically.
-**Current focus:** Milestone complete
+**Current focus:** No active milestone — v1.0 + v1.1 shipped and archived. Next: `/gsd-new-milestone`.
 
 ## Current Position
 
-Phase: 16
-Plan: Not started
-Status: Milestone complete
-Last activity: 2026-06-04
+Milestone: none active (v1.0 + v1.1 archived)
+Status: milestone_archived
+Last activity: 2026-06-04 — milestones closed
 
 ```
-v1.1 Progress: [          ] 0% (0/6 phases)
-Phase 11: [ ] Foundation   Phase 12: [ ] Shell
-Phase 13: [ ] Backend API  Phase 14: [ ] Library Pages
-Phase 15: [ ] Reskin       Phase 16: [ ] Docker/Smoke
+v1.0 MVP                  [##########] SHIPPED 2026-06-03 (phases 1-10, tag v1.0)
+v1.1 UI v2 shadcn         [##########] SHIPPED 2026-06-04 (phases 11-16, tag v1.1)
 ```
+
+Shipped detail in MILESTONES.md; per-milestone archives in milestones/.
 
 ## Performance Metrics
 
@@ -190,11 +200,23 @@ None yet.
 
 ## Deferred Items
 
-Items acknowledged and carried forward from previous milestone close:
+Items acknowledged at the v1.0 + v1.1 milestone close (2026-06-04). The v1.1 UI work passed
+clean (8/8 live smoke test); all open debt is v1.0-phase human-verify / core-value debt that
+requires a real run against a capable model.
 
 | Category | Item | Status | Deferred At |
 |----------|------|--------|-------------|
-| v1.0 core-value | Translation core value (pronoun consistency) UNVERIFIED — needs a frontier model; deepseek-v4-pro insufficient. See v1.0-TRANSLATION-VERIFICATION-FINDINGS.md (5 pipeline bugs; 4 fixed, #5 orphan-sentinel open) | open | 2026-06-04 |
+| v1.0 core-value | Translation core value (pronoun consistency) UNVERIFIED — needs a frontier model; deepseek-v4-pro insufficient. See milestones/v1.0-TRANSLATION-VERIFICATION-FINDINGS.md (5 pipeline bugs; 4 fixed, #5 orphan-sentinel open) | open | 2026-06-04 |
+| v1.0 UAT (Phase 04) | 1 open HUMAN-UAT scenario; VERIFICATION human_needed (live *arr smoke, asyncio teardown) | open | 2026-06-04 |
+| v1.0 UAT (Phase 05) | 2 open HUMAN-UAT scenarios (real-episode pronoun quality; enable_pass1/enable_attribution toggle in prod); VERIFICATION human_needed | open | 2026-06-04 |
+| v1.0 UAT (Phase 06) | 2 open HUMAN-UAT scenarios (real-episode relationship-shift pronoun change; self-review quality on real output); VERIFICATION human_needed | open | 2026-06-04 |
+| v1.0 UAT (Phase 07) | 12 open HUMAN-UAT scenarios (SPA browser conformance, real docker build/run + PUID/PGID ownership, live *arr webhook); VERIFICATION human_needed | open | 2026-06-04 |
+| v1.0 UAT (Phase 09) | 09-06 not executed — human visual UAT of positioned-sign rendering (.vi.ass {\pos}/{\an8}, .vi.vtt position:/line:) in mpv/Jellyfin; FMT-04 success criterion 3 unconfirmed | open | 2026-06-04 |
+| v1.1 tech debt | W1 LIVE-badge false-positive for a disabled *arr service (cosmetic); W2 series_title type drift (runtime-safe); W3 Bazarr seriesid[] confirmed-by-smoke not code-guaranteed (fail-soft). See milestones/v1.1-MILESTONE-AUDIT.md | open | 2026-06-04 |
+
+> The 5 "missing" quick-tasks flagged by `audit-open` are false positives — all completed and
+> committed (754292f, 09890e3, 2fd17c7, 66a47ba, cbf1ad3); the scanner just couldn't parse a
+> status field. No deferral needed.
 
 ## Session Continuity
 

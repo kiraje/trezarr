@@ -17,18 +17,15 @@ the right pronoun pair (anh/em, chị/em, ông/bà...) for every relationship, t
 names and terms from episode 1 to the finale — produced automatically. If everything else fails,
 this consistency must work.
 
-## Current Milestone: v1.1 UI v2 — shadcn dashboard
+## Current State
 
-**Goal:** Rebuild the web dashboard on a shadcn/ui + jolly-ui foundation (purple theme, dark mode), restructure navigation Bazarr-style, split the Library into separate Movies and Series sections, and add a season-grouped Series episode view with Audio + per-episode subtitle-language badges. Big-bang rollout — every page migrated to the new component system before shipping. The core translation engine is unchanged; this is a UI/UX and library-browsing milestone.
+**Shipped:** v1.0 (MVP, phases 1–10, 2026-06-03) + v1.1 (UI v2: shadcn dashboard, phases 11–16, 2026-06-04). Both milestones archived; tags `v1.0` / `v1.1`. No active milestone — next is `/gsd-new-milestone`.
 
-**Target features:**
-- shadcn/ui + jolly-ui component foundation on Tailwind v3.4 (`cn()` util, `components.json`, CVA, shared purple CSS-variable theme migrated from the current custom hex tokens; dark mode default)
-- New full-height sidebar shell + nav (Series / Movies / Queue / History / Bible / Settings) with right-side badges and a left purple active-accent bar; `/library` splits into `/series` + `/movies`, `/` → `/series`
-- Series list + season-grouped episode **detail table** (collapsible Accordion; columns: translate action · Episode # · Title · Audio badge · subtitle-language badges; amber = source/foreign langs, purple = Vietnamese, `VI:HI` when `SubtitleEntry.hi=True`)
-- Movies page (reuses `GET /api/library` movies); reskin of Queue / History / Settings / Bible List / Bible Editor (reskin-in-place, NOT rebuilt) / JobLogs
-- Backend: enrich `GET /api/library/series/{id}/episodes` to source episodes from Sonarr episode records grouped by season, each carrying `audio_languages` (Sonarr mediaInfo), `subtitles[]` (Bazarr `BazarrInventoryItem`, incl. `hi`), and Trezarr status — Bazarr fail-soft (keep always-HTTP-200 partial-results)
+Trezarr is a complete, Dockerized, self-hosted service: it discovers media via Sonarr/Radarr, reads Bazarr's source-subtitle inventory, selects the relationally-richest source, runs the three-pass Bible-backed pronoun engine, validates, and writes a Vietnamese sidecar — with a full shadcn/ui dashboard (Series/Movies library browsing, season-grouped episode detail, Queue/History/Logs, editable Series Bible) live on :6868. 16 phases, 65 plans, ~330+ tests green.
 
-**Key context:** Stack is React 19 / react-router-dom 6.30 / Tailwind v3.4.19 / Vite 7 / lucide-react. A Bazarr client already exists (`trezarr/arr/bazarr.py`: `BazarrClient.fetch_episodes` + per-episode `BazarrInventoryItem` keyed by `sonarrEpisodeId`). Keep the new `SPAStaticFiles` deep-link fallback (quick task 260603-mc3). The final phase must rebuild the multi-stage Docker image and run a live smoke test on :6868. Component foundation, Bazarr-authoritative episode data, and big-bang rollout are locked decisions from brainstorming.
+**Top open item (the one thing left to prove):** the translation **core value** — cross-episode pronoun/relationship consistency on a real series — is **unverified end-to-end**. The pipeline is built and unit-verified, but the live test exposed that the configured `ds/deepseek-v4-pro` endpoint is insufficient (rejects json_schema; slow) and surfaced 5 pipeline bugs (4 fixed, 1 orphan-sentinel open). Verifying against a frontier model is the highest-value next work. See `milestones/v1.0-TRANSLATION-VERIFICATION-FINDINGS.md` and STATE.md → Deferred Items.
+
+**Stack:** Python 3.12 / FastAPI / SQLAlchemy 2.0 async + aiosqlite / Alembic (0001–0004) / openai (AsyncOpenAI) / pyarr / hand-rolled SRT/ASS/SSA/VTT codecs. Frontend: React 19 / react-router-dom 6.30 / Vite 7 / Tailwind v3.4 / shadcn/ui + jolly-ui (purple CSS-variable dark theme) / Sonner. Single multi-stage Docker image (node→python:3.12-slim), `/config` volume, port 6868, PUID/PGID via gosu.
 
 ## Requirements
 
@@ -62,9 +59,9 @@ this consistency must work.
 - [x] Connect to Bazarr's API to read existing source-language subtitle inventory — Validated in Phase 10 (INTG-02). `BazarrClient` (httpx, read-only `GET /api/episodes|movies`, `X-Api-Key`, api-key never echoed into errors) reads each item's existing source-language subs; Bazarr is a **soft dependency** — disabled/unreachable degrades to the filesystem glob (D-104). Never invokes download/search (no re-downloading).
 
 **Translation engine:**
-- [ ] Use the user's own OpenAI-SDK-compatible LLM endpoint (configurable base URL / model / key)
+- [x] Use the user's own OpenAI-SDK-compatible LLM endpoint (configurable base URL / model / key) — Validated in Phase 1 (ENG-01). AsyncOpenAI client wraps base_url/model/key with retries, a semaphore concurrency cap, and json_schema→json_object→text tier fallback.
 - [x] LLM self-review pass — model critiques and corrects its own translation for consistency before the file is finalized — Validated in Phase 6 (ENG-05). Pass 4 runs after Pass-3 assembly and before the validation gate, checks Bible adherence (pronoun pair, terms, register), and is best-effort (D-59 — review failure never quarantines). (Live-LLM review quality pending in `06-HUMAN-UAT.md`.)
-- [ ] Translation context includes: surrounding subtitle lines, full-file glossary, media metadata (plot/cast/genre from Sonarr/Radarr/TMDB), and the prior-episode Series Bible (Pass-1 metadata + Bible grounding shipped in Phase 5)
+- [x] Translation context includes: surrounding subtitle lines, full-file glossary, media metadata (plot/cast/genre from Sonarr/Radarr/TMDB), and the prior-episode Series Bible — Validated in Phase 5 (ENG-03 surrounding-line window shipped Phase 2; Pass-1 metadata + Bible grounding shipped Phase 5).
 
 **Vietnamese consistency engine — the "Series Bible" (persistence Phase 4, LLM auto-population + Address Map Phase 5):**
 - [x] Track relationship **evolution** across episodes (enemies→lovers, strangers→friends) with episode markers so pronoun choices change correctly over the series — Validated in Phase 6 (BIBLE-07). Relationship shifts are recorded as episode-marked `relationship_event` rows; `reconcile_attributions` applies precedence `human lock > logged transition (this episode) > carried-forward pair > safe default`, so an established pair's pronouns change intentionally (forward-only, never by silent drift) and auditably via `bible_event`.
@@ -74,10 +71,17 @@ this consistency must work.
 - [x] Power-user **per-series overrides** for source-language preference, register, and model — Validated in Phase 10 (SVC-05). Nullable `source_lang_override`/`model_override` columns on `series` (Alembic 0003) + `PATCH /api/bible/series/{id}/overrides` (D-39 boundary) + a fifth "Overrides" tab in the Bible editor; register override reuses the Phase-8 lock; the model override threads per-call into the single `LLMClient` (D-06 semaphore unchanged).
 
 **Formats & delivery:**
-- [ ] Handle SRT (universal baseline)
-- [ ] Handle ASS/SSA while preserving styling, fonts, and positioning (anime/fansub use)
-- [ ] Handle VTT
+- [x] Handle SRT (universal baseline) — Validated in Phase 1 (FMT-01: byte-identical read/write, text separable from timing).
+- [x] Handle ASS/SSA while preserving styling, fonts, and positioning (anime/fansub use) — Validated in Phase 9 (FMT-02/03: hand-rolled codec; override tags, drawing commands, `\N`, karaoke, headers byte-identical). *(Positioned-sign visual UAT 09-06 deferred.)*
+- [x] Handle VTT — Validated in Phase 9 (FMT-04: cue settings/positioning round-trip). *(Positioned-sign visual UAT 09-06 deferred.)*
 - [x] Ship as a Dockerized, long-running self-hosted service with a web config/dashboard UI, deployable alongside the *arr stack — Validated in Phase 7 (SVC-01 single multi-stage image [node→python], `/config` volume, port 6868, PUID/PGID via gosu, `trezarr serve` started by a FastAPI lifespan that owns one engine/scheduler/worker; SVC-02 config + connection-test UI with write-only/masked secrets; SVC-03/04 Queue/History/per-job-logs + Retry; a React 19 + Vite 7 SPA served by FastAPI `StaticFiles`)
+
+**UI v2 dashboard (shipped — v1.1, phases 11–16):**
+- [x] shadcn/ui + jolly-ui foundation on Tailwind v3 + purple CSS-variable dark theme across every page — Validated in Phase 11 (UI-01, UI-02).
+- [x] Full-height sidebar shell, six nav routes, left purple active-accent bar, live count + LIVE badges; `/library` → `/series` + `/movies`, `/` → `/series` — Validated in Phases 12 + 14 (NAV-01, NAV-02, NAV-03).
+- [x] Library browsing — Series list, season-grouped Series detail (Accordion, audio + subtitle-language badges, per-episode/season translate), Movies list, search/filter/sort, translation-progress indicators — Validated in Phase 14 (LIB-01..07).
+- [x] Backend episode enrichment — `GET /api/library/series/{id}/episodes` season-grouped with audio languages + Bazarr inventory (fail-soft HTTP 200); list endpoints expose `translated_count`/`total_count` — Validated in Phase 13 (API-01, API-02).
+- [x] Every existing page reskinned in-place onto shadcn (Queue/History/Settings/Bible List/JobLogs + Bible Editor, locking semantics unchanged); Docker rebuilt + live-smoke-tested 8/8 on :6868 — Validated in Phases 15 + 16 (RSK-01/02/03).
 
 ### Out of Scope
 
@@ -118,6 +122,10 @@ this consistency must work.
 | Two-pass + LLM self-review pipeline | Full-file analysis enables consistency; a self-critique pass earns blind-trust automation | ✓ Implemented — three-pass analyze→attribute→translate shipped (Phase 5); LLM self-review (Pass 4, best-effort, pre-gate) shipped (Phase 6, ENG-05) |
 | User-provided OpenAI-compatible endpoint | User already has their own LLM endpoint; avoids hosting models and cost-management scope | ✓ Implemented (Phase 1) — AsyncOpenAI client wraps base_url/model/key with retries, an asyncio.Semaphore concurrency cap, and json_schema→json_object→text fallback, as an isolated tested leaf |
 | Dockerized service + web UI | Matches *arr-stack conventions self-hosters expect | ✓ Implemented (Phase 7) — single multi-stage image, `/config` volume, port 6868, PUID/PGID; FastAPI lifespan owns the APScheduler poll + `/webhook` receiver + per-series-serialized worker + the React/Vite SPA; crash-safe resume reuses the `in_progress` ledger checkpoint |
+| shadcn/ui + jolly-ui dashboard, big-bang rollout (v1.1) | A Bazarr-class operator surface; one component system + theme migrated in dependency order keeps it coherent | ✓ Implemented (v1.1, Phases 11–16) — purple CSS-variable dark theme, sidebar shell, Series/Movies/episode browsing, every page reskinned; live smoke test 8/8 on :6868. Engine untouched. |
+| Pin `shadcn@2.10.0 init` (not @latest) | shadcn@latest (4.x) emits Tailwind v4 config that breaks the existing Tailwind v3.4 PostCSS pipeline | ✓ Good (Phase 11) — green build first try; `add` for components safely uses @latest |
+| Bazarr-authoritative episode data, fail-soft | Bazarr owns subtitle inventory; the UI must never 502 when it's down | ✓ Implemented (Phase 13, API-01) — season-grouped envelope always returns HTTP 200; `bazarr_available:false` degrades to empty subtitle lists |
+| Verify the translation core value against a frontier model before declaring it done | The engine is built + unit-verified but the configured deepseek endpoint is insufficient; cross-episode pronoun consistency is the whole product | ⚠️ Open — top carry-forward item; deepseek-v4-pro rejects json_schema and underperforms relationally (see Deferred Items) |
 
 ## Evolution
 
@@ -137,6 +145,8 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
+*Last updated: 2026-06-04 after v1.1 milestone close — v1.0 (phases 1–10) + v1.1 (phases 11–16) both shipped and archived (tags v1.0/v1.1). 16 phases, 65 plans. Open: translation core-value verification against a frontier model. Next: `/gsd-new-milestone`.*
+
 *Last updated: 2026-06-03 — started milestone v1.1 (UI v2: shadcn dashboard). v1.0 shipped all 40 requirements through Phase 10; v1.1 continues phase numbering at 11.*
 
 *Last updated: 2026-06-02 after Phase 10 (Source Selection & Per-Series Overrides) — the final v1.0 phase; all 40 v1 requirements now landed.*
