@@ -1,0 +1,68 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# docker-compose.yml — Trezarr deployment (generated from the live :6868 daemon)
+#
+#   docker compose up -d --build      # build trezarr:local + (re)create the daemon
+#   docker compose logs -f trezarr    # watch lifespan (alembic migrate + scheduler)
+#   docker compose down               # stop + remove (state persists in ./config vol)
+#
+# Secrets: the LLM API key is NEVER stored here — it is interpolated from a
+# gitignored `.env` (see `.env.example`). Everything else has a sane default
+# matching the current deployment but is overridable via `.env` / shell env.
+#
+# PATH-MAPPING (critical): the media volume's CONTAINER path is /data/media —
+# it MUST match the path recorded in /config/config.yaml's path mappings and the
+# path Sonarr/Radarr/Bazarr resolve to. Do NOT change it to /media without also
+# updating config.yaml, or source-subtitle lookup + sidecar writes will break.
+#
+# *arr connection (Sonarr/Radarr/Bazarr URLs + API keys) for THIS deployment is
+# stored in /config/config.yaml (written via the web UI), not as env vars, so it
+# survives redeploys via the config volume. Uncomment the TREZARR_*_API_KEY lines
+# below only if you prefer to inject them at runtime instead.
+#
+# No built-in auth (single-user / trusted-LAN, D-78). To restrict access, bind to
+# 127.0.0.1:6868:6868 and front it with an authenticating reverse proxy.
+# ─────────────────────────────────────────────────────────────────────────────
+
+services:
+  trezarr:
+    build:
+      context: .
+    image: trezarr:local
+    container_name: trezarr
+    restart: unless-stopped
+
+    ports:
+      - "6868:6868"            # web UI + REST API (use "127.0.0.1:6868:6868" for proxy-only)
+
+    volumes:
+      # Config volume — SQLite Series Bible DB, config.yaml, quarantine, logs.
+      - ${TREZARR_CONFIG_DIR:-/Users/dustin/trezarr-config}:/config
+      # Media volume — CONTAINER path /data/media must match config.yaml mappings.
+      - ${TREZARR_MEDIA_DIR:-/Users/dustin/trezarr-uat-media}:/data/media
+
+    environment:
+      # Privilege drop — UID/GID that owns the media so .vi.srt sidecars get
+      # correct ownership. Current host values: 501:20 (macOS). `id` to confirm.
+      - PUID=${PUID:-501}
+      - PGID=${PGID:-20}
+
+      # LLM endpoint. Key is REQUIRED and comes from .env (never committed).
+      - TREZARR_LLM_API_KEY=${TREZARR_LLM_API_KEY:?Set TREZARR_LLM_API_KEY in .env (copy .env.example)}
+      - TREZARR_LLM_BASE_URL=${TREZARR_LLM_BASE_URL:-https://api.tlemons.com/v1}
+      - TREZARR_LLM_MODEL=${TREZARR_LLM_MODEL:-ds/deepseek-v4-pro}
+
+      - TREZARR_CONFIG_PATH=/config/config.yaml
+
+      # Optional: override *arr keys via env instead of config.yaml.
+      # - TREZARR_SONARR_API_KEY=${TREZARR_SONARR_API_KEY:-}
+      # - TREZARR_RADARR_API_KEY=${TREZARR_RADARR_API_KEY:-}
+      # - TREZARR_BAZARR_API_KEY=${TREZARR_BAZARR_API_KEY:-}
+
+    # Healthcheck (curl http://localhost:6868/api/health) is defined in the
+    # Dockerfile and inherited automatically — no need to redeclare it here.
+
+    # Start the *arr stack first if they live in the same compose project:
+    # depends_on:
+    #   sonarr: { condition: service_started }
+    #   radarr: { condition: service_started }
+    #   bazarr: { condition: service_started }
