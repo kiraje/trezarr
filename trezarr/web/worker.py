@@ -36,9 +36,23 @@ from datetime import datetime, timezone
 from types import SimpleNamespace
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 logger = logging.getLogger(__name__)
+
+# Triggers that are subject to the auto-retry cap (D-66 extension). Explicit
+# human actions (manual, manual-retry) and crash recovery (startup-reconcile)
+# always bypass the cap.
+# NOTE: webhook-originated work currently arrives relabeled as trigger="poll"
+# (the webhook route fires poll_and_enqueue, which hard-codes trigger="poll"),
+# so "webhook" here is defensive — kept so a future direct webhook enqueue is
+# capped by default rather than silently uncapped.
+_AUTO_TRIGGERS = frozenset({"poll", "webhook"})
+
+# Terminal Job statuses that count toward the auto-retry cap. A `done` job means
+# a `.vi` sidecar was written (the item is no longer eligible, so it is never
+# re-enqueued); only failed/quarantined items stay eligible and accumulate.
+_TERMINAL_STATUSES = ("failed", "quarantined")
 
 # ── Module-level state (process lifetime) ──────────────────────────────────────
 
@@ -148,24 +162,45 @@ async def enqueue_job(
     series_id: int | None = None,
     trigger: str = "poll",
     media_item: Any = None,
+    max_auto_attempts: int | None = None,
 ) -> bool:
     """Enqueue a new translation job for source_path.
 
     Dedup guard: if a Job row already exists for source_path with status
     'queued' or 'running', return False without inserting (D-66).
 
+    Auto-retry cap (D-66 extension): if `max_auto_attempts` is set AND the
+    trigger is automatic (poll/webhook), the job is skipped once that many
+    terminal (failed/quarantined) Job rows already exist for source_path. This
+    bounds the duplicate-Job-row accumulation that a perpetually-quarantining
+    item (e.g. a too-weak model) would otherwise produce every poll cycle — the
+    same accumulation that fed the reconcile MultipleResultsFound crash-loop.
+    Manual (manual / manual-retry) and crash-recovery (startup-reconcile)
+    triggers always bypass the cap. `max_auto_attempts=None` disables the cap
+    (back-compat: reconcile and tests that pass no value).
+
+    Soft-ceiling caveat: the cap is read-then-write within one transaction but
+    Job.source_path has no UNIQUE constraint and two concurrent sweeps (poll +
+    webhook-fired poll) could each observe count<cap and both insert, so the cap
+    is an approximate ceiling, not a hard bound. Post-fix this only means a few
+    extra duplicate terminal rows under burst — it no longer crashes reconcile
+    (the .first() fix). Hardening it (partial-unique index, dedup-first) is
+    deferred (needs an Alembic migration; the live DB already holds duplicates).
+
     Args:
-        session_factory: Async session factory. When None, uses an in-memory dedup
-                         set (_no_db_enqueued) so the D-66 contract holds in tests.
-        source_path:     Subtitle file path to translate.
-        series_id:       Series identifier for per-series lock (D-68); None for movies.
-        trigger:         Job origin ∈ {poll, webhook, manual, manual-retry, startup-reconcile}.
-        media_item:      Optional discovery MediaItem. When provided, a safe snapshot
-                         of its fields is persisted on the Job row as media_item_json
-                         so _execute_job can reconstruct the Bible-aware path (CR-01).
+        session_factory:   Async session factory. When None, uses an in-memory dedup
+                           set (_no_db_enqueued) so the D-66 contract holds in tests.
+        source_path:       Subtitle file path to translate.
+        series_id:         Series identifier for per-series lock (D-68); None for movies.
+        trigger:           Job origin ∈ {poll, webhook, manual, manual-retry, startup-reconcile}.
+        media_item:        Optional discovery MediaItem. When provided, a safe snapshot
+                           of its fields is persisted on the Job row as media_item_json
+                           so _execute_job can reconstruct the Bible-aware path (CR-01).
+        max_auto_attempts: Auto-retry cap for automatic triggers; None disables it.
 
     Returns:
-        True if the job was enqueued; False if already queued/running (dedup).
+        True if the job was enqueued; False if deduped (already queued/running)
+        or skipped by the auto-retry cap.
     """
     from trezarr.jobs.models import Job  # noqa: PLC0415 — avoid circular at module scope
 
@@ -192,15 +227,41 @@ async def enqueue_job(
 
     async with session_factory() as session:
         async with session.begin():
-            # Dedup guard: skip if already queued or running (D-66 / Shared Patterns)
+            # Dedup guard: skip if already queued or running (D-66 / Shared Patterns).
+            # .first() not scalar_one_or_none(): defensive — duplicate queued/running
+            # rows must never raise here either.
             existing = await session.execute(
                 select(Job).where(
                     Job.source_path == source_path,
                     Job.status.in_(["queued", "running"]),
                 )
             )
-            if existing.scalar_one_or_none() is not None:
+            if existing.scalars().first() is not None:
                 return False
+
+            # Auto-retry cap (D-66 extension): for automatic triggers, stop
+            # re-enqueuing a source_path that has already terminally failed/
+            # quarantined `max_auto_attempts` times. Bounds duplicate Job rows
+            # and the LLM-budget bleed; manual/startup triggers bypass.
+            if max_auto_attempts is not None and trigger in _AUTO_TRIGGERS:
+                terminal_count = (
+                    await session.execute(
+                        select(func.count())
+                        .select_from(Job)
+                        .where(
+                            Job.source_path == source_path,
+                            Job.status.in_(_TERMINAL_STATUSES),
+                        )
+                    )
+                ).scalar_one()
+                if terminal_count >= max_auto_attempts:
+                    logger.info(
+                        "enqueue_job: source_path=%s has %d terminal failures "
+                        "(>= job_max_auto_attempts=%d); skipping auto re-enqueue "
+                        "(trigger=%s). Use a manual retry to force.",
+                        source_path, terminal_count, max_auto_attempts, trigger,
+                    )
+                    return False
 
             job = Job(
                 source_path=source_path,
@@ -305,12 +366,17 @@ async def reconcile_in_progress_from_ledger(session_factory) -> None:
     for pf in in_progress_files:
         async with session_factory() as session:
             job_result = await session.execute(
-                select(Job).where(
+                select(Job.id).where(
                     Job.source_path == pf.source_path,
                     Job.status.in_(["queued", "running", "done", "failed", "quarantined"]),
                 )
             )
-            matching_job = job_result.scalar_one_or_none()
+            # .first() (not scalar_one_or_none): this is a pure existence check —
+            # the matched row is never used beyond `is None`. A perpetually-
+            # quarantining item accumulates MULTIPLE terminal Job rows per
+            # source_path, so scalar_one_or_none() raised MultipleResultsFound
+            # here on startup → FastAPI lifespan crash → restart loop → UI down.
+            matching_job = job_result.first()
 
         if matching_job is None:
             # No matching Job row — this is a crash-before-job-row case (D-67 ARM 2)

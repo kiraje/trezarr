@@ -184,6 +184,14 @@ class TrezarrSettings(BaseSettings):
     # The user must flip this on explicitly to allow the daemon to auto-translate
     # the whole library. This protects paid LLM endpoints from accidental mass-use.
 
+    # Auto-retry cap: how many times an AUTOMATIC trigger (poll/webhook) may
+    # re-enqueue the same source_path after it has terminally failed/quarantined.
+    # Once this many failed+quarantined Job rows exist for a source_path, the
+    # poller stops re-enqueuing it (bounding duplicate Job-row accumulation and
+    # the LLM-budget bleed on a perpetually-quarantining item — e.g. a too-weak
+    # model). A manual retry (trigger=manual / manual-retry) always bypasses this.
+    job_max_auto_attempts: int = 5
+
     def __init__(self, _yaml_file: str | None = None, **data: Any) -> None:
         """Create settings.
 

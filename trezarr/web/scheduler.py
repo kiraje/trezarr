@@ -130,6 +130,12 @@ async def poll_and_enqueue(
         stats.already_done,
     )
 
+    # Auto-retry cap for this automatic sweep. Webhook-originated work also
+    # reaches here (the webhook route fires poll_and_enqueue), and every enqueue
+    # below is labeled trigger="poll", so both poll and webhook work are capped.
+    # Bounds duplicate Job rows / LLM-budget bleed for perpetually-failing items.
+    max_auto_attempts = getattr(settings, "job_max_auto_attempts", 5)
+
     # Step 4 — enqueue eligible items (with optional series_id_hint filter)
     enqueued = 0
     for eligible_item in eligible:
@@ -146,6 +152,7 @@ async def poll_and_enqueue(
             item_series_id,
             trigger="poll",
             media_item=eligible_item.media_item,
+            max_auto_attempts=max_auto_attempts,
         )
         if queued:
             enqueued += 1
