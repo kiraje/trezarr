@@ -35,7 +35,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 13: Backend Episodes Enrichment** - Rewrite `GET /api/library/series/{id}/episodes` to return season-grouped episode records from Sonarr with audio languages and Bazarr subtitle inventory (fail-soft); expose `translated_count`/`total_count` on list endpoints (completed 2026-06-03)
 - [x] **Phase 14: New Library Pages + Nav Badge Wiring** - Build Series list, Series detail (season-grouped Accordion with audio/subtitle badges, translate actions, search/filter/sort), Movies list, and wire the sidebar count+LIVE badges to live API data (completed 2026-06-03)
 - [x] **Phase 15: Reskin Existing Pages** - Reskin-in-place Queue, History, Settings, Bible List, JobLogs, and Bible Editor onto shadcn primitives; remove legacy bridge tokens after all pages pass (completed 2026-06-03)
-- [ ] **Phase 16: Docker Rebuild + Live Smoke Test** - Rebuild the multi-stage Docker image with `--no-cache`, run the new dashboard on :6868 against the live *arr stack, and verify all six nav routes, episode badges, translate flow, and deep-link fallback
+- [x] **Phase 16: Docker Rebuild + Live Smoke Test** - Rebuild the multi-stage Docker image with `--no-cache`, run the new dashboard on :6868 against the live *arr stack, and verify all six nav routes, episode badges, translate flow, and deep-link fallback (completed 2026-06-04)
 
 ## Phase Details
 
@@ -506,4 +506,4 @@ v1.1 phases execute in numeric order: 11 → 12 → 13 (parallel-eligible with 1
 | 13. Backend Episodes Enrichment | 3/3 | Complete    | 2026-06-03 |
 | 14. New Library Pages + Nav Badge Wiring | 6/6 | Complete    | 2026-06-03 |
 | 15. Reskin Existing Pages | 7/7 | Complete    | 2026-06-03 |
-| 16. Docker Rebuild + Live Smoke Test | 0/TBD | Not started | - |
+| 16. Docker Rebuild + Live Smoke Test | 0/0 | Complete    | 2026-06-04 |

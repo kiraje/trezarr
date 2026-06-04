@@ -1,5 +1,5 @@
 ---
-status: human_needed
+status: passed
 phase: 16-docker-rebuild-live-smoke-test
 requirement_ids: [RSK-03]
 verified: 2026-06-04

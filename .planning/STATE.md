@@ -2,9 +2,9 @@
 gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: "UI v2: shadcn dashboard"
-status: executing
-stopped_at: Completed 14-02-PLAN.md
-last_updated: "2026-06-03T20:23:44.158Z"
+status: milestone_complete
+stopped_at: Milestone complete (Phase 16 was final phase)
+last_updated: 2026-06-04T02:20:58.931Z
 last_activity: 2026-06-03 -- Phase 16 execution started
 progress:
   total_phases: 16
@@ -21,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-06-03)
 
 **Core value:** Vietnamese subtitles that stay consistent and relationally correct (right pronoun pair, stable names/terms) across an entire series — produced automatically.
-**Current focus:** Phase 16 — docker-rebuild-live-smoke-test
+**Current focus:** Milestone complete
 
 ## Current Position
 
-Phase: 16 (docker-rebuild-live-smoke-test) — EXECUTING
-Plan: 1 of 1
-Status: Executing Phase 16
-Last activity: 2026-06-03 -- Phase 16 execution started
+Phase: 16
+Plan: Not started
+Status: Milestone complete
+Last activity: 2026-06-04
 
 ```
 v1.1 Progress: [          ] 0% (0/6 phases)
@@ -63,6 +63,7 @@ Phase 15: [ ] Reskin       Phase 16: [ ] Docker/Smoke
 | 13 | 3 | - | - |
 | 14 | 6 | - | - |
 | 15 | 7 | - | - |
+| 16 | 0 | - | - |
 
 **Recent Trend:**
 

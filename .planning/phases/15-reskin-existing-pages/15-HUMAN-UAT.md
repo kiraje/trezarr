@@ -1,5 +1,5 @@
 ---
-status: partial
+status: complete
 phase: 15-reskin-existing-pages
 source: [15-VERIFICATION.md, 15-REVIEW.md]
 started: 2026-06-04
@@ -8,24 +8,24 @@ updated: 2026-06-04
 
 ## Current Test
 
-[awaiting human testing — deferred to Phase 16 live smoke test against real *arr stack + backend]
+[passed — live smoke test 2026-06-04]
 
 ## Tests
 
 ### 1. Reskinned pages render correctly (visual)
 expected: Navigate Queue, History, Settings, Bible List, JobLogs in the browser — each renders on the shadcn purple theme with NO legacy hex colors visible; loading/empty/error states display correctly.
-result: [pending]
+result: pass
 
 ### 2. BibleEditor interactive behavior (all 5 tabs, logic frozen)
 expected: Open the Bible Editor; all five tabs (Characters, Address Map, Term Dictionary, Register, Overrides) load; lock/provenance badges display correctly; field-history panels populate; PronounCombo works; the hard-block on lock-with-empty-term (D-87) still prevents locking an empty term — confirmed against the live API/backend. The reskin was verified presentation-only in code; this confirms it at runtime.
-result: [pending]
+result: pass
 
 ## Summary
 
 total: 2
-passed: 0
+passed: 2
 issues: 0
-pending: 2
+pending: 0
 skipped: 0
 blocked: 0
 
