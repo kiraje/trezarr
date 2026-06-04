@@ -271,3 +271,31 @@ def test_build_review_prompt_omits_pronoun_pair_when_dominant_pair_none():
     assert "Pronoun pair" not in prompt, (
         "build_review_prompt must NOT include pronoun pair block when dominant_pair is None"
     )
+
+
+def test_build_review_prompt_injects_character_names_regardless_of_source():
+    """Pass-4 must inject character names unconditionally so non-Latin sources still pin names.
+
+    The existing term filter (source_term substring of the source text) can never match a Latin
+    term key against a Chinese source, so for CJK sources Pass-4 injected nothing — letting the
+    protagonist drift. Character names must be injected regardless of source script.
+    """
+    from trezarr.translate.engine import build_review_prompt
+    from types import SimpleNamespace
+
+    bible = SimpleNamespace(
+        register_value="neutral",
+        terms=[],
+        characters=[SimpleNamespace(original_latin_name="Daisy")],
+    )
+    prompt = build_review_prompt(
+        source_texts=["雏菊大人"],          # Chinese source — does NOT contain the string "Daisy"
+        translated_texts=["Cúc đại nhân"],
+        resolved_map={},
+        bible=bible,
+        settings=SimpleNamespace(),
+        dominant_pair=None,
+    )
+    assert "Daisy" in prompt, (
+        "Character name must be injected into the review prompt regardless of source script"
+    )

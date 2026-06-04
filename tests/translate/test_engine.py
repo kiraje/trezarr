@@ -336,6 +336,86 @@ def test_pronoun_hint_in_prompt():
     )
 
 
+def test_glossary_block_in_translate_prompt():
+    """Glossary injected into the Pass-3 prompt so proper nouns render consistently (consistency moat).
+
+    The audit found the protagonist rendered 11 ways in one episode because Pass-3 never saw the
+    Bible's canonical name/term renderings. Assert:
+    - build_translate_prompt(glossary=[...]) emits a [GLOSSARY ...] block listing each rendering
+      plus an instruction to use them exactly (and not Japanese romaji / source script).
+    - build_translate_prompt WITHOUT glossary has no [GLOSSARY block (back-compat).
+    """
+    from trezarr.translate.engine import build_translate_prompt
+
+    prompt = build_translate_prompt(
+        ["樱说不要"],
+        [],
+        [],
+        glossary=["Sakura → Anh Đào", "Daisy → Daisy"],
+    )
+    assert "[GLOSSARY" in prompt, "Expected a [GLOSSARY] block when glossary provided"
+    assert "Sakura → Anh Đào" in prompt, "Glossary rendering must appear verbatim"
+    assert "Daisy → Daisy" in prompt, "Pinned character name must appear verbatim"
+    assert "Japanese romaji" in prompt or "EXACT" in prompt, (
+        "Expected an instruction to use the glossary renderings exactly"
+    )
+
+    plain = build_translate_prompt(["Hello"], [], [])
+    assert "[GLOSSARY" not in plain, "No glossary block when glossary not provided (back-compat)"
+
+
+def test_build_glossary_lines_from_bible():
+    """build_glossary_lines pins every term + character name; a char covered by a term isn't double-listed."""
+    from types import SimpleNamespace
+    from trezarr.translate.engine import build_glossary_lines
+
+    bible = SimpleNamespace(
+        terms=[SimpleNamespace(source_term="Sakura", vietnamese_rendering="Anh Đào")],
+        characters=[
+            SimpleNamespace(original_latin_name="Daisy"),   # no term entry → pin to itself
+            SimpleNamespace(original_latin_name="Sakura"),  # covered by the term above
+        ],
+    )
+    lines = build_glossary_lines(bible)
+    assert "Sakura → Anh Đào" in lines, "Term rendering must be in the glossary"
+    assert "Daisy → Daisy" in lines, "Character with no term entry must be pinned to its own name"
+    assert sum(1 for ln in lines if ln.startswith("Sakura")) == 1, "Sakura must not be double-listed"
+
+
+async def test_translate_batch_forwards_glossary_to_prompt(settings_factory):
+    """_translate_batch threads the glossary into the prompt actually sent to the LLM (wiring).
+
+    The [GLOSSARY] block is inert unless the Pass-3 dispatch forwards it through _translate_batch.
+    """
+    engine_mod = pytest.importorskip("trezarr.translate.engine")
+    from unittest.mock import patch
+    from trezarr.subtitles.model import SubLine
+    from trezarr.translate.batching import Batch
+    from trezarr.llm.client import LLMClient
+
+    settings = settings_factory(translate_batch_retry_attempts=1)
+    batch = Batch(
+        cues=[SubLine(index="1", start_tc="00:00:01,000", end_tc="00:00:03,000", text="樱说不要")],
+        context_before=[],
+        context_after=[],
+    )
+
+    captured: dict[str, str] = {}
+
+    async def _fake_call(messages, response_model=None, model=None):  # D-113: accept model kwarg
+        captured["prompt"] = messages[0]["content"]
+        return "[1] Anh Đào nói đừng"
+
+    client = LLMClient(settings)
+    with patch.object(client, "call", side_effect=_fake_call):
+        await engine_mod._translate_batch(
+            batch, client, settings, glossary=["Sakura → Anh Đào"]
+        )
+
+    assert "[GLOSSARY" in captured["prompt"], "glossary block must reach the prompt sent to the LLM"
+    assert "Sakura → Anh Đào" in captured["prompt"], "glossary line must reach the prompt"
+
+
 async def test_reassembly_preserves_raw_cues_at_original_positions(settings_factory, tmp_path):
     """End-to-end reassembly: raw (karaoke/drawing) cues stay at their source positions (D-98/D-99).
 

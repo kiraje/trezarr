@@ -133,12 +133,40 @@ class TranslationResult:
 
 # ── Prompt construction ────────────────────────────────────────────────────────
 
+def build_glossary_lines(bible: object) -> list[str]:
+    """Build "source → canonical rendering" glossary lines from the Series Bible.
+
+    Pins every Term Dictionary entry (``source_term → vietnamese_rendering``) and every character
+    name so the translator renders proper nouns IDENTICALLY across all cues — the consistency moat
+    (BIBLE-04). A character whose name already has a Term Dictionary entry is covered by it; a
+    character without one is pinned to its own ``original_latin_name`` (e.g. ``Daisy → Daisy``),
+    which is what prevents the protagonist drifting into many spellings within one episode.
+
+    Tolerant of a bible with no characters/terms (returns []).
+    """
+    lines: list[str] = []
+    seen: set[str] = set()
+    for t in getattr(bible, "terms", None) or []:
+        src = (getattr(t, "source_term", "") or "").strip()
+        ren = (getattr(t, "vietnamese_rendering", "") or "").strip()
+        if src and ren:
+            lines.append(f"{src} → {ren}")
+            seen.add(src.lower())
+    for c in getattr(bible, "characters", None) or []:
+        name = (getattr(c, "original_latin_name", "") or "").strip()
+        if name and name.lower() not in seen:
+            lines.append(f"{name} → {name}")
+            seen.add(name.lower())
+    return lines
+
+
 def build_translate_prompt(
     batch_texts: list[str],
     context_before: list[str],
     context_after: list[str],
     source_lang: str = "English",
     pronoun_hints: "dict[int, tuple[str, str]] | None" = None,
+    glossary: "list[str] | None" = None,
 ) -> str:
     """Build the numbered-line translation prompt (D-13, D-15, ENG-03, D-46).
 
@@ -157,6 +185,11 @@ def build_translate_prompt(
                          When provided, hinted lines render as:
                          "[N] (speaker says: X; addresses as: Y) <text>"
                          Unhinted lines render as "[N] <text>" (unchanged).
+        glossary:        Optional list of "source → canonical rendering" lines (character
+                         names + Term Dictionary). When provided, a [GLOSSARY] block + a
+                         "use these EXACTLY" rule are injected so proper nouns render
+                         identically across every cue (the consistency moat). Build it with
+                         build_glossary_lines(bible).
 
     Returns:
         A prompt string ready to send to LLMClient.call() as a user message.
@@ -167,8 +200,20 @@ def build_translate_prompt(
         "1. Output ONLY the numbered lines [1], [2], ... [N] in order.",
         "2. Keep <<T0>>, <<T1>>, ... tokens EXACTLY as-is (formatting placeholders — never translate or modify them).",
         "3. Do NOT translate or output the [context] lines.",
-        "",
     ]
+    if glossary:
+        parts.append(
+            "4. For any name or term in [GLOSSARY], use the EXACT Vietnamese rendering on the "
+            "right — identical in every line. Never invent alternate transliterations, use "
+            "Japanese romaji, or leave source-language script."
+        )
+    parts.append("")
+
+    if glossary:
+        parts.append("[GLOSSARY - canonical renderings, use EXACTLY]")
+        for g in glossary:
+            parts.append(f"- {g}")
+        parts.append("")
 
     if context_before:
         parts.append("[CONTEXT - read only, do not output]")
@@ -241,6 +286,15 @@ def build_review_prompt(
     ]
     for term in relevant_terms[:10]:  # cap at 10 to control token count
         parts.append(f"  - Term: {term.source_term} → {term.vietnamese_rendering}")
+
+    # Character names — injected UNCONDITIONALLY (not substring-filtered). The term filter above
+    # can never match a Latin term key (e.g. "Sakura") against a non-Latin source (e.g. Chinese
+    # "樱"), so for CJK sources Pass-4 injected nothing and the protagonist drifted. Always pin
+    # the canonical character names so the reviewer can catch a wrong/variant rendering.
+    for ch in (getattr(bible, "characters", None) or [])[:15]:
+        nm = (getattr(ch, "original_latin_name", "") or "").strip()
+        if nm:
+            parts.append(f"  - Name (render identically everywhere): {nm}")
 
     parts.extend([
         "",
@@ -450,6 +504,7 @@ def _make_translate_batch_fn(settings: "TrezarrSettings"):
         _settings: "TrezarrSettings",
         pronoun_hints: "dict[int, tuple[str, str]] | None" = None,
         model: "str | None" = None,  # D-113: per-call model override
+        glossary: "list[str] | None" = None,
     ) -> list[str]:
         """Translate a single batch, retrying on BatchValidationError only (D-18).
 
@@ -489,6 +544,7 @@ def _make_translate_batch_fn(settings: "TrezarrSettings"):
         prompt = build_translate_prompt(
             cleaned_texts, context_before_texts, context_after_texts,
             pronoun_hints=pronoun_hints,
+            glossary=glossary,
         )
 
         # Step 3: Call LLMClient (the sole concurrency gate is inside LLMClient._semaphore)
@@ -524,6 +580,7 @@ async def _translate_batch(
     settings: "TrezarrSettings",
     pronoun_hints: "dict[int, tuple[str, str]] | None" = None,
     model: "str | None" = None,  # D-113: per-call model override
+    glossary: "list[str] | None" = None,
 ) -> list[str]:
     """Public entry point for translating a single batch with retry.
 
@@ -544,7 +601,7 @@ async def _translate_batch(
         BatchValidationError: If all retries are exhausted (reraise=True in decorator).
     """
     fn = _make_translate_batch_fn(settings)
-    return await fn(batch, llm_client, settings, pronoun_hints, model)
+    return await fn(batch, llm_client, settings, pronoun_hints, model, glossary)
 
 
 # ── Quarantine artifact write ──────────────────────────────────────────────────
@@ -933,10 +990,14 @@ async def translate_file(
     # capture the quarantine result and return after the try/except* block.
     _batch_quarantine: TranslationResult | None = None
     batch_results: list[list[str]] = []
+    # Glossary (character names + Term Dictionary) injected into every Pass-3 prompt so proper
+    # nouns render IDENTICALLY across all cues (the consistency moat). Computed once per file;
+    # None when Bible-unaware (mechanical fallback) so the prompt is unchanged there.
+    glossary_lines = build_glossary_lines(bible) if bible is not None else None
     try:
         async with asyncio.TaskGroup() as tg:
             translate_tasks = [
-                tg.create_task(_translate_batch(b, llm_client, settings, per_batch_hints[i], model))
+                tg.create_task(_translate_batch(b, llm_client, settings, per_batch_hints[i], model, glossary_lines))
                 for i, b in enumerate(batches)
             ]
         batch_results = [t.result() for t in translate_tasks]
