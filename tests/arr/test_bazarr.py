@@ -194,3 +194,68 @@ async def test_path_mapping_applied_to_subtitle_path(httpx_mock):
     assert "/trezarr/tv" in str(entry.path), (
         f"Expected path_mapping to rewrite /bazarr/tv → /trezarr/tv, got {entry.path!r}"
     )
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# W3: inventory param-form fallback (seriesid[] → plain seriesid). Real tests
+# (not xfail) — BazarrClient ships since Phase 10.
+# ──────────────────────────────────────────────────────────────────────────────
+
+INVENTORY_FIXTURE = {
+    "sonarrEpisodeId": 100,
+    "path": "/tv/Show/S01E01.mkv",
+    "subtitles": [
+        {"name": "Korean", "code2": "ko", "code3": "kor",
+         "path": "/tv/Show/S01E01.ko.srt", "forced": False, "hi": False},
+    ],
+}
+
+
+async def test_fetch_episode_inventory_falls_back_to_plain_seriesid(httpx_mock):
+    """W3: when the bracketed seriesid[] form returns empty, retry with plain seriesid."""
+    from trezarr.arr.bazarr import BazarrClient  # noqa: PLC0415
+
+    httpx_mock.add_response(json={"data": []})                    # seriesid[] → empty
+    httpx_mock.add_response(json={"data": [INVENTORY_FIXTURE]})    # seriesid   → data
+
+    client = BazarrClient(base_url="http://bazarr.local:6767", api_key="test-key")
+    items = await client.fetch_episode_inventory(1)
+
+    assert len(items) == 1, "fallback must surface the plain-seriesid data"
+    reqs = httpx_mock.get_requests()
+    assert len(reqs) == 2, "must try bracketed then fall back to plain"
+    assert "seriesid%5B%5D=1" in str(reqs[0].url), "first request uses the seriesid[] form"
+    u1 = str(reqs[1].url)
+    assert "seriesid=1" in u1 and "seriesid%5B%5D" not in u1, "fallback uses plain seriesid"
+
+
+async def test_fetch_episode_inventory_no_fallback_when_bracketed_returns_data(httpx_mock):
+    """W3: no extra request when the bracketed form already returns data."""
+    from trezarr.arr.bazarr import BazarrClient  # noqa: PLC0415
+
+    httpx_mock.add_response(json={"data": [INVENTORY_FIXTURE]})
+
+    client = BazarrClient(base_url="http://bazarr.local:6767", api_key="test-key")
+    items = await client.fetch_episode_inventory(1)
+
+    assert len(items) == 1
+    assert len(httpx_mock.get_requests()) == 1, "no fallback call when the bracketed form has data"
+
+
+async def test_fetch_movie_inventory_falls_back_to_plain_radarrid(httpx_mock):
+    """W3: the movie inventory path has the same radarrid[] → radarrid fallback."""
+    from trezarr.arr.bazarr import BazarrClient  # noqa: PLC0415
+
+    movie_item = {**INVENTORY_FIXTURE, "radarrId": 7, "sonarrEpisodeId": None}
+    httpx_mock.add_response(json={"data": []})              # radarrid[] → empty
+    httpx_mock.add_response(json={"data": [movie_item]})    # radarrid   → data
+
+    client = BazarrClient(base_url="http://bazarr.local:6767", api_key="test-key")
+    items = await client.fetch_movie_inventory(7)
+
+    assert len(items) == 1, "fallback must surface the plain-radarrid data"
+    reqs = httpx_mock.get_requests()
+    assert len(reqs) == 2, "must try bracketed then fall back to plain"
+    assert "radarrid%5B%5D=7" in str(reqs[0].url), "first request uses the radarrid[] form"
+    u1 = str(reqs[1].url)
+    assert "radarrid=7" in u1 and "radarrid%5B%5D" not in u1, "fallback uses plain radarrid"

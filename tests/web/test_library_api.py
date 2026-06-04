@@ -523,3 +523,27 @@ async def test_get_library_movies_count_fields():
         assert "total_count" in movie_item, f"Missing total_count in {movie_item}"
         assert isinstance(movie_item["translated_count"], int)
         assert isinstance(movie_item["total_count"], int)
+
+
+async def test_get_library_includes_services_flags():
+    """W1: GET /api/library exposes positive per-service enabled flags for the LIVE badge.
+
+    The LIVE badge previously inferred "live" from absence-of-error, so a DISABLED
+    *arr service showed a false-positive green badge. The response now carries a
+    positive `services` map; a disabled service is False (→ not LIVE).
+    """
+    from trezarr.web.app import create_app  # noqa: PLC0415
+    from httpx import AsyncClient, ASGITransport  # noqa: PLC0415
+
+    app = create_app()
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        resp = await client.get("/api/library")
+
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "services" in data, "response must expose positive enabled flags (W1)"
+    services = data["services"]
+    assert set(services.keys()) == {"sonarr", "radarr", "bazarr"}
+    # Default settings disable all *arr services → all flags False (the exact
+    # disabled-service case that used to false-positive as LIVE).
+    assert services == {"sonarr": False, "radarr": False, "bazarr": False}

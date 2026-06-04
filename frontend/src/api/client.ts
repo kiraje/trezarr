@@ -503,6 +503,10 @@ export interface LibraryResponse {
   series: SeriesItem[];
   movies: MovieItem[];
   errors: Array<{ source: string; error: string }>;
+  /** Positive enabled flags per *arr service (W1). The LIVE badge requires the
+   *  service to be enabled here, not merely the absence of an error entry.
+   *  Optional for back-compat with any response that predates this field. */
+  services?: { sonarr: boolean; radarr: boolean; bazarr: boolean };
 }
 
 /** One subtitle track entry from Bazarr (D-02 — path field intentionally absent). */
@@ -542,8 +546,10 @@ export interface SeasonGroup {
 /** Response envelope from GET /api/library/series/:id/episodes (Phase-13). */
 export interface SeriesEpisodesResponse {
   series_id: number;
-  /** Series title from Sonarr — present when Sonarr responds successfully (UI#1). */
-  series_title?: string;
+  /** Series title from Sonarr. The backend always emits the key; the value may
+   *  be null when Sonarr returned no title (W2 — was optional, now nullable to
+   *  match the backend contract). */
+  series_title: string | null;
   /** False when Bazarr is disabled or errored — subtitle column suppressed (D-05/D-08). */
   bazarr_available: boolean;
   seasons: SeasonGroup[];

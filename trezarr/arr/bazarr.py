@@ -281,11 +281,65 @@ class BazarrClient:
         subtitles = [self._parse_subtitle_entry(sub) for sub in item.get("subtitles", [])]
         return BazarrInventoryItem(arr_id=arr_id, path=path, subtitles=subtitles)
 
+    async def _fetch_inventory_data(self, url: str, id_key: str, id_value: int) -> list:
+        """GET an inventory endpoint's ``data`` list, with a param-form fallback (W3).
+
+        Tries the bracketed ``<id_key>[]`` query form first (confirmed working on
+        the reference Bazarr instance), then falls back to the plain ``<id_key>``
+        form if the bracketed one returns nothing. The fallback only fires on an
+        empty result, so an item that genuinely has subtitles never incurs a
+        second request; an item that genuinely has none costs one extra request.
+
+        Args:
+            url:      Full endpoint URL.
+            id_key:   Base query key ("seriesid" or "radarrid").
+            id_value: The Sonarr/Radarr id.
+
+        Returns:
+            The ``data`` list from whichever param form returned content.
+
+        Raises:
+            BazarrError: on HTTP error or transport failure.
+        """
+        display_host = _normalize_arr_host(self._host)
+        headers = {"X-API-KEY": self._api_key}
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                r = await client.get(url, params=[(f"{id_key}[]", id_value)], headers=headers)
+                r.raise_for_status()
+                data = r.json().get("data", [])
+                if not data:
+                    # Defensive fallback for Bazarr builds that expect the plain key.
+                    r = await client.get(url, params=[(id_key, id_value)], headers=headers)
+                    r.raise_for_status()
+                    data = r.json().get("data", [])
+                return data
+        except httpx.HTTPStatusError as exc:
+            raise BazarrError(
+                f"Bazarr inventory HTTP {exc.response.status_code} at {display_host}"
+            ) from exc
+        except httpx.RequestError as exc:
+            raise BazarrError(
+                f"Bazarr inventory fetch failed at {display_host}: "
+                f"{type(exc).__name__}"
+            ) from exc
+        except ValueError as exc:
+            # json.JSONDecodeError (a ValueError) on a malformed 200 body — wrap it
+            # so a non-JSON response surfaces as BazarrError (fail-soft upstream),
+            # never an unhandled crash. Message exposes only the redacted host.
+            raise BazarrError(
+                f"Bazarr inventory returned a non-JSON body at {display_host}"
+            ) from exc
+
     async def fetch_episode_inventory(self, sonarr_series_id: int) -> list[BazarrInventoryItem]:
         """GET /api/episodes?seriesid=N — returns full BazarrInventoryItem list.
 
         Use this when you need per-episode structure (arr_id, media path, subtitles).
         Use fetch_episodes() when you only need the flat SubtitleEntry list.
+
+        Tries the ``seriesid[]`` query form, falling back to plain ``seriesid``
+        when the bracketed form returns nothing (W3 — param form not guaranteed
+        across Bazarr builds).
 
         Args:
             sonarr_series_id: Sonarr series ID.
@@ -296,30 +350,16 @@ class BazarrClient:
         Raises:
             BazarrError: on HTTP error or transport failure.
         """
-        url = f"{self._base_url}/api/episodes"
-        display_host = _normalize_arr_host(self._host)
-        try:
-            async with httpx.AsyncClient(timeout=10.0) as client:
-                r = await client.get(
-                    url,
-                    params=[("seriesid[]", sonarr_series_id)],
-                    headers={"X-API-KEY": self._api_key},
-                )
-            r.raise_for_status()
-            data = r.json().get("data", [])
-            return [self._parse_inventory_item(ep) for ep in data]
-        except httpx.HTTPStatusError as exc:
-            raise BazarrError(
-                f"Bazarr inventory HTTP {exc.response.status_code} at {display_host}"
-            ) from exc
-        except httpx.RequestError as exc:
-            raise BazarrError(
-                f"Bazarr inventory fetch failed at {display_host}: "
-                f"{type(exc).__name__}"
-            ) from exc
+        data = await self._fetch_inventory_data(
+            f"{self._base_url}/api/episodes", "seriesid", sonarr_series_id
+        )
+        return [self._parse_inventory_item(ep) for ep in data]
 
     async def fetch_movie_inventory(self, radarr_movie_id: int) -> list[BazarrInventoryItem]:
-        """GET /api/movies?radarrid[]=N — returns full BazarrInventoryItem list.
+        """GET /api/movies?radarrid=N — returns full BazarrInventoryItem list.
+
+        Tries the ``radarrid[]`` query form, falling back to plain ``radarrid``
+        when the bracketed form returns nothing (W3).
 
         Args:
             radarr_movie_id: Radarr movie ID.
@@ -330,24 +370,7 @@ class BazarrClient:
         Raises:
             BazarrError: on HTTP error or transport failure.
         """
-        url = f"{self._base_url}/api/movies"
-        display_host = _normalize_arr_host(self._host)
-        try:
-            async with httpx.AsyncClient(timeout=10.0) as client:
-                r = await client.get(
-                    url,
-                    params=[("radarrid[]", radarr_movie_id)],
-                    headers={"X-API-KEY": self._api_key},
-                )
-            r.raise_for_status()
-            data = r.json().get("data", [])
-            return [self._parse_inventory_item(m) for m in data]
-        except httpx.HTTPStatusError as exc:
-            raise BazarrError(
-                f"Bazarr inventory HTTP {exc.response.status_code} at {display_host}"
-            ) from exc
-        except httpx.RequestError as exc:
-            raise BazarrError(
-                f"Bazarr inventory fetch failed at {display_host}: "
-                f"{type(exc).__name__}"
-            ) from exc
+        data = await self._fetch_inventory_data(
+            f"{self._base_url}/api/movies", "radarrid", radarr_movie_id
+        )
+        return [self._parse_inventory_item(m) for m in data]

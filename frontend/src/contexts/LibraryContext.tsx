@@ -9,9 +9,12 @@
  *   Uses translated_count < total_count as a proxy for "needs VI translation".
  *   This is a documented approximation (not per-episode source-sub check) — intentional.
  *
- * D-10 LIVE badge derivation (inferred from errors[], no explicit flag in API):
- *   Sonarr LIVE = data !== null && (series.length > 0 || no sonarr error in errors[])
- *   Radarr LIVE = data !== null && (movies.length > 0 || no radarr error in errors[])
+ * D-10 LIVE badge derivation (W1 — uses the positive services.* enabled flag):
+ *   Sonarr LIVE = data.services?.sonarr === true && no "sonarr" error in errors[]
+ *   Radarr LIVE = data.services?.radarr === true && no "radarr" error in errors[]
+ *   A DISABLED service (services.<svc> !== true) is NOT live — this fixes the
+ *   prior false-positive where a disabled service (empty list + no error) showed
+ *   a green LIVE badge. An ENABLED-but-erroring service is also not live.
  *
  * Data sharing strategy: Series/Movies pages call setLibraryData after their fetch.
  * The sidebar reads counts + LIVE state from context without making its own request.
@@ -65,22 +68,22 @@ export function useLibraryContext(): LibraryContextValue {
 // ── Derived helpers (used by app-sidebar.tsx for badge data) ──────────────────
 
 /**
- * Returns true when Sonarr is live per D-10 rule.
- * Concrete rule: series.length > 0 OR no "sonarr" entry in errors[].
- * An empty library with no errors still means the service is live.
+ * Returns true when Sonarr is live (W1 rule).
+ * Concrete rule: Sonarr is enabled (services.sonarr === true) AND has no error.
+ * A disabled service is not live (was a false-positive under the old rule).
  */
 export function getSeriesLiveBadge(data: LibraryResponse | null): boolean {
   if (data === null) return false;
-  return data.series.length > 0 || !data.errors.some((e) => e.source === "sonarr");
+  return data.services?.sonarr === true && !data.errors.some((e) => e.source === "sonarr");
 }
 
 /**
- * Returns true when Radarr is live per D-10 rule.
- * Concrete rule: movies.length > 0 OR no "radarr" entry in errors[].
+ * Returns true when Radarr is live (W1 rule).
+ * Concrete rule: Radarr is enabled (services.radarr === true) AND has no error.
  */
 export function getMoviesLiveBadge(data: LibraryResponse | null): boolean {
   if (data === null) return false;
-  return data.movies.length > 0 || !data.errors.some((e) => e.source === "radarr");
+  return data.services?.radarr === true && !data.errors.some((e) => e.source === "radarr");
 }
 
 /**

@@ -223,7 +223,21 @@ async def get_library(request: Request) -> JSONResponse:
             movies_list = []
             errors.append({"source": "radarr", "error": f"{type(exc).__name__} at {display}"})
 
-    return JSONResponse({"series": series_list, "movies": movies_list, "errors": errors})
+    return JSONResponse({
+        "series": series_list,
+        "movies": movies_list,
+        "errors": errors,
+        # Positive enabled flags (W1): each flag is the service's configured-on
+        # state (settings.*_enabled). The UI combines it with the `errors[]` array
+        # for the LIVE badge (enabled AND not erroring). This replaces the old
+        # absence-of-error inference, under which a DISABLED service (empty list,
+        # no error) showed a false-positive green LIVE badge.
+        "services": {
+            "sonarr": settings.sonarr_enabled,
+            "radarr": settings.radarr_enabled,
+            "bazarr": settings.bazarr_enabled,
+        },
+    })
 
 
 # ── GET /api/library/series/{id}/episodes ─────────────────────────────────────
@@ -311,11 +325,9 @@ async def get_series_episodes(series_id: int, request: Request) -> JSONResponse:
             from trezarr.arr.bazarr import BazarrClient, BazarrError  # noqa: PLC0415
 
             bazarr_client = BazarrClient.from_settings(settings)
-            # fetch_episode_inventory uses params=[("seriesid[]", id)] list form.
-            # NOTE: No runtime fallback to plain "seriesid" is implemented here.
-            # If live Bazarr requires plain "seriesid" instead of "seriesid[]",
-            # the result will be silently empty (bazarr_available=True, subtitles=[]).
-            # TODO(phase-16): verify seriesid[] vs seriesid against live Bazarr at 192.168.5.42.
+            # fetch_episode_inventory tries the "seriesid[]" query form then falls
+            # back to plain "seriesid" if the bracketed form returns nothing (W3),
+            # so a Bazarr build that expects either key works without a code change.
             bazarr_items = await bazarr_client.fetch_episode_inventory(series_id)
             # Build lookup: episode.id (arr_id / sonarrEpisodeId) → badge list (D-02)
             bazarr_by_ep_id = {
