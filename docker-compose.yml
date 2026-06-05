@@ -20,9 +20,11 @@
 #     The UI writes /config/config.yaml, which persists across redeploys via the
 #     config volume. No env vars needed; the UI marks env-overridden fields read-only.
 #
-#   PATH B — Pure-env (override): uncomment the TREZARR_*_HOST / _PORT / _API_KEY /
-#     _ENABLED vars below and supply values in .env. Env vars take precedence over
-#     config.yaml (env > YAML > code defaults).
+#   PATH B — Pure-env: just set the TREZARR_*_HOST / _PORT / _API_KEY / _ENABLED vars
+#     in .env. The matching keys are already listed (bare, no =value) in the environment
+#     block below, so docker compose passes them through ONLY when .env defines them —
+#     when unset they are omitted entirely and config.yaml/defaults win (so the bare
+#     keys are safe to leave in place). Env takes precedence: env > config.yaml > default.
 #
 #   IMPORTANT — ENABLED flag: the web UI auto-enables a service when host+key are
 #     set, but the env path does NOT. TREZARR_*_ENABLED defaults to false and is
@@ -63,23 +65,36 @@ services:
 
       - TREZARR_CONFIG_PATH=/config/config.yaml
 
-      # ── *arr connection (PATH B: pure-env override) ──────────────────────────────
-      # Uncomment all four vars per service. ENABLED=true is mandatory (see header).
+      # ── *arr connection + tuning (BARE pass-through — set in .env to use) ─────────
+      # These are BARE keys (no =value). docker compose OMITS each from the container
+      # env when it is unset in .env, so /config/config.yaml + code defaults still win
+      # (PATH A). Define it in .env to override (PATH B) — bare keys NEVER clobber
+      # config.yaml when unset, unlike `${VAR:-}` which would inject an empty string.
+      # Reminder: TREZARR_<SVC>_ENABLED=true is mandatory on the env path (no auto-enable).
       # Sonarr (default port 8989)
-      # - TREZARR_SONARR_HOST=${TREZARR_SONARR_HOST:-}
-      # - TREZARR_SONARR_PORT=${TREZARR_SONARR_PORT:-8989}
-      # - TREZARR_SONARR_API_KEY=${TREZARR_SONARR_API_KEY:-}
-      # - TREZARR_SONARR_ENABLED=${TREZARR_SONARR_ENABLED:-false}
+      - TREZARR_SONARR_HOST
+      - TREZARR_SONARR_PORT
+      - TREZARR_SONARR_API_KEY
+      - TREZARR_SONARR_ENABLED
       # Radarr (default port 7878)
-      # - TREZARR_RADARR_HOST=${TREZARR_RADARR_HOST:-}
-      # - TREZARR_RADARR_PORT=${TREZARR_RADARR_PORT:-7878}
-      # - TREZARR_RADARR_API_KEY=${TREZARR_RADARR_API_KEY:-}
-      # - TREZARR_RADARR_ENABLED=${TREZARR_RADARR_ENABLED:-false}
+      - TREZARR_RADARR_HOST
+      - TREZARR_RADARR_PORT
+      - TREZARR_RADARR_API_KEY
+      - TREZARR_RADARR_ENABLED
       # Bazarr (default port 6767)
-      # - TREZARR_BAZARR_HOST=${TREZARR_BAZARR_HOST:-}
-      # - TREZARR_BAZARR_PORT=${TREZARR_BAZARR_PORT:-6767}
-      # - TREZARR_BAZARR_API_KEY=${TREZARR_BAZARR_API_KEY:-}
-      # - TREZARR_BAZARR_ENABLED=${TREZARR_BAZARR_ENABLED:-false}
+      - TREZARR_BAZARR_HOST
+      - TREZARR_BAZARR_PORT
+      - TREZARR_BAZARR_API_KEY
+      - TREZARR_BAZARR_ENABLED
+      - TREZARR_BAZARR_USE_INVENTORY
+      # Translation tuning (deepseek endpoints need json_object + raised timeout;
+      # source_lang_priority + path_mappings take a JSON string). Also bare pass-throughs.
+      - TREZARR_LLM_STRUCTURED_OUTPUT_MODE
+      - TREZARR_LLM_REQUEST_TIMEOUT
+      - TREZARR_LLM_DISABLE_THINKING
+      - TREZARR_SOURCE_LANG_PRIORITY
+      - TREZARR_PATH_MAPPINGS
+      - TREZARR_POLL_INTERVAL_SECONDS
 
     # Healthcheck (curl http://localhost:6868/api/health) is defined in the
     # Dockerfile and inherited automatically — no need to redeclare it here.
