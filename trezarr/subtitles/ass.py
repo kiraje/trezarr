@@ -1,4 +1,4 @@
-"""Thin custom ASS/SSA reader/writer — byte-identical round-trip (FMT-02, D-08/D-91).
+r"""Thin custom ASS/SSA reader/writer — byte-identical round-trip (FMT-02, D-08/D-91).
 
 Byte-identity strategy (FMT-02 / D-08):
   The codec preserves the *raw* structural pieces of the source file. For ASS:
