@@ -39,7 +39,13 @@ services:
   trezarr:
     build:
       context: .
-    image: trezarr:local
+    # Image source is overridable so the SAME compose file serves both paths:
+    #   • local dev / fallback:  `docker compose up -d --build`  → builds trezarr:local
+    #   • CI/registry deploy:     `TREZARR_IMAGE=ghcr.io/kiraje/trezarr:<sha> \
+    #                                docker compose up -d --no-build`  → pulls the pinned image
+    # Pin the IMMUTABLE :<full-git-sha> tag in production (never :main) so a deploy is
+    # reproducible and rollback is just re-running with the previous SHA.
+    image: ${TREZARR_IMAGE:-trezarr:local}
     container_name: trezarr
     restart: unless-stopped
 

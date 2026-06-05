@@ -1,0 +1,122 @@
+# CI / image pipeline for Trezarr.
+#
+#   lint-test    — uv sync --locked → ruff (non-blocking) → pytest (HARD GATE)
+#   docker-build — build the multi-stage image, smoke-test that it boots and
+#                  /api/health is green, then (main only) push to GHCR as an
+#                  IMMUTABLE :<full-sha> tag plus a rolling :main tag.
+#
+# The LAN server PULLS from GHCR (it has outbound, no inbound) and deploys a
+# pinned :<sha> via its own stop→health→rollback script — see deploy notes.
+# GitHub never reaches into the server; tests gate the image, the server pulls.
+#
+# Secrets: NONE are needed here. The suite runs with dummy settings, and the
+# smoke test passes a throwaway TREZARR_LLM_API_KEY. Real secrets live only in
+# the server-side .env / /etc/trezarr/trezarr.env and are never in CI.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# Supersede in-flight runs on the same ref (a force-push / rapid pushes).
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  lint-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv (+ dependency cache)
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      # --locked fails if uv.lock is stale vs pyproject.toml (lockfile-freshness gate).
+      - name: Install dependencies (locked)
+        run: uv sync --locked
+
+      # NON-BLOCKING for now: the repo carries ~51 pre-existing ruff findings
+      # (unused imports etc.) unrelated to current work. Findings are annotated
+      # inline; clear them, then drop `continue-on-error` to make ruff a hard gate.
+      - name: Ruff (lint — non-blocking until legacy debt is cleared)
+        continue-on-error: true
+        run: uv run ruff check --output-format=github .
+
+      # THE hard gate. Broken tests must never reach main (enable branch protection
+      # requiring this check) and therefore never reach the server-deploy trigger.
+      - name: Pytest
+        run: uv run pytest -q
+
+  docker-build:
+    needs: lint-test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write          # required to push to GHCR via GITHUB_TOKEN
+    env:
+      IMAGE: ghcr.io/${{ github.repository }}   # ghcr.io/kiraje/trezarr (already lowercase)
+      SHA: ${{ github.sha }}                     # trusted 40-char hex; via env per CI-injection best practice
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      # Build ONCE and load into the local daemon so the smoke test exercises the
+      # EXACT bytes we publish (no rebuild between test and push).
+      - name: Build image (load for smoke test)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          load: true
+          tags: trezarr:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # Boot the container with a throwaway /config + dummy LLM key and poll the
+      # always-present health endpoint. A non-booting image fails the job here and
+      # is never pushed. Start-period in the Dockerfile is 30s (alembic + scheduler).
+      - name: Smoke test — container boots and /api/health is green
+        run: |
+          tmp="$(mktemp -d)"
+          docker run -d --name trezarr_smoke \
+            -e TREZARR_LLM_API_KEY=ci-dummy-key \
+            -e PUID=0 -e PGID=0 \
+            -v "$tmp:/config" \
+            -p 6868:6868 trezarr:ci
+          ok=0
+          for i in $(seq 1 30); do
+            if curl -fsS http://localhost:6868/api/health >/dev/null 2>&1; then
+              echo "health OK after $((i * 2))s"; ok=1; break
+            fi
+            sleep 2
+          done
+          echo "----- trezarr_smoke logs -----"; docker logs trezarr_smoke || true
+          docker rm -f trezarr_smoke >/dev/null 2>&1 || true
+          [ "$ok" = "1" ] || { echo "::error::trezarr image did not become healthy"; exit 1; }
+
+      # main-only: publish. PRs build + smoke-test only (Dockerfile validation), no push.
+      - name: Log in to GHCR
+        if: github.event_name == 'push'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Tag + push immutable :<sha> and rolling :main
+        if: github.event_name == 'push'
+        run: |
+          docker tag trezarr:ci "$IMAGE:$SHA"
+          docker tag trezarr:ci "$IMAGE:main"
+          docker push "$IMAGE:$SHA"
+          docker push "$IMAGE:main"
+          echo "Pushed:"
+          echo "  $IMAGE:$SHA   (immutable — pin this in the server deploy)"
+          echo "  $IMAGE:main    (rolling — for an optional poller)"
