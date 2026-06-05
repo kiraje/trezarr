@@ -92,6 +92,41 @@ SAFE_DEFAULT_ADDRESS_MALE = "anh"
 SAFE_DEFAULT_ADDRESS_FEMALE = "chị"
 SAFE_DEFAULT_ADDRESS_NEUTRAL = "bạn"
 
+# H3/B4 fix: classical / historical / wuxia / xianxia / cultivation safe-default ladder.
+# These are SAFE, non-presumptuous, respectful classical Sino-Vietnamese terms — the
+# classical analogue of the modern tôi + anh/chị/bạn floor. They never risk an intimate
+# or superior term (e.g. 'ngươi', which is presumptuous/superior, is deliberately NOT a
+# default), and they lean non-gendered when the addressee gender is unknown.
+#   self:    'tại hạ' (humble "this one")
+#   address: male/unknown → 'các hạ' (respectful, non-gendered "you"); female →
+#            'cô nương' (respectful "young lady"). Unknown leans non-gendered → 'các hạ'.
+# [linguist: confirm final terms]
+SAFE_DEFAULT_SELF_CLASSICAL = "tại hạ"
+SAFE_DEFAULT_ADDRESS_CLASSICAL_MALE = "các hạ"
+SAFE_DEFAULT_ADDRESS_CLASSICAL_FEMALE = "cô nương"
+SAFE_DEFAULT_ADDRESS_CLASSICAL_NEUTRAL = "các hạ"
+
+# Register tokens (substring match, lowercased) that select the CLASSICAL ladder.
+# Covers English genre labels and Vietnamese genre names a Pass-1 register inference may emit.
+_CLASSICAL_REGISTER_TOKENS: frozenset[str] = frozenset({
+    "classical", "historical", "wuxia", "xianxia", "cultivation", "period",
+    "ancient", "martial", "imperial", "dynasty",
+    "cổ trang", "co trang", "tiên hiệp", "kiếm hiệp", "tu tiên", "võ hiệp",
+})
+
+
+def _is_classical_register(register: str | None) -> bool:
+    """True when ``register`` names a classical/historical/wuxia/xianxia/cultivation tone (H3/B4).
+
+    Substring + case-insensitive so 'Xianxia / Cultivation', 'historical drama', or the
+    Vietnamese 'cổ trang' all select the classical safe-default ladder. None/empty → False
+    (modern ladder), preserving the existing behaviour on a register-less Bible.
+    """
+    if not register:
+        return False
+    low = register.lower()
+    return any(tok in low for tok in _CLASSICAL_REGISTER_TOKENS)
+
 
 # ---------------------------------------------------------------------------
 # Internal helpers
@@ -130,24 +165,41 @@ def _confidence_value(confidence: object) -> int:
 def get_safe_default(
     addressee_gender: str | None,
     settings: "TrezarrSettings",
+    register: str | None = None,
 ) -> tuple[str, str]:
-    """Return (self_term, address_term) for low-confidence attributions (D-45).
+    """Return (self_term, address_term) for low-confidence attributions (D-45, H3/B4).
 
-    If settings.pronoun_safe_default is set, that user override is returned
-    directly.  Otherwise, selects the address term by addressee_gender:
-      "male"   → SAFE_DEFAULT_ADDRESS_MALE   ("anh")
-      "female" → SAFE_DEFAULT_ADDRESS_FEMALE ("chị")
-      other    → SAFE_DEFAULT_ADDRESS_NEUTRAL ("bạn")
+    Precedence:
+      1. settings.pronoun_safe_default (user override) — returned verbatim, ALWAYS first.
+      2. Genre/register-aware ladder (H3/B4): a classical/historical/wuxia/xianxia/
+         cultivation register selects the CLASSICAL ladder (self 'tại hạ'; address
+         'các hạ' for male/unknown, 'cô nương' for female). Otherwise the modern ladder
+         (self 'tôi'; address 'anh'/'chị'/'bạn' by addressee gender).
+
+    Both ladders stay SAFE — never an intimate ('em') or presumptuous/superior ('ngươi')
+    term — and lean non-gendered when addressee_gender is unknown.
 
     Args:
         addressee_gender: Gender string of the addressee ("male"/"female"/None/other).
         settings:         TrezarrSettings instance (provides pronoun_safe_default).
+        register:         Optional series register/tone (e.g. "xianxia"); thread it with
+                          getattr(bible, "register_value", None). None → modern ladder
+                          (unchanged default behaviour).
 
     Returns:
         (self_term, address_term) tuple for safe neutral/polite usage.
     """
     if settings.pronoun_safe_default is not None:
-        return settings.pronoun_safe_default  # user override
+        return settings.pronoun_safe_default  # user override wins first
+
+    # H3/B4 fix: classical register ladder. Lean non-gendered when gender is unknown
+    # (the classical neutral address is safe for either gender). [linguist: confirm terms]
+    if _is_classical_register(register):
+        address = {
+            "male": SAFE_DEFAULT_ADDRESS_CLASSICAL_MALE,
+            "female": SAFE_DEFAULT_ADDRESS_CLASSICAL_FEMALE,
+        }.get(addressee_gender or "", SAFE_DEFAULT_ADDRESS_CLASSICAL_NEUTRAL)
+        return (SAFE_DEFAULT_SELF_CLASSICAL, address)
 
     address = {
         "male": SAFE_DEFAULT_ADDRESS_MALE,
@@ -183,6 +235,7 @@ def _derive_transition_terms(
     addr_id: int,
     id_to_gender: dict,
     settings: "TrezarrSettings",
+    register: str | None = None,
 ) -> tuple[str, str]:
     """Derive (self_term, address_term) for a transition (D-54 three-step order, CR-02+WR-03):
 
@@ -204,6 +257,8 @@ def _derive_transition_terms(
         addr_id:     Addressee character ID (for gender-based safe default).
         id_to_gender: char_id → gender lookup.
         settings:    TrezarrSettings (pronoun_safe_default).
+        register:    Optional series register/tone (H3/B4) — threaded into the Step-3
+                     safe-default so a classical series uses the classical ladder.
     """
     # Step 1: LLM-suggested terms from transition (in-memory, same-pass)
     if transition.suggested_self_term and transition.suggested_address_term:
@@ -211,9 +266,9 @@ def _derive_transition_terms(
     # Step 2: This episode's confident attribution for the ordered pair
     if survivors and existing is not None and existing.self_term and existing.address_term:
         return (existing.self_term, existing.address_term)
-    # Step 3: Safe default
+    # Step 3: Safe default (H3/B4: register-aware)
     addr_gender = id_to_gender.get(addr_id)
-    return get_safe_default(addr_gender, settings)
+    return get_safe_default(addr_gender, settings, register=register)
 
 
 async def reconcile_attributions(
@@ -260,7 +315,20 @@ async def reconcile_attributions(
     Returns:
         dict mapping (speaker_char_id, addressee_char_id) to (self_term, address_term).
     """
-    # (a) Build case- and whitespace-insensitive name→char_id index (CR-01)
+    # B3/C6: reuse the single shared in-memory aliases helper (honorific stripping) so
+    # 'Elder Zhou' / 'Mr. Han' resolve to the seeded 'Zhou' / 'Han' row. _resolve_char_id
+    # tries the EXACT name first and the honorific-stripped alias only as a fallback, so two
+    # distinct characters differing only by an honorific never collide. Function-local import
+    # keeps this module free of heavy/SQLAlchemy imports (Pitfall D / D-39) + avoids a cycle.
+    from trezarr.translate.engine import _resolve_char_id
+
+    # H3/B4 fix: capture the series register once so every safe-default in this episode uses
+    # the genre-aware ladder. getattr-with-default keeps SimpleNamespace test bibles (no
+    # register_value field) → None (modern ladder, unchanged behaviour).
+    register = getattr(bible, "register_value", None)
+
+    # (a) Build EXACT-keyed name→char_id index (CR-01); _resolve_char_id adds the honorific
+    # fallback at lookup (B3) without aliasing two distinct characters onto one id.
     name_to_id: dict[str, int] = {
         c.original_latin_name.strip().lower(): c.id for c in bible.characters
     }
@@ -277,8 +345,8 @@ async def reconcile_attributions(
     for attr in flat_attributions:
         if attr.speaker is None or attr.addressee is None:
             continue
-        spk_id = name_to_id.get(attr.speaker.strip().lower())
-        addr_id = name_to_id.get(attr.addressee.strip().lower())
+        spk_id = _resolve_char_id(name_to_id, attr.speaker)
+        addr_id = _resolve_char_id(name_to_id, attr.addressee)
         if spk_id is None or addr_id is None:
             # Unmatched names → safe default per D-43
             continue
@@ -321,7 +389,8 @@ async def reconcile_attributions(
             )
             if transition is not None:
                 new_self, new_addr = _derive_transition_terms(
-                    transition, survivors, existing, addr_id, id_to_gender, settings
+                    transition, survivors, existing, addr_id, id_to_gender, settings,
+                    register=register,
                 )
                 resolved_map[pair] = (new_self, new_addr)
                 await upsert_address_pair(
@@ -355,7 +424,7 @@ async def reconcile_attributions(
                 # No pre-existing entry: fall back to safe default for now;
                 # upsert will create a new row with safe-default terms.
                 addr_gender = id_to_gender.get(addr_id)
-                self_term, address_term = get_safe_default(addr_gender, settings)
+                self_term, address_term = get_safe_default(addr_gender, settings, register=register)
 
             resolved_map[pair] = (self_term, address_term)
             await upsert_address_pair(
@@ -372,11 +441,20 @@ async def reconcile_attributions(
         else:
             # No survivors — all attributions below threshold (or no attributions).
             # Lock check already handled above — if we're here, pair is either unlocked or no lock.
-            # Unlocked entry — SKIP it, fall through to safe default
-            # (Success #4 invariant: below-threshold → safe default regardless of
-            # what unlocked prior-episode Address Map rows say)
+            #
+            # B3 within-episode consistency: `all_pairs` is a SET, so each ordered (spk_id,
+            # addr_id) dyad is processed exactly once and resolved_map holds exactly ONE
+            # (self_term, address_term) per dyad per episode. Pass-3 then looks the dyad up in
+            # resolved_map for EVERY line attributed to it, so low-confidence lines of a dyad
+            # already get the dyad's single resolved pair — there is no per-line re-guessing to
+            # override here (Success #3: no mid-episode flip is structurally guaranteed).
+            # Unlocked prior-episode Address Map entry — SKIP it, fall through to safe default.
+            # Success #4 invariant preserved: a dyad with only an UNLOCKED prior-episode entry
+            # and no same-episode confident witness still safe-defaults (we deliberately do NOT
+            # consult existing_map here).
+            # H3/B4: register-aware safe default (classical ladder on a xianxia/historical series).
             addr_gender = id_to_gender.get(addr_id)
-            st, at = get_safe_default(addr_gender, settings)
+            st, at = get_safe_default(addr_gender, settings, register=register)
             resolved_map[pair] = (st, at)
 
     # (e) Reciprocal coherence check and write

@@ -295,3 +295,93 @@ async def test_cjk_script_name_address_pair_resolves(session_factory):
         "CJK script-name relationship_event must be persisted, not skipped. "
         f"Got relationship_events={rel_events}"
     )
+
+
+# ── H2 — Hán-Việt name terms + analysis-prompt guidance ──────────────────────
+
+
+def _term(source_term: str, vietnamese_rendering: str):
+    """Minimal duck-typed Term Dictionary entry (.source_term / .vietnamese_rendering)."""
+    from types import SimpleNamespace  # noqa: PLC0415
+    return SimpleNamespace(source_term=source_term, vietnamese_rendering=vietnamese_rendering)
+
+
+def test_plan_character_name_terms_prefers_vietnamese_rendering():
+    """H2: plan_character_name_terms pins the Hán-Việt vietnamese_rendering, not 'Han'→'Han'.
+
+    A CharacterInference(original_latin_name='Han', vietnamese_rendering='Hàn') with no
+    existing term yields NameTermSpec(source_term='Han', vietnamese_rendering='Hàn'). An
+    existing Term Dictionary rendering for the Latin name still wins over the inferred
+    rendering. With neither, the canonical rendering falls back to the raw Latin name.
+    """
+    from trezarr.bible.analyze import plan_character_name_terms, CharacterInference  # noqa: PLC0415
+
+    # (1) Inferred Hán-Việt rendering pins the term, not 'Han'→'Han'.
+    specs = plan_character_name_terms(
+        [CharacterInference(original_latin_name="Han", vietnamese_rendering="Hàn")],
+        existing_terms=[],
+    )
+    spec = next(s for s in specs if s.source_term == "Han")
+    assert spec.vietnamese_rendering == "Hàn", (
+        f"Expected Hán-Việt rendering 'Hàn', got {spec.vietnamese_rendering!r}"
+    )
+
+    # (2) Existing Term Dictionary rendering wins over the inferred one.
+    specs2 = plan_character_name_terms(
+        [CharacterInference(original_latin_name="Han", vietnamese_rendering="Hàn")],
+        existing_terms=[_term("Han", "Hàn Lập")],
+    )
+    # An existing source 'Han' is skipped (idempotent) — it is already pinned. The contract
+    # is that the existing rendering is never clobbered; planning emits no override spec.
+    assert all(s.source_term.lower() != "han" for s in specs2), (
+        "An existing 'Han' term must not be re-planned (existing rendering wins / is preserved)"
+    )
+
+    # (3) Neither existing term nor vietnamese_rendering → canonical falls back to Latin name.
+    specs3 = plan_character_name_terms(
+        [CharacterInference(original_latin_name="Daisy")],
+        existing_terms=[],
+    )
+    spec3 = next(s for s in specs3 if s.source_term == "Daisy")
+    assert spec3.vietnamese_rendering == "Daisy", (
+        f"Expected fallback to the Latin name 'Daisy', got {spec3.vietnamese_rendering!r}"
+    )
+
+
+def test_analysis_prompt_requires_hanviet_and_kinship_mapping():
+    """H2: _build_analysis_prompt requires vietnamese_rendering + kinship-as-address + genre register.
+
+    Output must contain the vietnamese_rendering instruction with the concrete examples
+    'Phong Thiên Cực' and 'Mai cô nương', the kinship-as-address mapping 'Elder'→'trưởng lão'
+    and 'Senior'→'tiền bối', and genre-register guidance naming 'xianxia'/'wuxia'/'cultivation'.
+    The [DIALOGUE SAMPLE] security framing (numbered [N] items, newline collapse) is unchanged.
+    """
+    from trezarr.bible.analyze import _build_analysis_prompt  # noqa: PLC0415
+    from types import SimpleNamespace  # noqa: PLC0415
+
+    bible = SimpleNamespace(register_value=None, characters=[], address_map=[], terms=[])
+    cue_texts = ["First cue.", "Second cue\nwith a newline."]
+    prompt = _build_analysis_prompt(
+        cue_texts, bible, {"title": "Some Show", "genres": ["Fantasy"]}, episode_key="S01E01"
+    )
+
+    # Hán-Việt rendering instruction with concrete examples.
+    assert "vietnamese_rendering" in prompt
+    assert "Phong Thiên Cực" in prompt
+    assert "Mai cô nương" in prompt
+    # Kinship-as-address mapping.
+    assert "trưởng lão" in prompt, "Must map 'Elder' → 'trưởng lão'"
+    assert "tiền bối" in prompt, "Must map 'Senior' → 'tiền bối'"
+    # Genre-register guidance.
+    for genre in ("xianxia", "wuxia", "cultivation"):
+        assert genre in prompt, f"Genre-register guidance must name {genre!r}"
+
+    # [DIALOGUE SAMPLE] security framing unchanged: numbered items + newline collapse.
+    assert "[DIALOGUE SAMPLE]" in prompt
+    assert "[1]" in prompt and "[2]" in prompt
+    # WR-05: a cue's internal newline is collapsed to the ⏎ marker, so the 2nd cue stays
+    # on ONE physical line ("[2] Second cue ⏎ with a newline.") rather than column-aligning
+    # an injected fake section header.
+    assert "[2] Second cue ⏎ with a newline." in prompt, (
+        "internal cue newlines must be collapsed to the ⏎ marker (WR-05 security framing)"
+    )

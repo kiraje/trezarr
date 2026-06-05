@@ -56,6 +56,55 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+# B3 fix (C6 aliases, IN-MEMORY only — no DB/schema change): normalize a name before
+# id lookup by stripping a leading English honorific/title and a trailing period, so
+# "Mr. Han" / "Elder Han" / "Senior Han" / "Young Master Han" all resolve to the
+# character "Han". This is the shared contract reused by reconcile.py and analyze.py.
+# Backward compatible: a name with no honorific normalizes to itself (lowercased + stripped,
+# identical to the prior `.strip().lower()` everywhere). Address-Map starvation on a cold
+# Bible was partly the LLM referencing "Elder Zhou" while the character row was "Zhou".
+_HONORIFIC_PREFIXES: frozenset[str] = frozenset({
+    "mr", "mrs", "ms", "miss", "sir", "madam", "master", "elder", "senior",
+    "brother", "sister", "lord", "lady", "young",
+})
+
+
+def _normalize_name(name: str) -> str:
+    """Normalize a name for case-insensitive id lookup, stripping leading honorifics (B3).
+
+    Lowercases and strips, then peels leading honorific/title tokens (each optionally
+    followed by a period) so "Mr. Han" -> "han", "Elder Zhou" -> "zhou",
+    "Young Master Han" -> "han". Never returns empty: if every token is an honorific
+    (e.g. "Elder", "Brother") the original lowercased+stripped string is returned so a
+    bare-honorific form still maps to whatever the existing code mapped before.
+    Pure function; no DB, no schema change.
+    """
+    base = (name or "").strip().lower()
+    if not base:
+        return base
+    tokens = base.split()
+    # Peel leading honorific tokens (a trailing period on a token is part of the honorific).
+    i = 0
+    while i < len(tokens) - 1 and tokens[i].rstrip(".") in _HONORIFIC_PREFIXES:
+        i += 1
+    stripped = " ".join(tokens[i:]).strip()
+    return stripped or base
+
+
+def _resolve_char_id(name_to_char_id: "dict[str, int]", name: "str | None") -> "int | None":
+    """Resolve a (possibly honorific-prefixed) name to a character id (B3 alias-collision guard).
+
+    The index MUST be keyed by EXACT lowercased names. The EXACT match is tried first; the
+    honorific-stripped alias (``_normalize_name``) is only a FALLBACK. This is what keeps two
+    distinct characters that differ only by an honorific (e.g. 'Zhou' and 'Elder Zhou') from
+    silently collapsing onto one id — the bug an alias-keyed index would introduce. A name with
+    no honorific resolves identically to the original ``.strip().lower()`` lookup.
+    """
+    if not name:
+        return None
+    return name_to_char_id.get(name.strip().lower()) or name_to_char_id.get(_normalize_name(name))
+
+
 # ── Episode key derivation ─────────────────────────────────────────────────────
 
 def derive_episode_key(media_item: object, source_sub_path: "str | Path | None" = None) -> str:
@@ -167,10 +216,13 @@ def build_translate_prompt(
     source_lang: str = "English",
     pronoun_hints: "dict[int, tuple[str, str]] | None" = None,
     glossary: "list[str] | None" = None,
+    register: "str | None" = None,
 ) -> str:
     """Build the numbered-line translation prompt (D-13, D-15, ENG-03, D-46).
 
     Structure:
+      - Optional [REGISTER] note (C3/H1) instructing the translator to match the series tone.
+      - Optional [GLOSSARY] block + "use these EXACTLY" rule.
       - Optional [CONTEXT] block before the lines to translate (context_before)
       - [LINES TO TRANSLATE] block with [1] ... [N] numbered lines
       - Optional [CONTEXT] block after the lines to translate (context_after)
@@ -190,10 +242,26 @@ def build_translate_prompt(
                          "use these EXACTLY" rule are injected so proper nouns render
                          identically across every cue (the consistency moat). Build it with
                          build_glossary_lines(bible).
+        register:        Optional series register/tone (e.g. "xianxia", "wuxia",
+                         "cultivation", "historical", "romantic", "casual"). C3/H1 fix:
+                         when truthy, a [REGISTER] note + a RULE are injected instructing
+                         the translator to MATCH that tone — a classical/historical/wuxia/
+                         xianxia/cultivation register demands classical Sino-Vietnamese
+                         (Hán-Việt) vocabulary and pronouns, never flat modern speech.
+                         Thread it with bible.register_value (mirror of glossary).
+
+    B1 fix: a cue's internal newlines are encoded as the literal token ``<<BR>>`` on the
+    [N] marker line (so a 2-line cue 'A' + newline + 'B' becomes "[N] A<<BR>>B"). A RULE
+    instructs the model to keep every <<BR>> verbatim; parse_numbered_response restores it
+    to a newline so multi-line cues round-trip byte-identical instead of being truncated to
+    their first physical line (audit B1).
 
     Returns:
         A prompt string ready to send to LLMClient.call() as a user message.
     """
+    # B1 fix: build the static rules with a running counter so the always-present <<BR>>
+    # rule and the optional glossary/register/mixed-gender rules all get correct sequential
+    # numbers regardless of which optional blocks fire.
     parts = [
         f"Translate the following {source_lang} subtitle lines to Vietnamese.",
         "RULES:",
@@ -201,13 +269,77 @@ def build_translate_prompt(
         "2. Keep <<T0>>, <<T1>>, ... tokens EXACTLY as-is (formatting placeholders — never translate or modify them).",
         "3. Do NOT translate or output the [context] lines.",
     ]
+    rule_n = 4
+    # B1 fix: a 2-line cue is sent as "Line one<<BR>>Line two"; the model must preserve
+    # every <<BR>> verbatim so the cue round-trips to its original physical-line count.
+    parts.append(
+        f"{rule_n}. Each line may contain <<BR>> markers that stand for line breaks inside a "
+        "single subtitle cue. Keep every <<BR>> EXACTLY where it is — never delete, add, "
+        "translate, reorder, or split a line on them. Output the SAME number of <<BR>> "
+        "markers you received."
+    )
+    rule_n += 1
     if glossary:
+        # H2 fix: the glossary RULE now POSITIVELY requires Hán-Việt (Sino-Vietnamese)
+        # readings for romanized/pinyin proper names — not just a negative "don't invent"
+        # instruction. A cold Bible used to leak raw pinyin ("Feng Tianji", "Elder Zhou").
+        # [linguist: refine wording]
         parts.append(
-            "4. For any name or term in [GLOSSARY], use the EXACT Vietnamese rendering on the "
-            "right — identical in every line. Never invent alternate transliterations, use "
-            "Japanese romaji, or leave source-language script."
+            f"{rule_n}. For any name or term in [GLOSSARY], use the EXACT Vietnamese rendering "
+            "on the right — identical in every line. For any romanized/pinyin proper name NOT "
+            "in [GLOSSARY], render it with its Sino-Vietnamese (Hán-Việt) reading (e.g. pinyin "
+            "'Feng Tianji' → 'Phong Thiên Cực', 'Han' → 'Hàn'), and render a kinship/honorific "
+            "used as a form of address with its Vietnamese equivalent ('Brother' → 'huynh', "
+            "'Elder' → 'trưởng lão', 'Senior' → 'tiền bối'), NOT as a literal name. Never invent "
+            "alternate transliterations, use Japanese romaji, leave pinyin, or leave source-"
+            "language script."
         )
+        rule_n += 1
+    # H4 fix: forbid adding explanatory parentheticals/glosses (e.g. "(Miss Mei's brother)").
+    parts.append(
+        f"{rule_n}. Do NOT add parentheticals, glosses, or translator notes. Translate the "
+        "dialogue only."
+    )
+    rule_n += 1
+    if register:
+        # H1 fix: the register/tone MUST reach Pass-3 (the pass that writes the subtitle).
+        # Pass-4 review only nudges verbatim lines, so a flat-modern Pass-3 output stayed flat.
+        # [linguist: refine the register-specific wording]
+        parts.append(
+            f"{rule_n}. Match the series register/tone given in [REGISTER]. If the register is "
+            "classical / historical / wuxia / xianxia / cultivation (cổ trang / tiên hiệp / "
+            "kiếm hiệp), use classical Sino-Vietnamese (Hán-Việt) vocabulary and classical "
+            "pronouns (e.g. self: ta / tại hạ / lão phu; address: ngươi / các hạ / chư vị / "
+            "huynh / muội / tiền bối / trưởng lão) — do NOT flatten the dialogue into plain "
+            "modern speech (tôi / bạn / anh / em) when the register is classical. Render any "
+            "romanized/pinyin proper name with its Sino-Vietnamese (Hán-Việt) reading and never "
+            "leave pinyin or source-language script (this holds even when no [GLOSSARY] is given)."
+        )
+        rule_n += 1
+    # B4 fix: a single line that addresses MULTIPLE people must use a NON-GENDERED plural.
+    # [linguist: refine classical vs modern wording]
+    parts.append(
+        f"{rule_n}. When a single line addresses MORE THAN ONE person, use a non-gendered "
+        "plural address — classical: 'chư vị' / 'các vị' / 'các ngươi'; modern: 'các bạn' / "
+        "'mọi người'. NEVER use a gendered plural ('các cô' / 'các cậu' / 'các anh' / 'các "
+        "chị') for a mixed-gender group, and if any addressee is male never use a female-"
+        "gendered term."
+    )
+    rule_n += 1
     parts.append("")
+
+    # C3/H1 fix: inject a [REGISTER] note so the translator matches the series tone. A
+    # classical/historical/wuxia/xianxia/cultivation register requires classical
+    # Sino-Vietnamese vocabulary and pronouns, NOT flat modern speech.
+    # [linguist: refine the register-specific wording]
+    if register:
+        parts.append("[REGISTER - match this tone in every line]")
+        parts.append(
+            f"- Series register/tone: {register}. Match it. A classical / historical / wuxia / "
+            "xianxia / cultivation register requires classical Sino-Vietnamese vocabulary and "
+            "pronouns (e.g. ta / ngươi / tại hạ / các hạ), never flat modern speech."
+        )
+        parts.append("")
 
     if glossary:
         parts.append("[GLOSSARY - canonical renderings, use EXACTLY]")
@@ -223,11 +355,14 @@ def build_translate_prompt(
 
     parts.append("[LINES TO TRANSLATE]")
     for i, text in enumerate(batch_texts, 1):
+        # B1 fix: sentinel internal newlines as <<BR>> so a multi-line cue survives the
+        # numbered-line round-trip (parse_numbered_response reverses this).
+        marked = text.strip().replace(chr(10), "<<BR>>")
         if pronoun_hints and i in pronoun_hints:
             self_t, addr_t = pronoun_hints[i]
-            parts.append(f"[{i}] (speaker says: {self_t}; addresses as: {addr_t}) {text.strip()}")
+            parts.append(f"[{i}] (speaker says: {self_t}; addresses as: {addr_t}) {marked}")
         else:
-            parts.append(f"[{i}] {text.strip()}")
+            parts.append(f"[{i}] {marked}")
 
     if context_after:
         parts.append("")
@@ -268,8 +403,18 @@ def build_review_prompt(
         "Series Bible for this batch:",
     ]
 
-    register = getattr(bible, "register_value", None) or "neutral"
-    parts.append(f"  - Register/tone: {register}")
+    # H3 fix: never inject the literal string "neutral" as the register to imitate — that
+    # actively steered Pass-4 away from a classical/xianxia tone. When no real register is
+    # known (None/empty or the placeholder "neutral"), tell the reviewer to MATCH the source
+    # tone and not flatten it; only emit a concrete Register/tone line for a real register.
+    register = (getattr(bible, "register_value", None) or "").strip()
+    if register and register.lower() != "neutral":
+        parts.append(f"  - Register/tone: {register}")
+    else:
+        parts.append(
+            "  - Register/tone: match the source tone; do NOT flatten a classical/historical/"
+            "wuxia/xianxia/cultivation register into plain modern speech."
+        )
 
     if dominant_pair is not None and dominant_pair in resolved_map:
         self_t, addr_t = resolved_map[dominant_pair]
@@ -301,17 +446,32 @@ def build_review_prompt(
         "RULES:",
         "1. Output ONLY numbered lines [1], [2], ... [N] in order.",
         "2. Keep <<T0>>, <<T1>>, ... tokens EXACTLY as-is.",
-        "3. Return each line VERBATIM unless it has a SPECIFIC Bible violation:",
+        # B1 fix: the same <<BR>> line-break sentinel contract as Pass-3 so multi-line
+        # cues round-trip through the reviewer instead of being flattened.
+        "3. Keep every <<BR>> marker EXACTLY where it is — it stands for a line break "
+        "inside the subtitle cue; never delete, add, translate, reorder, or split on them.",
+        "4. Return each line VERBATIM unless it has a SPECIFIC Bible violation:",
         "   - Wrong pronoun: uses different first-person or second-person term than the Bible pair above.",
         "   - Wrong term: a proper noun/title/place from the Bible is not rendered as specified above.",
         "   - Wrong register: significantly more formal or informal than the series register.",
-        "4. Do NOT rephrase, 'improve', or paraphrase lines that already comply.",
+        # B4 fix: flag a gendered plural address used for a mixed-gender group (cue addressing
+        # multiple people) — the review-pass analogue of the Pass-3 mixed-gender rule.
+        "   - Wrong plural address (B4): a line addressing MORE THAN ONE person uses a gendered "
+        "plural ('các cô' / 'các cậu' / 'các anh' / 'các chị') for a mixed-gender group — replace "
+        "with a non-gendered plural ('chư vị' / 'các vị' / 'các ngươi' for classical; 'các bạn' / "
+        "'mọi người' for modern); if any addressee is male, never use a female-gendered term.",
+        "5. Do NOT rephrase, 'improve', or paraphrase lines that already comply.",
         "",
         "[LINES TO REVIEW]",
     ])
 
     for i, (src, vi) in enumerate(zip(source_texts, translated_texts), 1):
-        parts.append(f"[{i}] (source: {src.strip()}) {vi.strip()}")
+        # B1 fix: encode internal newlines as <<BR>> on both the source echo and the
+        # text under review so a multi-line cue stays on one physical [N] line and is
+        # restored intact by parse_numbered_response.
+        src_marked = src.strip().replace(chr(10), "<<BR>>")
+        vi_marked = vi.strip().replace(chr(10), "<<BR>>")
+        parts.append(f"[{i}] (source: {src_marked}) {vi_marked}")
 
     return "\n".join(parts)
 
@@ -385,8 +545,12 @@ async def _review_batch(
         # Step 3: LLM call — no response_model (D-57); D-113: forward per-call model override
         raw_response = await llm_client.call([{"role": "user", "content": prompt}], model=model)
 
-        # Step 4: Parse numbered-line response
-        corrected_texts = parse_numbered_response(str(raw_response), len(review_batch.cues))
+        # Step 4: Parse numbered-line response (MEDIUM-4: only multi-line cues accept
+        # continuation lines, so trailing reviewer prose is dropped, not spliced in).
+        _ml_idx = {i for i, t in enumerate(cleaned_texts, 1) if "\n" in t}
+        corrected_texts = parse_numbered_response(
+            str(raw_response), len(review_batch.cues), multiline_indices=_ml_idx
+        )
 
         # Step 4.5: Scaffolding-leak guard — discard any "correction" that echoed
         # the review-prompt "(source: …)" scaffolding and keep the clean pre-review
@@ -424,27 +588,54 @@ async def _review_batch(
 # Forgiving regex per A7 in RESEARCH.md: handles "[1] text", "[1]. text", "[1]) text"
 _NUMBERED_LINE_RE = re.compile(r'\[(\d+)\][.\)]?\s*(.*)')
 
+# B1 fix: tolerant marker for the internal-line-break sentinel placed by build_translate_prompt
+# / build_review_prompt. Tolerant of stray whitespace a weak model may insert ("<< BR >>").
+_BR_RE = re.compile(r'<<\s*BR\s*>>')
 
-def parse_numbered_response(response: str, expected_count: int) -> list[str]:
+
+def parse_numbered_response(
+    response: str,
+    expected_count: int,
+    multiline_indices: "set[int] | None" = None,
+) -> list[str]:
     """Parse a numbered-line LLM response into a list of translated strings (D-13).
 
     Uses a forgiving regex that handles "[N] text", "[N]. text", and "[N]) text"
     variants (Assumption A7 from RESEARCH.md).
 
+    B1 fix (multi-line cue round-trip): any response line that does NOT match the [N]
+    marker is accumulated into the most-recently-seen line number's text (joined with a
+    newline), so a model that emits a real newline instead of <<BR>> still keeps the
+    continuation. Text before the first [1] marker is ignored. After assembling each
+    cue, every <<BR>> sentinel is replaced with a newline; a <<BR>> emitted alongside a
+    real newline at the same break collapses to a single newline (no doubled blank line).
+
+    MEDIUM-4 fix (trailing-prose guard): when ``multiline_indices`` is supplied, continuation
+    accumulation is restricted to cue numbers whose SOURCE was actually multi-line (a <<BR>>
+    was sent for them). This prevents trailing model prose after the last cue — e.g. a chatty
+    "Hope this helps!" line — from being silently spliced into an otherwise single-line cue
+    (the worst failure class under the blind-trust bar). When None (e.g. a bare unit-test call),
+    every continuation line is accumulated, preserving the pure round-trip behaviour.
+
     Args:
-        response:       Raw string response from the LLM.
-        expected_count: The number of lines that should be in the response.
+        response:          Raw string response from the LLM.
+        expected_count:    The number of lines that should be in the response.
+        multiline_indices: Optional set of 1-based cue numbers whose source was multi-line.
+                           Continuation lines are only merged onto a cue in this set.
 
     Returns:
         Ordered list of translated text strings (one per numbered line).
 
     Raises:
         BatchValidationError: If any expected line number is missing, any line is
-                              empty/whitespace-only, or the parsed count != expected_count.
+                              empty/whitespace-only, any line number is out of range,
+                              duplicated, or the parsed count != expected_count.
     """
     parsed: dict[int, str] = {}
+    current: int | None = None
     for raw_line in response.splitlines():
-        m = _NUMBERED_LINE_RE.match(raw_line.strip())
+        stripped = raw_line.strip()
+        m = _NUMBERED_LINE_RE.match(stripped)
         if m:
             line_num = int(m.group(1))
             text = m.group(2).strip()
@@ -453,6 +644,19 @@ def parse_numbered_response(response: str, expected_count: int) -> list[str]:
                     f"Duplicate line number [{line_num}] in LLM response"
                 )
             parsed[line_num] = text
+            current = line_num
+        elif (
+            current is not None
+            and stripped
+            and (multiline_indices is None or current in multiline_indices)
+        ):
+            # B1 fix: continuation of the current cue (model emitted a real newline
+            # instead of <<BR>>). Leading text before the first [1] marker is ignored.
+            # MEDIUM-4 guard: only merge onto cues whose source was multi-line, so trailing
+            # prose after a single-line cue is dropped (old behaviour) rather than spliced in.
+            parsed[current] = (
+                f"{parsed[current]}\n{stripped}" if parsed[current] else stripped
+            )
 
     # Reject any line numbers outside the expected range (hallucinated extra lines).
     # An over-count response is a strong batch-misalignment signal that should retry.
@@ -462,13 +666,21 @@ def parse_numbered_response(response: str, expected_count: int) -> list[str]:
             f"LLM response contains unexpected line numbers {extra} (expected 1..{expected_count})"
         )
 
-    # Validate all expected line numbers are present
+    # Validate all expected line numbers are present, restore <<BR>> -> newline, and
+    # reject empties (the empty check runs on the post-<<BR>> text — B1 fix).
     for n in range(1, expected_count + 1):
         if n not in parsed:
             raise BatchValidationError(
                 f"Missing line [{n}] in LLM response (expected {expected_count} lines)"
             )
-        if not parsed[n]:
+        text = parsed[n]
+        # Collapse a <<BR>> emitted together with a real newline at the same break so
+        # the cue does not gain a doubled blank line (B1 fix).
+        text = re.sub(r'<<\s*BR\s*>>[ \t]*\n', '\n', text)
+        text = re.sub(r'\n[ \t]*<<\s*BR\s*>>', '\n', text)
+        text = _BR_RE.sub('\n', text)
+        parsed[n] = text
+        if not parsed[n].strip():
             raise BatchValidationError(
                 f"Empty/whitespace-only text for line [{n}] in LLM response"
             )
@@ -505,6 +717,7 @@ def _make_translate_batch_fn(settings: "TrezarrSettings"):
         pronoun_hints: "dict[int, tuple[str, str]] | None" = None,
         model: "str | None" = None,  # D-113: per-call model override
         glossary: "list[str] | None" = None,
+        register: "str | None" = None,  # H1 fix: thread series register into Pass-3
     ) -> list[str]:
         """Translate a single batch, retrying on BatchValidationError only (D-18).
 
@@ -545,14 +758,19 @@ def _make_translate_batch_fn(settings: "TrezarrSettings"):
             cleaned_texts, context_before_texts, context_after_texts,
             pronoun_hints=pronoun_hints,
             glossary=glossary,
+            register=register,  # H1 fix
         )
 
         # Step 3: Call LLMClient (the sole concurrency gate is inside LLMClient._semaphore)
         # D-113: forward per-call model override; None = use client's global model
         raw_response = await llm_client.call([{"role": "user", "content": prompt}], model=model)
 
-        # Step 4: Parse the numbered-line response
-        translated_texts = parse_numbered_response(str(raw_response), len(batch.cues))
+        # Step 4: Parse the numbered-line response (MEDIUM-4: only multi-line source cues
+        # accept continuation lines, so trailing model prose is dropped, not spliced in).
+        _ml_idx = {i for i, t in enumerate(cleaned_texts, 1) if "\n" in t}
+        translated_texts = parse_numbered_response(
+            str(raw_response), len(batch.cues), multiline_indices=_ml_idx
+        )
 
         # Step 5: Reinsert sentinels. Always call (even for an empty smap) so a
         # hallucinated orphan <<TN>> in an untagged cue is stripped rather than
@@ -581,6 +799,7 @@ async def _translate_batch(
     pronoun_hints: "dict[int, tuple[str, str]] | None" = None,
     model: "str | None" = None,  # D-113: per-call model override
     glossary: "list[str] | None" = None,
+    register: "str | None" = None,  # H1 fix: thread series register into Pass-3
 ) -> list[str]:
     """Public entry point for translating a single batch with retry.
 
@@ -601,7 +820,7 @@ async def _translate_batch(
         BatchValidationError: If all retries are exhausted (reraise=True in decorator).
     """
     fn = _make_translate_batch_fn(settings)
-    return await fn(batch, llm_client, settings, pronoun_hints, model, glossary)
+    return await fn(batch, llm_client, settings, pronoun_hints, model, glossary, register)
 
 
 # ── Quarantine artifact write ──────────────────────────────────────────────────
@@ -897,7 +1116,7 @@ async def translate_file(
         # (logic failure); openai.APIError must propagate (Pitfall B / T-05-06-02)
         try:
             analysis = await analyze_file(source_doc, bible, arr_metadata, llm_client, settings, episode_key)
-            await merge_bible_analysis(session_factory, series_dto, analysis, episode_key)
+            await merge_bible_analysis(session_factory, series_dto, analysis, episode_key, settings=settings)
         except BibleAnalysisError as exc:
             reason = f"pass1 analysis failure: {exc}"
             quarantine_path = _write_quarantine(path, reason, [], settings)
@@ -952,6 +1171,10 @@ async def translate_file(
     # Unknown names → no hint → safe default in Pass 3.
     per_batch_hints: list[dict[int, tuple[str, str]] | None] = [None] * len(batches)
     if resolved_map and bible is not None:
+        # B3 fix: EXACT-keyed index (lowercased name → id); _resolve_char_id tries the exact
+        # name first and only falls back to the honorific-stripped alias, so an honorific-prefixed
+        # attribution name ("Elder Zhou") still resolves to the seeded row ("zhou") WITHOUT two
+        # distinct characters that differ only by an honorific colliding onto one id.
         name_to_char_id: dict[str, int] = {
             c.original_latin_name.strip().lower(): c.id
             for c in bible.characters
@@ -968,8 +1191,8 @@ async def translate_file(
             batch_attrs = flat_attributions[doc_offset: doc_offset + batch_size]
 
             for local_i, attr in enumerate(batch_attrs, 1):
-                spk_id = name_to_char_id.get((attr.speaker or "").strip().lower()) if attr.speaker else None
-                addr_id = name_to_char_id.get((attr.addressee or "").strip().lower()) if attr.addressee else None
+                spk_id = _resolve_char_id(name_to_char_id, attr.speaker)
+                addr_id = _resolve_char_id(name_to_char_id, attr.addressee)
                 if spk_id is not None and addr_id is not None:
                     hint = resolved_map.get((spk_id, addr_id))
                     if hint is not None:
@@ -994,10 +1217,37 @@ async def translate_file(
     # nouns render IDENTICALLY across all cues (the consistency moat). Computed once per file;
     # None when Bible-unaware (mechanical fallback) so the prompt is unchanged there.
     glossary_lines = build_glossary_lines(bible) if bible is not None else None
+    # H1 fix: thread the series register into Pass-3 so classical/xianxia tone reaches the
+    # pass that actually writes the subtitle (Pass-4 review only nudges, never re-translates).
+    # None when Bible-unaware → build_translate_prompt omits the [REGISTER] block (unchanged).
+    register_value = getattr(bible, "register_value", None) if bible is not None else None
+    # B2 fix (Check 10 source-passthrough allowlist): lowercased token set of every
+    # Bible-pinned proper noun, so a no-diacritic cue made entirely of pinned names
+    # (e.g. "Hàn", "Mai") is NOT mis-flagged as an English passthrough. Tokens come from
+    # the glossary rendering (RHS of ' → '), character names, and term renderings + sources.
+    # None when Bible-unaware so the gate stays in pure-structural mode.
+    proper_noun_allowlist: set[str] | None = None
+    if bible is not None:
+        proper_noun_allowlist = set()
+        for _g in (glossary_lines or []):
+            # build_glossary_lines emits "source → rendering"; take the rendering side.
+            _rhs = _g.split(" → ", 1)[-1]
+            for _tok in re.findall(r"[^\W\d_]+", _rhs.lower(), re.UNICODE):
+                if _tok:
+                    proper_noun_allowlist.add(_tok)
+        for _c in (getattr(bible, "characters", None) or []):
+            for _tok in re.findall(r"[^\W\d_]+", (getattr(_c, "original_latin_name", "") or "").lower(), re.UNICODE):
+                if _tok:
+                    proper_noun_allowlist.add(_tok)
+        for _t in (getattr(bible, "terms", None) or []):
+            for _field in ((getattr(_t, "vietnamese_rendering", "") or ""), (getattr(_t, "source_term", "") or "")):
+                for _tok in re.findall(r"[^\W\d_]+", _field.lower(), re.UNICODE):
+                    if _tok:
+                        proper_noun_allowlist.add(_tok)
     try:
         async with asyncio.TaskGroup() as tg:
             translate_tasks = [
-                tg.create_task(_translate_batch(b, llm_client, settings, per_batch_hints[i], model, glossary_lines))
+                tg.create_task(_translate_batch(b, llm_client, settings, per_batch_hints[i], model, glossary_lines, register_value))
                 for i, b in enumerate(batches)
             ]
         batch_results = [t.result() for t in translate_tasks]
@@ -1097,6 +1347,8 @@ async def translate_file(
         # so flat_attributions[doc_offset:doc_offset+batch_size] aligns 1:1 with review batch cues.
         # name_to_char_id uses the same case-insensitive contract as the Pass-2/3 code (CR-01).
         if flat_attributions and bible is not None:
+            # B3 fix / CR-01: EXACT-keyed index + _resolve_char_id (exact-first, honorific
+            # fallback) — identical contract to Pass-2/3, no alias collisions.
             _name_to_char_id_rev: dict[str, int] = {
                 c.original_latin_name.strip().lower(): c.id for c in bible.characters
             }
@@ -1106,8 +1358,8 @@ async def translate_file(
                 _rb_attrs = flat_attributions[_rb_offset: _rb_offset + _batch_size]
                 _pair_counts: dict[tuple[int, int], int] = {}
                 for _attr in _rb_attrs:
-                    _spk_id = _name_to_char_id_rev.get((_attr.speaker or "").strip().lower()) if _attr.speaker else None
-                    _addr_id = _name_to_char_id_rev.get((_attr.addressee or "").strip().lower()) if _attr.addressee else None
+                    _spk_id = _resolve_char_id(_name_to_char_id_rev, _attr.speaker)
+                    _addr_id = _resolve_char_id(_name_to_char_id_rev, _attr.addressee)
                     if _spk_id is not None and _addr_id is not None:
                         _p = (_spk_id, _addr_id)
                         if _p in resolved_map:  # only include pairs that were actually resolved
@@ -1168,7 +1420,10 @@ async def translate_file(
 
     # Step 9: Document-level validation gate (D-16, D-17)
     try:
-        validate_subdoc(translated_doc, source_doc, settings)
+        validate_subdoc(
+            translated_doc, source_doc, settings,
+            proper_noun_allowlist=proper_noun_allowlist,  # B2 fix: exempt Bible proper nouns from check 10
+        )
     except GateError as exc:
         reason = str(exc)
         failing_indices = exc.failure.failing_indices or []

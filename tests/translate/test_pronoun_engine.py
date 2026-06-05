@@ -361,3 +361,76 @@ async def test_tier3_endpoint_degrades_gracefully(session_factory, tmp_path):
     assert not quarantine_dir.exists() or not any(quarantine_dir.iterdir()), (
         "No quarantine artifact should be written when Tier-3 degrades gracefully"
     )
+
+
+# ── H1 / H2 / B4 — register, glossary Hán-Việt, and mixed-gender plural RULES ─
+
+
+def test_build_translate_prompt_injects_register_block_and_rule():
+    """H1: register='xianxia' adds a [REGISTER] block + a classical Sino-Vietnamese RULE.
+
+    With register='xianxia' the prompt must (a) contain a [REGISTER block whose body
+    includes 'xianxia', and (b) contain a RULE naming Hán-Việt + a classical pronoun
+    example ('tại hạ') and forbidding flattening into modern speech ('do NOT flatten ...
+    the dialogue'). Without register there is NO [REGISTER block (back-compat). Both calls
+    still emit RULES 1-3 unchanged.
+    """
+    from trezarr.translate.engine import build_translate_prompt  # noqa: PLC0415
+
+    with_reg = build_translate_prompt(["Foo"], [], [], register="xianxia")
+    assert "[REGISTER" in with_reg, "Expected a [REGISTER block when register is set"
+    assert "xianxia" in with_reg, "[REGISTER block body must include the register value"
+    assert "Hán-Việt" in with_reg, "Register RULE must name Hán-Việt"
+    assert "tại hạ" in with_reg, "Register RULE must give a classical pronoun example ('tại hạ')"
+    assert "do NOT flatten" in with_reg, "Register RULE must forbid flattening into modern speech"
+    # RULES 1-3 unchanged.
+    assert "1. Output ONLY the numbered lines" in with_reg
+    assert "2. Keep <<T0>>" in with_reg
+    assert "3. Do NOT translate or output the [context] lines." in with_reg
+
+    no_reg = build_translate_prompt(["Foo"], [], [])
+    assert "[REGISTER" not in no_reg, "No [REGISTER block when register omitted (back-compat)"
+    assert "1. Output ONLY the numbered lines" in no_reg
+    assert "2. Keep <<T0>>" in no_reg
+    assert "3. Do NOT translate or output the [context] lines." in no_reg
+
+
+def test_build_translate_prompt_glossary_rule_requires_hanviet_and_forbids_pinyin():
+    """H2: the glossary RULE requires Hán-Việt for romanized names and forbids leaving pinyin.
+
+    With glossary=['Han -> Hàn'] the prompt must (a) require Hán-Việt readings with a
+    concrete example ('Phong Thiên Cực') and (b) forbid leaving pinyin (the substring
+    'pinyin' appears) alongside the existing 'Japanese romaji' clause. Rule numbering stays
+    contiguous: '4.' appears exactly once at the start of a rule line.
+    """
+    from trezarr.translate.engine import build_translate_prompt  # noqa: PLC0415
+
+    prompt = build_translate_prompt(["Foo"], [], [], glossary=["Han -> Hàn"])
+    assert "Hán-Việt" in prompt, "Glossary RULE must require Hán-Việt readings"
+    assert "Phong Thiên Cực" in prompt, "Glossary RULE must give the concrete Hán-Việt example"
+    assert "pinyin" in prompt, "Glossary RULE must reference pinyin (forbidding leaving it)"
+    assert "leave pinyin" in prompt, "Glossary RULE must forbid leaving pinyin"
+    assert "Japanese romaji" in prompt, "Existing 'Japanese romaji' clause must remain"
+
+    # '4.' must appear exactly once at the start of a rule line (contiguous numbering).
+    rule_4_starts = [ln for ln in prompt.splitlines() if ln.lstrip().startswith("4.")]
+    assert len(rule_4_starts) == 1, (
+        f"Expected exactly one rule line starting with '4.', got {rule_4_starts!r}"
+    )
+
+
+def test_build_translate_prompt_mixed_gender_plural_rule_present():
+    """B4: a mixed-gender plural RULE is always present (even with no glossary/register/hints).
+
+    The RULE must name the non-gendered plurals 'chư vị', 'các vị', 'các bạn', 'mọi người'
+    and name the forbidden gendered plurals 'các cô' / 'các cậu'.
+    """
+    from trezarr.translate.engine import build_translate_prompt  # noqa: PLC0415
+
+    prompt = build_translate_prompt(["You all"], [], [])
+    for form in ("chư vị", "các vị", "các bạn", "mọi người"):
+        assert form in prompt, f"Mixed-gender plural RULE must name the non-gendered form {form!r}"
+    for forbidden in ("các cô", "các cậu"):
+        assert forbidden in prompt, (
+            f"Mixed-gender plural RULE must name the forbidden gendered plural {forbidden!r}"
+        )

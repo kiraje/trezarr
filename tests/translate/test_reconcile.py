@@ -1039,3 +1039,229 @@ async def test_kinship_reciprocal_bac_chau():
         ("tao", "mày"), ("mày", "tao"),
     ]:
         assert pair in KINSHIP_RECIPROCAL, f"Missing D-90 pair: {pair}"
+
+
+# ── H3/B4 — register-aware safe-default ladder ───────────────────────────────
+
+
+def test_get_safe_default_classical_register_ladder():
+    """H3: get_safe_default selects the classical ladder for a classical register.
+
+    With no user override: a modern default ('tôi','bạn') with register omitted; the
+    classical ladder for xianxia/cultivation/historical; female addressee → 'cô nương';
+    male/unknown → 'các hạ'; a non-classical register ('casual') stays modern.
+    """
+    from trezarr.translate.reconcile import get_safe_default  # noqa: PLC0415
+
+    settings = _make_settings(safe_default=None)
+
+    # Modern default (register omitted) — regression guard.
+    assert get_safe_default(None, settings) == ("tôi", "bạn")
+    # Classical ladder, unknown gender → non-gendered classical address.
+    assert get_safe_default(None, settings, register="xianxia") == ("tại hạ", "các hạ")
+    # Classical, female addressee.
+    assert get_safe_default("female", settings, register="cultivation") == ("tại hạ", "cô nương")
+    # Classical, male addressee.
+    assert get_safe_default("male", settings, register="historical") == ("tại hạ", "các hạ")
+    # Non-classical register stays modern.
+    assert get_safe_default("male", settings, register="casual") == ("tôi", "anh")
+
+
+def test_get_safe_default_register_aware_ladder():
+    """H3 (specialist): classical ladder via constants; modern unchanged; user override wins first.
+
+    get_safe_default(None, register='xianxia') returns the classical constants;
+    get_safe_default('male', register=None) returns the modern ('tôi','anh'); a user
+    pronoun_safe_default override wins FIRST regardless of register.
+    """
+    from trezarr.translate.reconcile import (  # noqa: PLC0415
+        get_safe_default,
+        SAFE_DEFAULT_SELF_CLASSICAL,
+        SAFE_DEFAULT_ADDRESS_CLASSICAL_NEUTRAL,
+    )
+
+    settings = _make_settings(safe_default=None)
+    assert get_safe_default(None, settings, register="xianxia") == (
+        SAFE_DEFAULT_SELF_CLASSICAL, SAFE_DEFAULT_ADDRESS_CLASSICAL_NEUTRAL,
+    )
+    assert get_safe_default("male", settings, register=None) == ("tôi", "anh")
+
+    settings_override = _make_settings(safe_default=("tớ", "cậu"))
+    assert get_safe_default("female", settings_override, register="xianxia") == ("tớ", "cậu")
+
+
+def test_get_safe_default_user_override_wins_over_classical_register():
+    """H3 precedence: a user pronoun_safe_default is returned verbatim, classical ladder skipped."""
+    from trezarr.translate.reconcile import get_safe_default  # noqa: PLC0415
+
+    settings = _make_settings(safe_default=("tớ", "cậu"))
+    assert get_safe_default("female", settings, register="xianxia") == ("tớ", "cậu")
+
+
+def _make_bible_with_register(series_id, characters, address_map, register_value, relationship_events=None):
+    """A _make_bible variant that carries a register_value field (H3 end-to-end)."""
+    from types import SimpleNamespace  # noqa: PLC0415
+
+    return SimpleNamespace(
+        id=series_id,
+        arr_kind="sonarr",
+        arr_instance="default",
+        arr_series_id=100,
+        register_value=register_value,
+        characters=characters,
+        terms=[],
+        address_map=address_map,
+        locked_fields=[],
+        relationship_events=relationship_events or [],
+    )
+
+
+async def test_reconcile_below_threshold_uses_classical_safe_default_when_register_classical(session_factory):
+    """H3 end-to-end: an all-LOW dyad on a classical-register Bible safe-defaults to the classical ladder.
+
+    A bible with register_value='xianxia', two characters, and an all-LOW-confidence
+    attribution for a pair with no prior Address Map entry resolves to ('tại hạ', <classical
+    address by addressee gender>) rather than the modern ('tôi', ...). Complement: a bible
+    WITHOUT register_value still yields the modern safe default (Success-#4 regression).
+    """
+    from trezarr.translate.reconcile import reconcile_attributions  # noqa: PLC0415
+
+    settings = _make_settings(threshold="medium")
+
+    # Classical-register bible — female addressee → classical female address.
+    series_id = await _create_series(session_factory, arr_series_id=251)
+    spk_id, addr_id = await _create_characters(
+        session_factory, series_id,
+        spk_name="DaoA", spk_gender="male", addr_name="MeiB", addr_gender="female",
+    )
+    attributions = [_make_attribution("DaoA", "MeiB", "low")]
+    bible = _make_bible_with_register(
+        series_id=series_id,
+        characters=[_make_character(spk_id, "DaoA", "male"), _make_character(addr_id, "MeiB", "female")],
+        address_map=[],
+        register_value="xianxia",
+    )
+    resolved = await reconcile_attributions(
+        flat_attributions=attributions, bible=bible, session_factory=session_factory,
+        series_id=series_id, episode_key="S01E01", settings=settings,
+    )
+    assert resolved[(spk_id, addr_id)] == ("tại hạ", "cô nương"), (
+        f"Classical-register low-confidence dyad must use the classical ladder, got {resolved[(spk_id, addr_id)]!r}"
+    )
+
+    # Complement: no register_value → modern safe default (Success-#4 regression).
+    series_id2 = await _create_series(session_factory, arr_series_id=252)
+    spk2, addr2 = await _create_characters(
+        session_factory, series_id2,
+        spk_name="ModA", spk_gender="male", addr_name="ModB", addr_gender=None,
+    )
+    bible2 = _make_bible(
+        series_id=series_id2,
+        characters=[_make_character(spk2, "ModA", "male"), _make_character(addr2, "ModB", None)],
+        address_map=[],
+    )
+    resolved2 = await reconcile_attributions(
+        flat_attributions=[_make_attribution("ModA", "ModB", "low")], bible=bible2,
+        session_factory=session_factory, series_id=series_id2, episode_key="S01E01", settings=settings,
+    )
+    assert resolved2[(spk2, addr2)] == ("tôi", "bạn"), (
+        f"register-less Bible must still produce the modern safe default, got {resolved2[(spk2, addr2)]!r}"
+    )
+
+
+async def test_reconcile_within_episode_dyad_lock_no_flip(session_factory):
+    """B3: one HIGH + several LOW lines of the SAME dyad resolve to exactly ONE pair (no flip).
+
+    A dyad with one HIGH-confidence witness and several LOW lines of the same (speaker,
+    addressee) resolves to a single (self_term, address_term); the low lines do NOT
+    independently safe-default it to a different pair. Also asserts Success-#4: a dyad with
+    only an UNLOCKED prior-episode entry and no same-episode high-confidence witness
+    safe-defaults.
+    """
+    from trezarr.translate.reconcile import reconcile_attributions  # noqa: PLC0415
+
+    settings = _make_settings(threshold="medium")
+
+    series_id = await _create_series(session_factory, arr_series_id=261)
+    spk_id, addr_id = await _create_characters(
+        session_factory, series_id,
+        spk_name="AnhX", spk_gender="male", addr_name="EmY", addr_gender="female",
+    )
+    # Pre-existing Address Map entry supplies the confident terms.
+    from trezarr.bible.store import upsert_address_pair  # noqa: PLC0415
+    await upsert_address_pair(
+        session_factory, series_id=series_id,
+        speaker_character_id=spk_id, addressee_character_id=addr_id,
+        self_term="anh", address_term="em", episode_key="S01E01", source="inference",
+    )
+    # One HIGH line + three LOW lines of the SAME dyad.
+    attributions = [
+        _make_attribution("AnhX", "EmY", "high", line_index=1),
+        _make_attribution("AnhX", "EmY", "low", line_index=2),
+        _make_attribution("AnhX", "EmY", "low", line_index=3),
+        _make_attribution("AnhX", "EmY", "low", line_index=4),
+    ]
+    bible = _make_bible(
+        series_id=series_id,
+        characters=[_make_character(spk_id, "AnhX", "male"), _make_character(addr_id, "EmY", "female")],
+        address_map=[_make_address_map_entry(1, series_id, spk_id, addr_id, "anh", "em")],
+    )
+    resolved = await reconcile_attributions(
+        flat_attributions=attributions, bible=bible, session_factory=session_factory,
+        series_id=series_id, episode_key="S01E02", settings=settings,
+    )
+    # Exactly one resolved pair for the dyad, and it is the confident ('anh','em') — not flipped.
+    assert resolved[(spk_id, addr_id)] == ("anh", "em"), (
+        f"HIGH witness must win for the whole dyad (no mid-episode flip), got {resolved[(spk_id, addr_id)]!r}"
+    )
+
+    # Success-#4: an UNLOCKED prior-episode entry + no same-episode HIGH witness → safe default.
+    series_id2 = await _create_series(session_factory, arr_series_id=262)
+    spk2, addr2 = await _create_characters(
+        session_factory, series_id2,
+        spk_name="P2", spk_gender=None, addr_name="Q2", addr_gender=None,
+    )
+    bible2 = _make_bible(
+        series_id=series_id2,
+        characters=[_make_character(spk2, "P2", None), _make_character(addr2, "Q2", None)],
+        address_map=[_make_address_map_entry(1, series_id2, spk2, addr2, "anh", "em")],  # unlocked
+    )
+    resolved2 = await reconcile_attributions(
+        flat_attributions=[_make_attribution("P2", "Q2", "low")], bible=bible2,
+        session_factory=session_factory, series_id=series_id2, episode_key="S01E02", settings=settings,
+    )
+    assert resolved2[(spk2, addr2)] == ("tôi", "bạn"), (
+        f"Unlocked prior entry + no HIGH witness must safe-default, got {resolved2[(spk2, addr2)]!r}"
+    )
+
+
+async def test_reconcile_resolves_honorific_prefixed_names(session_factory):
+    """B3/C6: an attribution naming 'Elder Zhou' resolves to the seeded 'Zhou' character.
+
+    With a character row 'Zhou', an attribution whose speaker/addressee are 'Elder Zhou' /
+    'Mr. Han' resolves to the character ids via _normalize_name and produces a resolved_map
+    entry (no Address-Map starvation from honorific drift).
+    """
+    from trezarr.translate.reconcile import reconcile_attributions  # noqa: PLC0415
+
+    settings = _make_settings(threshold="medium")
+
+    series_id = await _create_series(session_factory, arr_series_id=271)
+    zhou_id, han_id = await _create_characters(
+        session_factory, series_id,
+        spk_name="Zhou", spk_gender="male", addr_name="Han", addr_gender="male",
+    )
+    # Attribution uses honorific-prefixed forms that must normalize to the bare names.
+    attributions = [_make_attribution("Elder Zhou", "Mr. Han", "low")]
+    bible = _make_bible(
+        series_id=series_id,
+        characters=[_make_character(zhou_id, "Zhou", "male"), _make_character(han_id, "Han", "male")],
+        address_map=[],
+    )
+    resolved = await reconcile_attributions(
+        flat_attributions=attributions, bible=bible, session_factory=session_factory,
+        series_id=series_id, episode_key="S01E01", settings=settings,
+    )
+    assert (zhou_id, han_id) in resolved, (
+        "Honorific-prefixed attribution must resolve to the seeded character ids (no Address-Map starvation)"
+    )

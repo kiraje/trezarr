@@ -1,4 +1,4 @@
-"""7-check pre-write validation gate for translated SubDocs (D-16, D-17).
+"""12-check pre-write validation gate for translated SubDocs (D-16, D-17).
 
 Design decisions honoured:
   D-16  Gate every write on all 7 structural checks (fail-fast).
@@ -55,12 +55,81 @@ SENTINEL_RE = re.compile(r'<<T\d+>>')
 # (A *translated* scaffold token, e.g. "(nguồn:", is residual risk — not matched.)
 REVIEW_SCAFFOLD_RE = re.compile(r'\(\s*source\s*:', re.IGNORECASE)
 
+# ── Per-cue leak detectors (audit B2/H4/H5/M3) ──────────────────────────────────
+# The per-FILE diacritic average (Check 3) cannot see a single bad cue — ~40 short
+# Vietnamese cues average ~40 raw passthroughs away.  Checks 9-12 inspect each cue.
+
+# B2/M3 fix (Check 9): any CJK Unified / CJK ext-A / compatibility / fullwidth, Hangul
+# syllables + Jamo, or Hiragana/Katakana codepoint in a translated cue is a hard leak
+# (an untranslated Chinese/Korean/Japanese source fragment).  Vietnamese never uses any
+# of these scripts, so zero false positives by construction.  Anchorless single-char
+# search — no backtracking path (ASVS L1 V5).
+CJK_LEAK_RE = re.compile(
+    "["
+    "一-鿿"   # CJK Unified Ideographs           U+4E00–U+9FFF
+    "㐀-䶿"   # CJK Extension A                  U+3400–U+4DBF
+    "豈-﫿"   # CJK Compatibility Ideographs     U+F900–U+FAFF
+    "＀-￯"   # Halfwidth and Fullwidth Forms    U+FF00–U+FFEF
+    "가-힣"   # Hangul Syllables                 U+AC00–U+D7A3
+    "ᄀ-ᇿ"   # Hangul Jamo                      U+1100–U+11FF
+    "぀-ヿ"   # Hiragana + Katakana              U+3040–U+30FF
+    "]"
+)
+
+# B2/H5 fix (Check 10): an ASCII alphabetic word token (>=2 letters). Used to decide
+# whether a no-diacritic cue is a verbatim source pass-through (every token also present
+# in the corresponding source cue). One-letter runs are ignored so a stray ASCII letter
+# inside a Vietnamese word (e.g. the 'L' in 'Là') never counts as a token.
+ASCII_WORD_RE = re.compile(r'[A-Za-z]{2,}')
+
+# MEDIUM-3 fix (Check 10 false-positive guard): laughter / onomatopoeia / interjections are
+# legitimately untranslated and identical to source ("Ha ha ha", "Hmm", "Uh oh"). They are
+# all-ASCII, no-diacritic, and verbatim-in-source, so Check 10 would quarantine the whole file.
+# A cue made of only these tokens (or a single repeated token) is exempt.
+# NOTE: kept to a CLOSED set of non-lexical syllables on purpose. A blanket "any repeated
+# token" exemption was rejected (adversarial-verify): it would let real repeated English
+# imperatives escape — "Go go", "No no", "Run run", "Stop stop" are repeated tokens but ARE
+# untranslated content that Check 10 must still catch. Laughter ("Ha ha ha", "Ho ho ho") is
+# covered because its syllables are listed here, not because it repeats.
+_INTERJECTION_TOKENS: frozenset[str] = frozenset({
+    "ha", "haha", "hahaha", "hah", "heh", "hehe", "hmm", "hm", "mmm", "mm",
+    "uh", "uhh", "ah", "ahh", "oh", "ohh", "eh", "ehh", "oho", "huh", "hum",
+    "wow", "ooh", "aha", "hey", "yay", "ow", "ugh", "phew", "psst", "shh",
+    # laughter / non-lexical onomatopoeia syllables (closed set, never real English words):
+    "ho", "hoho", "hohoho", "hee", "heehee", "haw", "har", "tee", "teehee",
+    "woo", "yoo", "boo", "grr", "brr", "argh", "aah", "hah",
+})
+
+# B2/H5 fix (Check 11): an English honorific immediately followed by a capitalized name
+# ("Mr. Han", "Elder Zhou", "Miss Mei", "Brother Han") is an untranslated address form
+# leaking through. Vietnamese renders these as kinship/honorific words (huynh / trưởng
+# lão / cô nương / …), never "Elder Name", so the bigram itself is a reliable defect.
+HONORIFIC_CAPNAME_RE = re.compile(
+    r'\b(?:Mr|Mrs|Ms|Miss|Sir|Elder|Brother|Sister|Master|Lord|Lady)\b\.?\s+[A-Z][a-z]+'
+)
+
+# H4 fix (Check 12 support): broad Latin-diacritic detector. DELIBERATELY WIDER than
+# VN_DIACRITIC_RE — it includes U+00C0–U+024F (à á â ê ô ì í ò ó ù ú ý … that Vietnamese
+# shares with French/Spanish) plus U+1E00–U+1EFF plus combining marks. Used ONLY to
+# recognize that a parenthetical carries Vietnamese (any accented Latin) so a legitimate
+# Vietnamese parenthetical is never flagged as an English gloss. (Check 3 still uses the
+# NARROW VN_DIACRITIC_RE for its file-wide ratio — these two are intentionally distinct.)
+LATIN_DIACRITIC_RE = re.compile(r'[À-ɏḀ-ỿ̀-ͯ]')
+
+# H4 fix (Check 12): a parenthetical whose inner text has ASCII letters but no Latin
+# diacritic and is long enough to be an English gloss. Captures the inner text so the
+# check can apply the diacritic/length/space-or-possessive filters; flags
+# "(Miss Mei's brother)" / "(X's brother)" but not "(!)"/"(?)"/"(A)" nor a Vietnamese
+# parenthetical (which carries diacritics). [^()] inner class is non-recursive — no
+# catastrophic backtracking (ASVS L1 V5).
+GLOSS_PAREN_RE = re.compile(r'\(([^()]*[A-Za-z][^()]*)\)')
+
 @dataclass
 class GateFailure:
     """Structured description of a validation gate failure.
 
     Attributes:
-        check:           Check number (1–7) that failed.
+        check:           Check number (1–12) that failed.
         reason:          Human-readable failure description.
         failing_indices: Optional list of SubLine indices involved in the failure.
     """
@@ -70,7 +139,7 @@ class GateFailure:
 
 
 class GateError(Exception):
-    """Raised by validate_subdoc() when any of the 7 gate checks fails.
+    """Raised by validate_subdoc() when any of the 12 gate checks fails.
 
     Attributes:
         failure: The GateFailure instance describing the failed check.
@@ -177,30 +246,44 @@ def validate_subdoc(
     translated: SubDoc,
     source: SubDoc,
     settings: "TrezarrSettings",
+    *,
+    proper_noun_allowlist: set[str] | None = None,
 ) -> None:
-    """Run all 8 gate checks on a translated SubDoc.  Raises GateError on first failure.
+    """Run all 12 gate checks on a translated SubDoc.  Raises GateError on first failure.
 
     Checks (fail-fast — stops at first failure):
       1. Cue count equals source
       2. No empty/whitespace-only translated lines
-      3. No untranslated lines (per-line allowlist + VI diacritic ratio)
+      3. No untranslated lines (per-line allowlist + per-FILE VI diacritic ratio) — backstop
       4. Timecodes/indices byte-identical to source
       5. Monotonic, non-overlapping timestamps
       6. No orphan sentinel tokens (<<TN>>)
       7. All cue texts encode as valid UTF-8
       8. No Pass-4 review-prompt scaffolding ("(source: …)") leaked into output
+      9. (B2/M3) No CJK / Hangul / Kana codepoint in any translated cue (raw source leak)
+     10. (B2/H5) No source-passthrough leak: a no-diacritic cue whose ASCII word tokens all
+         appear verbatim in the corresponding source cue and are not all Bible proper nouns
+     11. (B2/H5) No English honorific + Capitalized-name bigram ("Mr. Han", "Elder Zhou")
+     12. (H4) No English-gloss parenthetical ("(Miss Mei's brother)")
+
+    Checks 9-12 are PER-CUE (the per-file ratio of Check 3 averages a single bad cue away —
+    audit B2). Check 3 is kept as a backstop. The structural checks 1-8 are unchanged.
 
     Args:
         translated: The translated SubDoc produced by the engine.
         source:     The original source SubDoc (for comparison).
         settings:   Settings supplying translate_vi_diacritic_ratio.
+        proper_noun_allowlist: Optional lowercased set of Bible-pinned proper-noun tokens
+                    (character names + term renderings/source terms). A cue whose ASCII
+                    tokens are ALL in this set is a legitimate name passthrough and does NOT
+                    trip Check 10. When None, no tokens are allowlisted (Bible-unaware path).
 
     Returns:
         None if all checks pass.
 
     Raises:
         GateError: On the first check that fails, with failure.check set to the
-                   check number (1–8).
+                   check number (1–12).
     """
     # Check 1: cue count equals source
     if len(translated.lines) != len(source.lines):
@@ -278,3 +361,89 @@ def validate_subdoc(
                 f"Review-prompt scaffolding leaked into cue {i}: {sl.text!r}",
                 failing_indices=[i],
             ))
+
+    # ── Per-cue leak checks 9-12 (audit B2/H4/H5/M3) ──────────────────────────────
+    # The per-FILE ratio of Check 3 cannot separate a legitimately-short Vietnamese
+    # cue ("Là anh.") from a raw English/CJK passthrough — ~40 short VI cues average
+    # away ~40 bad cues. These checks inspect each cue against its CORRESPONDING
+    # source cue (raw cues interleave identically in both lists, so zip aligns them).
+    # All four loops skip opaque pass-through cues (SubLine.raw set — D-98/D-99).
+    allowlist = {t.lower() for t in (proper_noun_allowlist or set())}
+    for i, (src_sl, trn_sl) in enumerate(zip(source.lines, translated.lines)):
+        # Opaque pass-through cues (karaoke/drawing) are intentionally untranslated.
+        if trn_sl.raw is not None:
+            continue
+        text = trn_sl.text.strip()
+        if not text:
+            continue  # caught by Check 2 above; defensive skip
+
+        # Check 9 (B2/M3): CJK / Hangul / Kana codepoint = untranslated source leak.
+        if CJK_LEAK_RE.search(text):
+            raise GateError(GateFailure(
+                9,
+                f"CJK/Hangul/Kana script leaked into cue {i}: {text!r}",
+                failing_indices=[i],
+            ))
+
+        # Check 12 (H4): English-gloss parenthetical. A parenthetical with ASCII
+        # letters, no Latin diacritic, long enough to be a gloss (inner len>=3 AND a
+        # space or a possessive 's). A Vietnamese parenthetical carries diacritics
+        # (LATIN_DIACRITIC_RE) and is skipped; tiny tokens "(!)"/"(?)"/"(A)" are skipped.
+        for _m in GLOSS_PAREN_RE.finditer(text):
+            inner = _m.group(1).strip()
+            if len(inner) < 3:
+                continue
+            if LATIN_DIACRITIC_RE.search(inner):
+                continue  # accented Latin = Vietnamese dialogue, not a gloss
+            # MEDIUM-2 fix: a bare "ASCII + a space, no diacritic" parenthetical also matches
+            # legitimate diacritic-free Vietnamese asides ("(anh em ta)", "(cho con)"), which
+            # would quarantine the whole file. Require a concrete ENGLISH-gloss signal — a
+            # possessive ('s) or an English honorific+Capitalized-name bigram — which is the
+            # actual audit leak pattern ("(Miss Mei's brother)", "(X's brother)") and cannot
+            # appear in normal Vietnamese dialogue.
+            if ("'s" in inner) or ("’s" in inner) or HONORIFIC_CAPNAME_RE.search(inner):
+                raise GateError(GateFailure(
+                    12,
+                    f"Gloss/parenthetical leaked into cue {i}: {text!r}",
+                    failing_indices=[i],
+                ))
+
+        # Check 11 (B2/H5): English honorific + Capitalized name bigram.
+        if HONORIFIC_CAPNAME_RE.search(text):
+            raise GateError(GateFailure(
+                11,
+                f"English honorific + name leaked into cue {i}: {text!r}",
+                failing_indices=[i],
+            ))
+
+        # Check 10 (B2/H5): source-passthrough leak. Only consider a cue that has NO
+        # Vietnamese diacritic (narrow VN range) and is not allowlist/sentinel-only.
+        if VN_DIACRITIC_RE.search(text):
+            continue
+        if ALLOWLIST_RE.match(text) or SENTINEL_ONLY_RE.match(text):
+            continue
+        tokens = ASCII_WORD_RE.findall(text)
+        if len(tokens) < 2:
+            continue  # need >=2 ASCII word tokens (length>=2 each) — short VI cues are safe
+        # MEDIUM-3 fix: exempt laughter/onomatopoeia — a cue made ONLY of listed interjection
+        # syllables ("Ha ha ha", "Ho ho ho", "Hmm uh") — legitimately untranslated and identical
+        # to source. Deliberately NOT a blanket "repeated token" exemption: real repeated English
+        # imperatives ("Go go", "No no", "Stop stop") must still be caught as passthrough leaks.
+        _lower_tokens = [t.lower() for t in tokens]
+        if all(t in _INTERJECTION_TOKENS for t in _lower_tokens):
+            continue
+        src_lower = (src_sl.text or "").lower()
+        all_in_source = all(
+            re.search(r'\b' + re.escape(tok.lower()) + r'\b', src_lower)
+            for tok in tokens
+        )
+        if not all_in_source:
+            continue  # not a verbatim echo of the source cue
+        if all(tok.lower() in allowlist for tok in tokens):
+            continue  # every token is a Bible-pinned proper noun — legitimate passthrough
+        raise GateError(GateFailure(
+            10,
+            f"Source-language passthrough leak in cue {i}: {text!r} "
+            f"(all ASCII tokens appear verbatim in source)",
+            failing_indices=[i],
+        ))

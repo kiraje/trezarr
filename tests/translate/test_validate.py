@@ -348,3 +348,305 @@ def test_gate_all_checks_pass():
     result = validate_subdoc(trn, src, _settings())
 
     assert result is None, f"Expected None (no gate failure) for valid translation, got {result}"
+
+
+# ── B2/M3/H4/H5 — per-cue leak checks 9-12 + additive signature ──────────────
+
+
+def _make_line_raw(index: int, text: str, raw: str | None = None, *,
+                   start_tc: str = "00:00:01,000", end_tc: str = "00:00:03,000") -> object:
+    """Helper: construct a SubLine, optionally with .raw set (for skip-path tests)."""
+    from trezarr.subtitles.model import SubLine
+    sl = SubLine(index=str(index), start_tc=start_tc, end_tc=end_tc, text=text)
+    if raw is not None:
+        sl.raw = raw
+    return sl
+
+
+# Clean Vietnamese padding cues (each carries narrow-range VI diacritics) used to keep the
+# per-FILE Check 3 ratio above threshold so a SINGLE bad cue reaches the per-cue checks 9-12.
+# (Audit B2: Check 3 averages a single bad cue away; it still runs FIRST as a backstop, so a
+# 1-cue no-diacritic doc would trip Check 3 before Check 9/10/12 — the padding avoids that.)
+_VI_PAD = ["Xin chào bạn", "Tôi rất khỏe", "Cảm ơn nhiều", "Hẹn gặp lại sau"]
+
+
+def _doc_with_bad_cue(bad_text: str, *, start_index: int = 1):
+    """Translated SubDoc: the bad cue first, then 4 clean VI padding cues (ratio passes)."""
+    lines = [_make_line(start_index, text=bad_text)]
+    for j, pad in enumerate(_VI_PAD, start=start_index + 1):
+        lines.append(_make_line(j, text=pad))
+    return _make_doc(lines)
+
+
+def _src_for_bad_cue(src_first: str):
+    """Source SubDoc paired with _doc_with_bad_cue (English first cue + 4 source pads)."""
+    src_pads = ["Hello friend", "I am well", "Thanks a lot", "See you later"]
+    lines = [_make_line(1, text=src_first)]
+    for j, pad in enumerate(src_pads, start=2):
+        lines.append(_make_line(j, text=pad))
+    return _make_doc(lines)
+
+
+def test_gate_check9_cjk_leak():
+    """Check 9 (B2/M3): a CJK / Hangul / Kana codepoint in a translated cue raises check 9.
+
+    The source cue is English so checks 1-8 pass first; the translated cue carries a
+    VI-diacritic-bearing rest plus a raw CJK/Hangul/Kana fragment. A clean Vietnamese-only
+    doc must NOT raise on check 9.
+    """
+    validate_mod = pytest.importorskip("trezarr.translate.validate")
+    GateError = validate_mod.GateError
+    validate_subdoc = validate_mod.validate_subdoc
+
+    src = _src_for_bad_cue("Hello there friends")
+
+    # CJK ideograph leak (rest carries VI diacritics so check 3 per-line is satisfied).
+    with pytest.raises(GateError) as ei:
+        validate_subdoc(_doc_with_bad_cue("你好 các bạn"), src, _settings())
+    assert ei.value.failure.check == 9, f"Expected check 9 (CJK leak), got {ei.value.failure.check}"
+
+    # Pure CJK fragment, Hangul, and Hiragana variants each raise check 9.
+    for leak in ("修真", "안녕", "こんにちは"):
+        with pytest.raises(GateError) as ei_v:
+            validate_subdoc(_doc_with_bad_cue(leak), src, _settings())
+        assert ei_v.value.failure.check == 9, f"Expected check 9 for {leak!r}"
+
+    # Clean Vietnamese-only doc — no check-9 raise.
+    src_clean = _make_doc([_make_line(1, text="Hello there"), _make_line(2, text="Goodbye now")])
+    trn_clean = _make_doc([_make_line(1, text="Xin chào bạn"), _make_line(2, text="Tạm biệt nhé")])
+    assert validate_subdoc(trn_clean, src_clean, _settings()) is None
+
+
+def test_gate_check9_cjk_hangul_kana_leak():
+    """Check 9 (specialist): CJK ideograph / Hangul / Hiragana each raise check 9; raw cues skipped.
+
+    A clean all-Vietnamese doc has zero false positives. A cue whose SubLine.raw is set is
+    skipped (intentional pass-through) even if it contains CJK.
+    """
+    validate_mod = pytest.importorskip("trezarr.translate.validate")
+    GateError = validate_mod.GateError
+    validate_subdoc = validate_mod.validate_subdoc
+
+    src = _src_for_bad_cue("Feng Tianji speaks")
+    with pytest.raises(GateError) as ei:
+        validate_subdoc(_doc_with_bad_cue("Feng 风 Tianji"), src, _settings())
+    assert ei.value.failure.check == 9
+
+    # No false positive on a clean doc.
+    src_ok = _make_doc([_make_line(1, text="Hello")])
+    trn_ok = _make_doc([_make_line(1, text="Xin chào bạn")])
+    assert validate_subdoc(trn_ok, src_ok, _settings()) is None
+
+    # Raw cue carrying CJK is skipped (pass-through verbatim) — padded so Check 3 passes.
+    cjk = "修真者"
+    src_raw = _make_doc([_make_line_raw(1, text=cjk, raw=cjk)] +
+                        [_make_line(i + 2, text=p) for i, p in enumerate(_VI_PAD)])
+    trn_raw = _make_doc([_make_line_raw(1, text=cjk, raw=cjk)] +
+                        [_make_line(i + 2, text=p) for i, p in enumerate(_VI_PAD)])
+    assert validate_subdoc(trn_raw, src_raw, _settings()) is None, (
+        "A raw (pass-through) cue must be skipped by check 9"
+    )
+
+
+def test_gate_check10_source_passthrough_leak():
+    """Check 10 (B2/H5): a verbatim English source-passthrough cue raises check 10.
+
+    'I am here to help' translated verbatim (>=2 ASCII tokens all in source, no VI
+    diacritics) raises check 10. MUST NOT false-positive on: a short VI cue 'Là anh.'
+    (1 ASCII token), a fully translated cue, or a name-only cue covered by the allowlist.
+    With an empty allowlist the name-only cue raises check 10.
+    """
+    validate_mod = pytest.importorskip("trezarr.translate.validate")
+    GateError = validate_mod.GateError
+    validate_subdoc = validate_mod.validate_subdoc
+
+    # Verbatim passthrough (cue 1) among VI padding → check 10. The source cue 1 carries
+    # the same tokens so the all-in-source test fires; padding keeps Check 3 above threshold.
+    src = _src_for_bad_cue("I am here to help")
+    with pytest.raises(GateError) as ei:
+        validate_subdoc(_doc_with_bad_cue("I am here to help"), src, _settings())
+    assert ei.value.failure.check == 10, f"Expected check 10, got {ei.value.failure.check}"
+
+    # Short VI cue with a single ASCII token ('Là anh.') — passes check 10 (need >=2 ASCII
+    # tokens). Padded with VI cues so the per-file Check 3 ratio clears the threshold and the
+    # cue reaches the per-cue check 10 (where its single ASCII token exempts it).
+    src2 = _src_for_bad_cue("Is it you")
+    trn2 = _doc_with_bad_cue("Là anh.")
+    assert validate_subdoc(trn2, src2, _settings()) is None
+
+    # Fully translated cue — passes (carries narrow-range VI diacritics).
+    src3 = _make_doc([_make_line(1, text="I am here to help")])
+    trn3 = _make_doc([_make_line(1, text="Tôi đến đây để giúp")])
+    assert validate_subdoc(trn3, src3, _settings()) is None
+
+    # Name-only cue (cue 1) among VI padding: passes when both tokens are in the allowlist...
+    src4 = _src_for_bad_cue("Han Mei is here")
+    trn4 = _doc_with_bad_cue("Han Mei")
+    assert validate_subdoc(trn4, src4, _settings(), proper_noun_allowlist={"han", "mei"}) is None
+    # ...but raises check 10 when the allowlist is empty/None.
+    with pytest.raises(GateError) as ei4:
+        validate_subdoc(trn4, src4, _settings())
+    assert ei4.value.failure.check == 10
+
+
+def test_gate_check10_source_passthrough_with_allowlist():
+    """Check 10 (specialist): allowlist exempts a name-only passthrough; diacritics/single tokens safe.
+
+    A no-diacritic cue whose >=2 ASCII tokens all appear in the source raises check 10;
+    the SAME cue with all tokens in the allowlist does NOT; a VI-diacritic cue is never
+    flagged; single-token cues are not flagged. Confirms the per-file Check 3 average no
+    longer hides a single English passthrough.
+    """
+    validate_mod = pytest.importorskip("trezarr.translate.validate")
+    GateError = validate_mod.GateError
+    validate_subdoc = validate_mod.validate_subdoc
+
+    src = _src_for_bad_cue("The dark forest")
+    trn = _doc_with_bad_cue("The dark forest")
+    with pytest.raises(GateError) as ei:
+        validate_subdoc(trn, src, _settings())
+    assert ei.value.failure.check == 10
+
+    # Same tokens, all allowlisted → no raise.
+    assert validate_subdoc(
+        trn, src, _settings(), proper_noun_allowlist={"the", "dark", "forest"}
+    ) is None
+
+    # VI-diacritic cue never flagged (1-cue doc with its own 1-cue source).
+    src_vi = _make_doc([_make_line(1, text="The dark forest")])
+    trn_vi = _make_doc([_make_line(1, text="Khu rừng tối")])
+    assert validate_subdoc(trn_vi, src_vi, _settings()) is None
+
+    # Single ASCII token never flagged by check 10 (padded so it reaches the per-cue check;
+    # an unpadded 1-cue ASCII doc would legitimately trip the Check 3 file backstop first).
+    src1 = _src_for_bad_cue("Okay then")
+    trn1 = _doc_with_bad_cue("Okay")
+    assert validate_subdoc(trn1, src1, _settings()) is None
+
+
+def test_gate_check11_honorific_capname():
+    """Check 11 (B2/H5): an English honorific + Capitalized name bigram raises check 11.
+
+    'Mr. Han đến rồi' / 'Elder Zhou nói gì đó' / 'Miss Mei' raise check 11. Legitimate
+    Vietnamese without an honorific+CapName bigram passes.
+    """
+    validate_mod = pytest.importorskip("trezarr.translate.validate")
+    GateError = validate_mod.GateError
+    validate_subdoc = validate_mod.validate_subdoc
+
+    src = _src_for_bad_cue("Mr Han has arrived")
+    for leak in ("Mr. Han đến rồi", "Elder Zhou nói gì đó", "Miss Mei"):
+        with pytest.raises(GateError) as ei:
+            validate_subdoc(_doc_with_bad_cue(leak), src, _settings())
+        assert ei.value.failure.check == 11, (
+            f"Expected check 11 for {leak!r}, got {ei.value.failure.check}"
+        )
+
+    # Legitimate Vietnamese — no honorific+CapName bigram.
+    for ok in ("Anh ấy là bạn của tôi", "Chào anh, em khỏe không"):
+        assert validate_subdoc(_doc_with_bad_cue(ok), src, _settings()) is None, (
+            f"Legitimate VI cue {ok!r} must not trip check 11"
+        )
+
+
+def test_gate_check12_gloss_parenthetical():
+    """Check 12 (H4): an English-gloss parenthetical raises check 12.
+
+    "Em trai (Miss Mei's brother)" / "Anh (X's brother)" raise check 12. A Vietnamese
+    parenthetical that carries diacritics passes; an inner with a VI diacritic ('nhanh
+    lên') passes; tiny tokens '(!)'/'(?)'/'(A)' pass. Source cues carry VI diacritics so
+    checks 9/10/11 don't pre-empt.
+    """
+    validate_mod = pytest.importorskip("trezarr.translate.validate")
+    GateError = validate_mod.GateError
+    validate_subdoc = validate_mod.validate_subdoc
+
+    src = _src_for_bad_cue("My brother is here")
+    for leak in ("Em trai (Miss Mei's brother)", "Anh (X's brother)"):
+        with pytest.raises(GateError) as ei:
+            validate_subdoc(_doc_with_bad_cue(leak), src, _settings())
+        assert ei.value.failure.check == 12, (
+            f"Expected check 12 for {leak!r}, got {ei.value.failure.check}"
+        )
+
+    # Vietnamese parenthetical carrying diacritics — passes.
+    assert validate_subdoc(
+        _doc_with_bad_cue("Anh Hàn (huynh trưởng của tôi)"), src, _settings()
+    ) is None
+
+    # Inner carries a VI diacritic ('lên' → ê) — recognized by LATIN_DIACRITIC_RE.
+    assert validate_subdoc(_doc_with_bad_cue("Đi đi (nhanh lên)"), src, _settings()) is None
+
+    # Tiny tokens are too short to be a gloss.
+    for tiny in ("Được (!)", "Sao (?)", "Câu (A)"):
+        assert validate_subdoc(_doc_with_bad_cue(tiny), src, _settings()) is None, (
+            f"Tiny parenthetical in {tiny!r} must not trip check 12"
+        )
+
+
+def test_validate_subdoc_signature_backcompat_and_check_numbers_unchanged():
+    """B2: additive proper_noun_allowlist signature + no renumbering of checks 1-8.
+
+    validate_subdoc(trn, src, settings) (3 positional args) still works for a clean VI doc.
+    Existing check numbers are preserved: count mismatch → check 1; scaffolding leak →
+    check 8; a pure-ASCII English doc → check 3 (the per-file backstop fires before per-cue
+    check 10 because check 3 runs earlier). proper_noun_allowlist is keyword-only (passing it
+    positionally as the 4th arg raises TypeError).
+    """
+    validate_mod = pytest.importorskip("trezarr.translate.validate")
+    GateError = validate_mod.GateError
+    validate_subdoc = validate_mod.validate_subdoc
+
+    # 3-positional-arg call on a clean doc → None.
+    src = _make_doc([_make_line(1, text="Hello"), _make_line(2, text="Goodbye")])
+    trn = _make_doc([_make_line(1, text="Xin chào bạn"), _make_line(2, text="Tạm biệt nhé")])
+    assert validate_subdoc(trn, src, _settings()) is None
+
+    # Count mismatch → check 1.
+    trn1 = _make_doc([_make_line(1, text="Xin chào")])
+    with pytest.raises(GateError) as ei1:
+        validate_subdoc(trn1, src, _settings())
+    assert ei1.value.failure.check == 1
+
+    # Scaffolding leak → check 8.
+    src_s = _make_doc([_make_line(1, text="不要")])
+    trn_s = _make_doc([_make_line(1, text="(source: 不要) Đừng")])
+    with pytest.raises(GateError) as ei8:
+        validate_subdoc(trn_s, src_s, _settings())
+    assert ei8.value.failure.check == 8
+
+    # Pure-ASCII English doc → check 3 (per-file backstop fires before per-cue check 10).
+    src_en = _make_doc([_make_line(i + 1, text=f"English line {i+1}") for i in range(5)])
+    trn_en = _make_doc([_make_line(i + 1, text=f"English line {i+1}") for i in range(5)])
+    with pytest.raises(GateError) as ei3:
+        validate_subdoc(trn_en, src_en, _settings())
+    assert ei3.value.failure.check == 3
+
+    # proper_noun_allowlist is keyword-only — positional 4th arg raises TypeError.
+    with pytest.raises(TypeError):
+        validate_subdoc(trn, src, _settings(), {"han"})
+
+
+def test_validate_subdoc_backward_compatible_signature():
+    """C2 (specialist): 3-arg validate_subdoc still works; checks 2 and 8 keep their numbers.
+
+    An empty-cue still raises check 2; a scaffold leak still raises check 8 — proving the
+    additive checks 9-12 did not renumber the structural checks.
+    """
+    validate_mod = pytest.importorskip("trezarr.translate.validate")
+    GateError = validate_mod.GateError
+    validate_subdoc = validate_mod.validate_subdoc
+
+    # Empty cue → check 2 (no allowlist kwarg supplied).
+    src = _make_doc([_make_line(1, text="Hello world")])
+    trn_empty = _make_doc([_make_line(1, text="   ")])
+    with pytest.raises(GateError) as ei2:
+        validate_subdoc(trn_empty, src, _settings())
+    assert ei2.value.failure.check == 2
+
+    # Scaffold leak → check 8.
+    src_s = _make_doc([_make_line(1, text="不要")])
+    trn_s = _make_doc([_make_line(1, text="(source: 不要) Đừng")])
+    with pytest.raises(GateError) as ei8:
+        validate_subdoc(trn_s, src_s, _settings())
+    assert ei8.value.failure.check == 8

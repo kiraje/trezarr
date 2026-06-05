@@ -299,3 +299,95 @@ def test_build_review_prompt_injects_character_names_regardless_of_source():
     assert "Daisy" in prompt, (
         "Character name must be injected into the review prompt regardless of source script"
     )
+
+
+# ── H3: build_review_prompt never injects the literal 'neutral' tone ─────────
+
+
+def test_build_review_prompt_never_injects_literal_neutral():
+    """H3: build_review_prompt must not steer the reviewer toward modern 'neutral' speech.
+
+    With register_value=None (or the placeholder 'neutral'), the prompt must NOT contain
+    'Register/tone: neutral' as a tone to imitate; instead it emits a 'match the source
+    tone' / 'do NOT flatten' instruction. A real register ('xianxia') MUST emit
+    'Register/tone: xianxia'.
+    """
+    from trezarr.translate.engine import build_review_prompt  # noqa: PLC0415
+    from types import SimpleNamespace  # noqa: PLC0415
+
+    # register_value=None → no literal 'neutral'; match-the-source instruction present.
+    prompt_none = build_review_prompt(
+        source_texts=["Hello."],
+        translated_texts=["Xin chào."],
+        resolved_map={},
+        bible=SimpleNamespace(register_value=None, terms=[], characters=[]),
+        settings=SimpleNamespace(),
+        dominant_pair=None,
+    )
+    assert "Register/tone: neutral" not in prompt_none, (
+        "build_review_prompt must NOT inject the literal 'Register/tone: neutral'"
+    )
+    assert "match the source tone" in prompt_none, (
+        "build_review_prompt must instruct the reviewer to match the source tone when no register is known"
+    )
+    assert "do NOT flatten" in prompt_none, (
+        "build_review_prompt must instruct the reviewer not to flatten the register"
+    )
+
+    # register_value='neutral' (placeholder) → also no 'Register/tone: neutral' steer.
+    prompt_neutral = build_review_prompt(
+        source_texts=["Hello."],
+        translated_texts=["Xin chào."],
+        resolved_map={},
+        bible=SimpleNamespace(register_value="neutral", terms=[], characters=[]),
+        settings=SimpleNamespace(),
+        dominant_pair=None,
+    )
+    assert "Register/tone: neutral" not in prompt_neutral, (
+        "The placeholder 'neutral' must not be emitted as a tone to imitate"
+    )
+    assert "match the source tone" in prompt_neutral
+
+    # A real register must be emitted verbatim.
+    prompt_xianxia = build_review_prompt(
+        source_texts=["Hello."],
+        translated_texts=["Xin chào."],
+        resolved_map={},
+        bible=SimpleNamespace(register_value="xianxia", terms=[], characters=[]),
+        settings=SimpleNamespace(),
+        dominant_pair=None,
+    )
+    assert "Register/tone: xianxia" in prompt_xianxia, (
+        "A real register must be emitted as 'Register/tone: xianxia'"
+    )
+
+
+def test_build_review_prompt_includes_mixed_gender_plural_rule():
+    """B4: build_review_prompt names gendered plurals as wrong + the non-gendered replacements.
+
+    The 'Wrong plural address' violation bullet must name 'các cô'/'các cậu' as wrong for a
+    mixed-gender group and name the non-gendered replacements ('chư vị'/'các vị' classical,
+    'các bạn'/'mọi người' modern). Existing rules 1-4 + the 'Pronoun pair' behavior are
+    unchanged (covered by the other self-review tests).
+    """
+    from trezarr.translate.engine import build_review_prompt  # noqa: PLC0415
+    from types import SimpleNamespace  # noqa: PLC0415
+
+    prompt = build_review_prompt(
+        source_texts=["You all should come."],
+        translated_texts=["Các cô nên đến."],
+        resolved_map={},
+        bible=SimpleNamespace(register_value="casual", terms=[], characters=[]),
+        settings=SimpleNamespace(),
+        dominant_pair=None,
+    )
+    # The gendered plurals are named as wrong.
+    assert "các cô" in prompt and "các cậu" in prompt, (
+        "Mixed-gender plural rule must name 'các cô'/'các cậu' as wrong"
+    )
+    # The non-gendered replacements are named.
+    for repl in ("chư vị", "các vị", "các bạn", "mọi người"):
+        assert repl in prompt, f"Mixed-gender plural rule must name the replacement {repl!r}"
+    # Existing rule structure preserved.
+    assert "RULES:" in prompt
+    assert "5. Do NOT rephrase" in prompt, "Rule 5 (do not paraphrase compliant lines) must remain"

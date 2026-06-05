@@ -80,6 +80,11 @@ class CharacterInference(BaseModel):
     rough_age: str | None = None
     role: str | None = None
     original_script_name: str | None = None  # CJK / non-Latin on-screen name (e.g. '樱')
+    # H2 fix: Sino-Vietnamese (Hán-Việt) reading of the character's name (e.g. 'Han' → 'Hàn',
+    # 'Feng Tianji' → 'Phong Thiên Cực'). Pydantic-only inference field — NOT persisted, so no
+    # DB migration is needed; consumed by plan_character_name_terms to pin the canonical
+    # rendering on a cold Bible whose source is English/pinyin (no original_script_name to key on).
+    vietnamese_rendering: str | None = None
 
 
 class TermInference(BaseModel):
@@ -156,7 +161,12 @@ def plan_character_name_terms(
         if not latin:
             continue
         script = (getattr(ch, "original_script_name", "") or "").strip()
-        canonical = rendering_by_latin.get(latin.lower()) or latin
+        # H2 fix: prefer (1) an existing Term Dictionary rendering for this Latin name, then
+        # (2) this character's inferred Hán-Việt vietnamese_rendering (stripped), then (3) the
+        # raw Latin name. On a cold Bible whose source is English/pinyin, (2) is what stops
+        # 'Han' being pinned as 'Han'; (1) still wins so a human-edited rendering is never clobbered.
+        ch_rendering = (getattr(ch, "vietnamese_rendering", "") or "").strip()
+        canonical = rendering_by_latin.get(latin.lower()) or ch_rendering or latin
         source = script or latin
         key = source.lower()
         if key in existing_sources or key in seen:
@@ -256,18 +266,39 @@ def _build_analysis_prompt(
         parts.append(f"[{i}] {safe_text}")
 
     # ── INSTRUCTIONS ──────────────────────────────────────────────────────
+    # H2 + B3 + B4 fix: require Hán-Việt readings (vietnamese_rendering) with concrete
+    # examples + kinship-as-address mapping (H2); demand a genre-aware register so H1/H3
+    # get a real signal (H1/H3); strengthen cold-Bible seeding so characters AND
+    # confidence-bearing address_map dyads are emitted even with no prior Bible (B3); and
+    # reinforce gender-/register-aware pronoun pairs (B4). The [DIALOGUE SAMPLE] framing and
+    # WR-05 newline collapse above are untouched, so the T-05-04-01 security posture holds.
     parts.append(
         "\n[INSTRUCTIONS]\n"
-        "Analyze the dialogue sample above. Infer and return a JSON object with:\n"
-        "  - register: overall tone/register of the series (e.g. 'formal', 'casual', 'romantic')\n"
+        "Analyze the dialogue sample above. Even if no prior Bible context is given, infer "
+        "a COMPLETE first-pass Bible and return a JSON object with:\n"
+        "  - register: overall tone/register of the series. Be specific about genre register "
+        "when applicable (e.g. 'xianxia', 'wuxia', 'cultivation', 'historical', 'classical', "
+        "'cổ trang', 'tiên hiệp', 'kiếm hiệp'), otherwise 'formal' / 'casual' / 'romantic'. "
+        "A classical/historical/cultivation register signals the translator and pronoun engine "
+        "to use classical Sino-Vietnamese vocabulary and pronouns, so do not under-label it as "
+        "merely 'casual'.\n"
         "  - characters: list of character objects with original_latin_name, gender (if determinable), "
         "rough_age (if determinable), role (if determinable), "
         "original_script_name (the original-script form of the name if non-Latin, "
-        "e.g. '樱' for a Chinese character named Sakura; omit for Latin-named characters)\n"
+        "e.g. '樱' for a Chinese character named Sakura; omit for Latin-named characters), "
+        "vietnamese_rendering (REQUIRED: the Sino-Vietnamese / Hán-Việt reading of the name, "
+        "NOT a phonetic transliteration and NOT the raw romanized/pinyin form — e.g. "
+        "'Han' → 'Hàn', 'Feng Tianji' → 'Phong Thiên Cực', 'Elder Zhou' → 'Châu trưởng lão', "
+        "'Miss Mei' → 'Mai cô nương'). A kinship word or rank used as a form of address "
+        "('Brother', 'Elder', 'Senior', 'Young Master') maps to a Vietnamese kinship/honorific "
+        "('huynh' / 'huynh trưởng' / 'trưởng lão' / 'tiền bối' / 'thiếu gia'), never a literal "
+        "transliterated name. [linguist: confirm Hán-Việt examples]\n"
         "  - terms: list of proper nouns, titles, places, jargon with source_term and vietnamese_rendering\n"
         "  - address_map: list of directed pronoun pairs with speaker_name, addressee_name, self_term "
-        "(how speaker refers to themselves), address_term (how speaker addresses the other), confidence (0.0-1.0) "
-        "— use the EXACT name string from the characters list (either original_latin_name or original_script_name). "
+        "(how speaker refers to themselves), address_term (how speaker addresses the other), confidence (0.0-1.0). "
+        "Emit a dyad for EVERY pair of characters who speak to each other in the sample, even on a "
+        "fresh Bible, so downstream passes have an anchor. "
+        "Use the EXACT name string from the characters list (either original_latin_name or original_script_name). "
         "Do NOT reference a character with a name form that was not listed in the characters list.\n"
         "  - relationship_events: list of relationship transitions detected in this episode\n"
         "    (ONLY emit when a relationship has CHANGED relative to the existing Bible context above).\n"
@@ -278,8 +309,11 @@ def _build_analysis_prompt(
         "    suggested_address_term (optional: new Vietnamese address term for A→B).\n"
         "    IMPORTANT: Do NOT emit entries for stable, unchanged relationships.\n"
         "Focus on Vietnamese pronoun accuracy. The most important output is the address_map — "
-        "identify which Vietnamese pronoun pairs (anh/em, chị/em, ông/bà, etc.) are appropriate "
-        "for each speaker→addressee relationship."
+        "identify which Vietnamese pronoun pairs (anh/em, chị/em, ông/bà, ta/ngươi, etc.) are appropriate "
+        "for each speaker→addressee relationship. When the register is classical/historical/"
+        "cultivation, prefer the classical pronoun set (ta / tại hạ / huynh / muội / ngươi / "
+        "các hạ / tiền bối / trưởng lão) over the flat modern set. Never assign a female-"
+        "gendered address term to a male addressee (or vice versa)."
     )
 
     return "\n".join(parts)
@@ -337,54 +371,117 @@ async def analyze_file(
         )
         return BibleAnalysis()
 
-    # Build cue texts, chunking if needed (MVP: take first N cues)
+    # M2 fix: real Pass-1 chunk loop. Split into chunks of pass1_max_cues_per_chunk and merge
+    # the per-chunk results, so a >chunk-size episode no longer silently drops its tail (the old
+    # all_cue_texts[:max_cues] truncation). The enable_pass1_analysis and Tier-3 (_mode=='text')
+    # early-returns above are unchanged, so the disabled-toggle + Tier-3 behavior is identical.
     all_cue_texts = [line.text for line in source_doc.lines if line.text.strip()]
     max_cues = settings.pass1_max_cues_per_chunk
-    if max_cues > 0 and len(all_cue_texts) > max_cues:
-        logger.debug(
-            "Pass 1 chunking: %d cues total, using first %d (episode: %s)",
-            len(all_cue_texts),
-            max_cues,
-            episode_key,
-        )
-        cue_texts = all_cue_texts[:max_cues]
+    if max_cues and max_cues > 0:
+        chunks = [all_cue_texts[i:i + max_cues] for i in range(0, len(all_cue_texts), max_cues)] or [[]]
     else:
-        cue_texts = all_cue_texts
+        chunks = [all_cue_texts]
+    if len(chunks) > 1:
+        logger.debug(
+            "Pass 1 chunking: %d cues total -> %d chunks of <=%d (episode: %s)",
+            len(all_cue_texts), len(chunks), max_cues, episode_key,
+        )
 
-    prompt = _build_analysis_prompt(cue_texts, bible, arr_metadata, episode_key=episode_key)
+    async def _analyze_one_chunk(chunk_texts: list[str]) -> BibleAnalysis:
+        """Run + parse one chunk. Mirrors the Tier-1/Tier-2 contract; raises on parse failure.
 
-    # Call LLMClient — sole concurrency gate is inside LLMClient._semaphore (D-06, Pitfall A).
-    # NEVER add asyncio.Semaphore here. response_model triggers Tier-1/2 path (D-47).
-    result = await llm_client.call(
-        messages=[{"role": "user", "content": prompt}],
-        response_model=BibleAnalysis,
-    )
+        Tier-1 (json_schema): a BibleAnalysis instance — returned directly.
+        Tier-2 (json_object): a JSON string — validated via model_validate_json().
+        Any unexpected type is coerced through model_validate_json(str(result)).
+        A ValidationError propagates so the caller can tolerate this single chunk (M2).
+        """
+        prompt = _build_analysis_prompt(chunk_texts, bible, arr_metadata, episode_key=episode_key)
+        # Sole concurrency gate is inside LLMClient._semaphore (D-06, Pitfall A).
+        # NEVER add asyncio.Semaphore here. response_model triggers the Tier-1/2 path (D-47).
+        result = await llm_client.call(
+            messages=[{"role": "user", "content": prompt}],
+            response_model=BibleAnalysis,
+        )
+        if isinstance(result, BibleAnalysis):
+            return result
+        if isinstance(result, str):
+            return BibleAnalysis.model_validate_json(result)
+        return BibleAnalysis.model_validate_json(str(result))
 
-    # Tier-1: result is already a BibleAnalysis instance (LLMClient parsed it)
-    if isinstance(result, BibleAnalysis):
-        logger.debug("Pass 1 Tier-1 success for episode: %s", episode_key)
-        return result
-
-    # Tier-2: result is a JSON string — validate it
-    if isinstance(result, str):
+    # Merge per-chunk results: union de-duplicated by character name / source_term /
+    # (speaker, addressee) / (a, b, description); keep the FIRST non-empty register_value.
+    merged = BibleAnalysis()
+    seen_chars: set[str] = set()
+    char_by_key: dict[str, CharacterInference] = {}  # LOW-2: for cross-chunk field-fill
+    seen_terms: set[str] = set()
+    seen_pairs: set[tuple[str, str]] = set()
+    seen_events: set[tuple[str, str, str]] = set()
+    chunk_fail_count = 0
+    for chunk_texts in chunks:
+        if not chunk_texts:
+            continue
         try:
-            analysis = BibleAnalysis.model_validate_json(result)
-            logger.debug("Pass 1 Tier-2 success for episode: %s", episode_key)
-            return analysis
+            part = await _analyze_one_chunk(chunk_texts)
         except ValidationError as exc:
-            raise BibleAnalysisError(
-                f"BibleAnalysis parse failed for episode {episode_key!r}: {exc}"
-            ) from exc
+            # Stay tolerant: one bad chunk must not lose the others (M2).
+            chunk_fail_count += 1
+            logger.warning(
+                "Pass 1: chunk parse failed for episode %s — skipping this chunk: %s",
+                episode_key, exc,
+            )
+            continue
+        # Keep the FIRST non-empty register_value across chunks.
+        if not (merged.register_value or "").strip() and (part.register_value or "").strip():
+            merged.register_value = part.register_value
+        for c in part.characters:
+            key = (c.original_latin_name or "").strip().lower()
+            if not key:
+                continue
+            if key not in seen_chars:
+                seen_chars.add(key)
+                merged.characters.append(c)
+                char_by_key[key] = c
+            else:
+                # LOW-2 fix: first-wins dedup must not drop a field a LATER chunk supplies —
+                # especially the H2 vietnamese_rendering (else plan_character_name_terms pins the
+                # raw Latin name). Fill any field the kept character left empty, field-by-field.
+                kept = char_by_key[key]
+                for _f in ("vietnamese_rendering", "gender", "rough_age", "role", "original_script_name"):
+                    if not (getattr(kept, _f, None) or "") and (getattr(c, _f, None) or ""):
+                        setattr(kept, _f, getattr(c, _f))
+        for t in part.terms:
+            key = (t.source_term or "").strip().lower()
+            if key and key not in seen_terms:
+                seen_terms.add(key)
+                merged.terms.append(t)
+        for p in part.address_map:
+            pkey = ((p.speaker_name or "").strip().lower(), (p.addressee_name or "").strip().lower())
+            if pkey not in seen_pairs:
+                seen_pairs.add(pkey)
+                merged.address_map.append(p)
+        for e in part.relationship_events:
+            ekey = (
+                (e.character_a_name or "").strip().lower(),
+                (e.character_b_name or "").strip().lower(),
+                (e.description or "").strip().lower(),
+            )
+            if ekey not in seen_events:
+                seen_events.add(ekey)
+                merged.relationship_events.append(e)
 
-    # Unexpected return type — treat as Tier-2 string
-    try:
-        analysis = BibleAnalysis.model_validate_json(str(result))
-        return analysis
-    except (ValidationError, Exception) as exc:
+    # Only quarantine when EVERY non-empty chunk failed to parse (systemic logic failure → D-47).
+    non_empty_chunks = sum(1 for c in chunks if c)
+    if non_empty_chunks > 0 and chunk_fail_count == non_empty_chunks:
         raise BibleAnalysisError(
-            f"BibleAnalysis unexpected result type {type(result).__name__!r} "
-            f"for episode {episode_key!r}: {exc}"
-        ) from exc
+            f"BibleAnalysis parse failed for ALL {chunk_fail_count} chunk(s) of episode "
+            f"{episode_key!r} — logic failure (quarantine)."
+        )
+
+    logger.debug(
+        "Pass 1 merged %d chunk(s) for episode %s (%d failed)",
+        non_empty_chunks, episode_key, chunk_fail_count,
+    )
+    return merged
 
 
 async def merge_bible_analysis(
@@ -454,6 +551,11 @@ async def merge_bible_analysis(
     # WR-06: count failures; raise BibleAnalysisError on total failure (systemic DB fault).
     # Pre-seed name_to_id with existing DB characters (case-insensitive, CR-01) so that
     # relationship_event resolution works even when the character is not in analysis.characters.
+    # MEDIUM-1 fix (C6 aliases): resolve honorific-prefixed dyad/event names ("Elder Han") to
+    # the seeded character row ("Han") via the shared helper — mirrors reconcile.py / engine.py
+    # so the cold-Bible address-map anchor is actually written even if the LLM references the
+    # dyad by an honorific form. name_to_id stays EXACT-keyed; the alias is a lookup fallback.
+    from trezarr.translate.engine import _normalize_name
     name_to_id: dict[str, int] = {}
     try:
         existing_bible = await load_series_bible(session_factory, series_id=series_id)
@@ -574,8 +676,10 @@ async def merge_bible_analysis(
     pair_fail_count = 0
     pair_attempt_count = 0
     for pair in analysis.address_map:
-        spk_id = name_to_id.get((pair.speaker_name or "").strip().lower())
-        addr_id = name_to_id.get((pair.addressee_name or "").strip().lower())
+        spk_id = (name_to_id.get((pair.speaker_name or "").strip().lower())
+                  or name_to_id.get(_normalize_name(pair.speaker_name or "")))
+        addr_id = (name_to_id.get((pair.addressee_name or "").strip().lower())
+                   or name_to_id.get(_normalize_name(pair.addressee_name or "")))
 
         if spk_id is None:
             logger.warning(
@@ -644,8 +748,10 @@ async def merge_bible_analysis(
     if enable_rel_events:
         event_fail_count = 0
         for event in analysis.relationship_events:
-            char_a_id = name_to_id.get((event.character_a_name or "").strip().lower())
-            char_b_id = name_to_id.get((event.character_b_name or "").strip().lower())
+            char_a_id = (name_to_id.get((event.character_a_name or "").strip().lower())
+                         or name_to_id.get(_normalize_name(event.character_a_name or "")))
+            char_b_id = (name_to_id.get((event.character_b_name or "").strip().lower())
+                         or name_to_id.get(_normalize_name(event.character_b_name or "")))
 
             if char_a_id is None:
                 logger.warning(

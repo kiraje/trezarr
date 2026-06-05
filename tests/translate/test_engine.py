@@ -624,3 +624,326 @@ def test_reject_scaffolded_correction():
     assert _reject_scaffolded_correction("(source: 不要) Đừng", "Đừng") == "Đừng"
     # A genuine correction (no scaffolding) is kept verbatim.
     assert _reject_scaffolded_correction("Đừng làm thế", "Đừng") == "Đừng làm thế"
+
+
+# ── B1: multi-line cue round-trip via <<BR>> sentinel ────────────────────────
+
+
+def test_multiline_cue_round_trip_via_br_sentinel():
+    r"""B1: a 2-line cue round-trips byte-identical through prompt → echo → parse.
+
+    build_translate_prompt(['A\nB']) must place the cue on ONE physical line as
+    '[1] A<<BR>>B' (the internal newline encoded as the literal <<BR>> token), and a
+    verbatim echo of that line must parse back to the original 'A\nB' (audit B1: a
+    multi-line cue used to be truncated to its first physical line). A RULE about
+    <<BR>> preservation must be present.
+    """
+    from trezarr.translate.engine import (  # noqa: PLC0415
+        build_translate_prompt,
+        parse_numbered_response,
+    )
+
+    prompt = build_translate_prompt(["A\nB"], [], [])
+    assert "[1] A<<BR>>B" in prompt, (
+        "Multi-line cue must be encoded on ONE physical line as '[1] A<<BR>>B'"
+    )
+    # The original 2-physical-line form must NOT appear in the LINES TO TRANSLATE block.
+    lines_section = prompt.split("[LINES TO TRANSLATE]", 1)[-1]
+    assert "[1] A\nB" not in lines_section, (
+        "Internal newline must be sentinelled as <<BR>>, not emitted as two physical lines"
+    )
+    # A RULE must instruct the model to preserve <<BR>>.
+    assert "<<BR>>" in prompt, "Prompt must mention the <<BR>> line-break sentinel in a RULE"
+
+    # Verbatim model echo → restored byte-identical.
+    result = parse_numbered_response("[1] A<<BR>>B", 1)
+    assert result == ["A\nB"], f"Expected ['A\\nB'] round-trip, got {result!r}"
+
+
+def test_parse_numbered_response_multiline_br_roundtrip():
+    r"""B1 invariant (specialist): 'A\nB' round-trips byte-identical via <<BR>>.
+
+    build_translate_prompt(["A\nB"], [], []) emits '[1] A<<BR>>B'; feeding that exact
+    echoed line into parse_numbered_response(resp, 1) yields ['A\nB']. Asserts the
+    internal newline is replaced with the literal '<<BR>>' token in [LINES TO TRANSLATE].
+    """
+    from trezarr.translate.engine import (  # noqa: PLC0415
+        build_translate_prompt,
+        parse_numbered_response,
+    )
+
+    prompt = build_translate_prompt(["A\nB"], [], [])
+    lines_section = prompt.split("[LINES TO TRANSLATE]", 1)[-1]
+    assert "A<<BR>>B" in lines_section, "internal newline must become the literal <<BR>> token"
+
+    resp = "[1] A<<BR>>B"
+    assert parse_numbered_response(resp, 1) == ["A\nB"]
+
+
+def test_parse_accumulates_continuation_lines():
+    r"""B1 continuation accumulation: a real-newline continuation is kept on the cue.
+
+    A model that emits a real newline INSTEAD of <<BR>> for a multi-line cue must still
+    keep the 2nd line (accumulated into the current cue). Leading text before [1] is ignored.
+    """
+    from trezarr.translate.engine import parse_numbered_response  # noqa: PLC0415
+
+    out = parse_numbered_response("[1] Dòng một\nDòng hai\n[2] Chào", 2)
+    assert out == ["Dòng một\nDòng hai", "Chào"], f"continuation not accumulated: {out!r}"
+
+    # Leading noise before the first [1] marker is dropped.
+    out2 = parse_numbered_response("preamble noise\n[1] Xin chào\n[2] Tạm biệt", 2)
+    assert out2 == ["Xin chào", "Tạm biệt"], f"leading text not ignored: {out2!r}"
+
+
+def test_parse_br_plus_real_newline_collapses():
+    r"""B1 doubled-newline guard: <<BR>> next to a real newline collapses to ONE newline.
+
+    A model that emits a <<BR>> together with a real newline at the same break must not
+    produce a doubled blank line — it collapses to a single newline. A tolerant '<< BR >>'
+    marker (stray whitespace) is also restored to a newline.
+    """
+    from trezarr.translate.engine import parse_numbered_response  # noqa: PLC0415
+
+    out = parse_numbered_response("[1] Dòng một<<BR>>\nDòng hai\n[2] Chào", 2)
+    assert out[0] == "Dòng một\nDòng hai", (
+        f"<<BR>> + real newline must collapse to a single newline, got {out[0]!r}"
+    )
+
+    # Tolerant spaced marker restores to a newline.
+    out2 = parse_numbered_response("[1] Dòng một<< BR >>Dòng hai", 1)
+    assert out2 == ["Dòng một\nDòng hai"], f"tolerant '<< BR >>' not restored: {out2!r}"
+
+
+def test_parse_numbered_response_continuation_and_br_variants():
+    r"""parse_numbered_response: continuation + <<BR>> variants + existing guards (B1).
+
+    (a) real-newline continuation accumulated; (b) <<BR>> + real newline collapses to one
+    newline; (c) tolerant '<< BR >>' converted; (d) leading text ignored; (e) existing
+    duplicate/out-of-range/missing/empty/count checks still raise (including '[1] <<BR>>'
+    raising empty after BR resolution).
+    """
+    from trezarr.translate.engine import (  # noqa: PLC0415
+        parse_numbered_response,
+        BatchValidationError,
+    )
+
+    # (a) continuation accumulated
+    assert parse_numbered_response("[1] A\nB", 1) == ["A\nB"]
+    # (b) <<BR>> + real newline collapse
+    assert parse_numbered_response("[1] A<<BR>>\nB", 1) == ["A\nB"]
+    # (c) tolerant marker
+    assert parse_numbered_response("[1] A<< BR >>B", 1) == ["A\nB"]
+    # (d) leading text ignored
+    assert parse_numbered_response("junk\n[1] Xin", 1) == ["Xin"]
+
+    # (e) existing guards still fire
+    with pytest.raises(BatchValidationError, match="Duplicate line number"):
+        parse_numbered_response("[1] A\n[1] B", 1)
+    with pytest.raises(BatchValidationError, match="unexpected line numbers"):
+        parse_numbered_response("[1] A\n[2] B\n[3] C", 2)
+    with pytest.raises(BatchValidationError, match="Missing line"):
+        parse_numbered_response("[2] B", 2)
+    # A cue that resolves to empty after BR restoration is rejected.
+    with pytest.raises(BatchValidationError, match="Empty/whitespace-only"):
+        parse_numbered_response("[1] <<BR>>", 1)
+
+
+def test_parse_preserves_existing_validation_after_b1():
+    r"""B1 must not weaken existing parser guards.
+
+    '[1] X\n[2] Y\n[3] Z' for expected_count=2 raises 'unexpected line numbers';
+    '[1] X\n[1] Y' raises 'Duplicate line number'; a missing line for expected_count=2
+    raises 'Missing line'; a cue that resolves to empty after restore raises the
+    empty-line BatchValidationError.
+    """
+    from trezarr.translate.engine import (  # noqa: PLC0415
+        parse_numbered_response,
+        BatchValidationError,
+    )
+
+    with pytest.raises(BatchValidationError, match="unexpected line numbers"):
+        parse_numbered_response("[1] X\n[2] Y\n[3] Z", 2)
+    with pytest.raises(BatchValidationError, match="Duplicate line number"):
+        parse_numbered_response("[1] X\n[1] Y", 2)
+    with pytest.raises(BatchValidationError, match="Missing line"):
+        parse_numbered_response("[2] Y", 2)
+    with pytest.raises(BatchValidationError, match="Empty/whitespace-only"):
+        parse_numbered_response("[1]   \n[2] Chào", 2)
+
+
+# ── C6 aliases: _normalize_name strips honorifics ────────────────────────────
+
+
+def test_normalize_name_strips_honorifics():
+    """C6: _normalize_name peels a leading English honorific and lowercases the name.
+
+    'Mr. Han'/'Elder Zhou'/'Senior Han'/'Young Master Han' resolve to the bare name key;
+    a bare name normalizes identically to the prior .strip().lower(); a bare honorific
+    (no name token after it) is never reduced to empty; empty/whitespace → ''.
+    """
+    from trezarr.translate.engine import _normalize_name  # noqa: PLC0415
+
+    assert _normalize_name("Mr. Han") == "han"
+    assert _normalize_name("Elder Zhou") == "zhou"
+    assert _normalize_name("Senior Han") == "han"
+    assert _normalize_name("Young Master Han") == "han"
+    # Bare name — identical to prior behaviour.
+    assert _normalize_name("Han") == "han"
+    # Bare honorific (every token is an honorific) — never empty.
+    assert _normalize_name("Elder") == "elder"
+    # Empty / whitespace.
+    assert _normalize_name("") == ""
+    assert _normalize_name("   ") == ""
+
+
+# ── H1: register threading into the Pass-3 prompt ────────────────────────────
+
+
+def test_build_translate_prompt_threads_register():
+    """H1: build_translate_prompt injects a [REGISTER] block only when register is truthy.
+
+    register='xianxia' → a [REGISTER] block naming 'xianxia' and a register RULE about
+    classical Sino-Vietnamese vocabulary. register=None → NO [REGISTER] block and no
+    classical-register RULE (back-compat).
+    """
+    from trezarr.translate.engine import build_translate_prompt  # noqa: PLC0415
+
+    with_reg = build_translate_prompt(["Foo"], [], [], register="xianxia")
+    assert "[REGISTER" in with_reg, "Expected a [REGISTER] block when register is provided"
+    assert "xianxia" in with_reg, "Register value must appear in the prompt"
+    assert "Hán-Việt" in with_reg, "Register RULE must mention classical Sino-Vietnamese (Hán-Việt)"
+
+    no_reg = build_translate_prompt(["Foo"], [], [], register=None)
+    assert "[REGISTER" not in no_reg, "No [REGISTER] block when register is None (back-compat)"
+
+
+# ── M1: merge_bible_analysis called with settings on the Pass-1 path ─────────
+
+
+async def test_merge_bible_analysis_called_with_settings_on_pass1_path(session_factory, tmp_path):
+    """M1: translate_file's Pass-1 path forwards settings= into merge_bible_analysis.
+
+    The engine calls merge_bible_analysis(..., settings=settings). Without settings,
+    enable_relationship_events would default to True even when the user disabled it. A
+    monkeypatch spy on trezarr.bible.analyze.merge_bible_analysis (the symbol the engine
+    imports locally) captures the kwargs and asserts settings is the SAME object passed
+    to translate_file (so enable_relationship_events=False is honoured).
+    """
+    from unittest.mock import AsyncMock  # noqa: PLC0415
+    from pathlib import Path  # noqa: PLC0415
+    from dataclasses import dataclass  # noqa: PLC0415
+
+    import trezarr.bible.analyze as analyze_mod  # noqa: PLC0415
+    from trezarr.translate.engine import translate_file  # noqa: PLC0415
+    from trezarr.bible.analyze import BibleAnalysis, CharacterInference, AddressMapInference  # noqa: PLC0415
+    from trezarr.translate.attribute import (  # noqa: PLC0415
+        BatchAttribution,
+        LineAttribution,
+        AttributionConfidence,
+    )
+    from trezarr.output.ledger import Ledger  # noqa: PLC0415
+    from trezarr.config import TrezarrSettings  # noqa: PLC0415
+
+    srt_content = (
+        "1\n00:00:01,000 --> 00:00:03,000\nHello Mary.\n\n"
+        "2\n00:00:04,000 --> 00:00:06,000\nHello John.\n\n"
+    )
+    src_path = tmp_path / "Show.S01E01.en.srt"
+    src_path.write_text(srt_content, encoding="utf-8")
+
+    settings = TrezarrSettings(
+        llm_api_key="test-key",
+        translate_quarantine_dir=str(tmp_path / "quarantine"),
+        bible_db_url=f"sqlite+aiosqlite:///{tmp_path / 'test.db'}",
+        enable_pass1_analysis=True,
+        enable_attribution=True,
+        enable_self_review=False,
+        enable_relationship_events=False,  # M1: must be honoured, not defaulted to True
+        pronoun_confidence_threshold="medium",
+    )
+
+    ledger = Ledger(tmp_path / "ledger.json")
+
+    bible_analysis = BibleAnalysis(
+        register="casual",
+        characters=[
+            CharacterInference(original_latin_name="John", gender="male"),
+            CharacterInference(original_latin_name="Mary", gender="female"),
+        ],
+        address_map=[
+            AddressMapInference(
+                speaker_name="John", addressee_name="Mary",
+                self_term="anh", address_term="em", confidence=0.95,
+            ),
+        ],
+    )
+    batch_attribution = BatchAttribution(
+        attributions=[
+            LineAttribution(line_index=1, speaker="John", addressee="Mary", confidence=AttributionConfidence.HIGH),
+            LineAttribution(line_index=2, speaker="Mary", addressee="John", confidence=AttributionConfidence.HIGH),
+        ]
+    )
+
+    async def mock_llm_call(messages, response_model=None, model=None):
+        if response_model is BibleAnalysis:
+            return bible_analysis
+        if response_model is BatchAttribution:
+            return batch_attribution
+        return "[1] Xin chào Mary ạ.\n[2] Chào anh nhé."
+
+    from trezarr.llm.client import LLMClient  # noqa: PLC0415
+    llm_client = LLMClient(settings)
+    llm_client.call = AsyncMock(side_effect=mock_llm_call)
+
+    # Spy on merge_bible_analysis (the engine imports it from trezarr.bible.analyze inside
+    # translate_file, so patching the module attribute intercepts the engine's call).
+    captured: dict = {}
+    real_merge = analyze_mod.merge_bible_analysis
+
+    async def _spy_merge(*args, **kwargs):
+        captured["settings"] = kwargs.get("settings", "MISSING")
+        return await real_merge(*args, **kwargs)
+
+    monkeypatch_done = False
+    orig = analyze_mod.merge_bible_analysis
+    analyze_mod.merge_bible_analysis = _spy_merge
+    try:
+        @dataclass
+        class _FakeMediaItem:
+            source_type: str = "episode"
+            season_number: int = 1
+            series_id: int = 1
+            title: str = "TestShow"
+            arr_kind: str = "sonarr"
+            tvdb_id: int | None = None
+            tmdb_id: int | None = None
+            genres: list | None = None
+            overview: str | None = None
+            year: int | None = None
+            network: str | None = None
+            runtime: int | None = None
+
+        @dataclass(frozen=True)
+        class _FakeEligibleItem:
+            media_item: object
+            source_sub_path: Path
+            reason: str = "test"
+            source_lang: str = "en"
+
+        eligible_item = _FakeEligibleItem(media_item=_FakeMediaItem(), source_sub_path=src_path)
+
+        await translate_file(
+            src_path, settings, llm_client, ledger,
+            eligible_item=eligible_item, session_factory=session_factory,
+        )
+        monkeypatch_done = True
+    finally:
+        analyze_mod.merge_bible_analysis = orig
+
+    assert monkeypatch_done, "translate_file did not complete"
+    assert "settings" in captured, "merge_bible_analysis was never called on the Pass-1 path"
+    assert captured["settings"] is settings, (
+        "M1: merge_bible_analysis must be called with settings=settings (the same object), "
+        f"so enable_relationship_events is honoured; got {captured['settings']!r}"
+    )
