@@ -4,8 +4,8 @@ milestone: none
 milestone_name: "(none — v1.0 + v1.1 archived)"
 status: milestone_archived
 stopped_at: v1.0 + v1.1 archived; git tags v1.0/v1.1 created; awaiting /gsd-new-milestone
-last_updated: 2026-06-04
-last_activity: 2026-06-04 -- Completed quick tasks 260604-gfl + 260604-hb4: all code-level debt fixed
+last_updated: 2026-06-05
+last_activity: 2026-06-05 -- Completed quick task 260605-dur: documented full *arr connection env vars in docker-compose + .env.example (pure-env PATH B)
 shipped_milestones:
   - version: v1.0
     name: "MVP"
@@ -38,7 +38,7 @@ See: .planning/PROJECT.md (updated 2026-06-04)
 
 Milestone: none active (v1.0 + v1.1 archived)
 Status: milestone_archived
-Last activity: 2026-06-04 — quick 260604-kfn: locked character names as Bible contract terms (Step 3.5) — live-confirmed 雏菊→Daisy + 4 more LOCKED (auditor PASS). Core value single-episode-verified + name-locked on deepseek; cross-episode (Phase-06) remains
+Last activity: 2026-06-05 — quick 260605-dur: documented the full *arr connection env vars (host/port/api_key/enabled × Sonarr/Radarr/Bazarr) in docker-compose.yml + .env.example, enabling pure-env (PATH B) deployment. Docs-only; corrected the misleading config.yaml-only header and called out the mandatory `TREZARR_<SVC>_ENABLED=true` (env path has no auto-enable). Prior: quick 260604-kfn locked character names as Bible contract terms (auditor PASS); core value single-episode-verified on deepseek; cross-episode (Phase-06) remains
 
 ```
 v1.0 MVP                  [##########] SHIPPED 2026-06-03 (phases 1-10, tag v1.0)
@@ -203,6 +203,7 @@ None yet.
 | 260604-hp2 | Fix the 2 bugs gza found: [CRITICAL] Pass-4 scaffolding-leak → splice guard (REVIEW_SCAFFOLD_RE, drop+keep clean Pass-3) + gate Check 8 (pipeline-reliability PASS); series-entity register merge AttributeError that silently dropped register/overrides (Series PK vs .series_id; bible-consistency PASS). 390 passed | 2026-06-04 | d651c5a, 562bad9 | [260604-hp2-fix-pass4-leak-and-register-merge](./quick/260604-hp2-fix-pass4-leak-and-register-merge/) |
 | 260604-ikq | Stage-2 name/term consistency fix: inject Bible glossary (Term Dictionary + character names) into Pass-3 + Pass-4 prompts (Pass-3 was glossary-blind; Pass-4 term filter never matched Latin keys vs Chinese source). Re-ran S01E06 + re-audited (vietnamese-linguist→finding-verifier, **11 VERIFIED / 0 REFUTED**): **CONSISTENT, regression-free** — protagonist 11 renderings→1 (`Daisy` ×56), Sakura/Rōsei/Tōchō snapped to canonical `Anh Đào`/`Lang Tinh`/`Đông Điệp`, 0 raw CJK; pronoun layer unaffected. BLOCKER 2→0, HIGH 3→0. TDD, 394 passed. | 2026-06-04 | 8ad599d | [260604-ikq-term-name-injection-fix](./quick/260604-ikq-term-name-injection-fix/) |
 | 260604-kfn | Lock character names as contract (ikq follow-up): `merge_bible_analysis` Step 3.5 + pure `plan_character_name_terms` create-and-LOCK a Term Dictionary entry per character mapping the inferred on-screen name → canonical (no schema migration; reuses inferred `original_script_name`). Live-confirmed (job 8): 5 LOCKED name terms created (`雏菊→Daisy`, `樱→Anh Đào`, `狼星→Lang Tinh`, `冻蝶→Đông Điệp`, `雪→Yuki`; pre-run 0). Output `Daisy ×88`, `Cúc 0`. bible-consistency-auditor PASS (lock-safety/idempotency/txn confirmed). TDD, 396 passed. Residual: 2 raw 雏菊 (model non-determinism — the prompt-ceiling; hard-zero needs output-enforcement). | 2026-06-04 | 4d6e9cd | [260604-kfn-lock-protagonist-name](./quick/260604-kfn-lock-protagonist-name/) |
+| 260605-dur | Document the full *arr (Sonarr/Radarr/Bazarr) connection env vars in docker-compose.yml + .env.example so a connection can be configured entirely from compose (PATH B pure-env). Docs-only — pydantic-settings fields already env-configurable; no code change. Corrected the misleading "stored in config.yaml, not as env vars" header → PATH A (web UI) / PATH B (env, precedence env>YAML>defaults). Surfaced all 12 vars (host/port/api_key/enabled × 3), commented-out by default so existing config.yaml deployments are unaffected. Prominent footgun warning in BOTH files: env path has NO auto-enable (web-UI write path does), so `TREZARR_<SVC>_ENABLED=true` is MANDATORY or discovery silently returns nothing. | 2026-06-05 | 0c5a677 | [260605-dur-document-the-full-arr-connection-env-var](./quick/260605-dur-document-the-full-arr-connection-env-var/) |
 
 ## Deferred Items
 
