@@ -14,10 +14,20 @@
 # path Sonarr/Radarr/Bazarr resolve to. Do NOT change it to /media without also
 # updating config.yaml, or source-subtitle lookup + sidecar writes will break.
 #
-# *arr connection (Sonarr/Radarr/Bazarr URLs + API keys) for THIS deployment is
-# stored in /config/config.yaml (written via the web UI), not as env vars, so it
-# survives redeploys via the config volume. Uncomment the TREZARR_*_API_KEY lines
-# below only if you prefer to inject them at runtime instead.
+# *arr connection (Sonarr/Radarr/Bazarr) — two config paths (either works):
+#
+#   PATH A — Web UI (default): configure host/port/key in the Trezarr Settings page.
+#     The UI writes /config/config.yaml, which persists across redeploys via the
+#     config volume. No env vars needed; the UI marks env-overridden fields read-only.
+#
+#   PATH B — Pure-env (override): uncomment the TREZARR_*_HOST / _PORT / _API_KEY /
+#     _ENABLED vars below and supply values in .env. Env vars take precedence over
+#     config.yaml (env > YAML > code defaults).
+#
+#   IMPORTANT — ENABLED flag: the web UI auto-enables a service when host+key are
+#     set, but the env path does NOT. TREZARR_*_ENABLED defaults to false and is
+#     never set automatically. You MUST set TREZARR_<SVC>_ENABLED=true explicitly or
+#     discovery will silently return nothing (the client is never built).
 #
 # No built-in auth (single-user / trusted-LAN, D-78). To restrict access, bind to
 # 127.0.0.1:6868:6868 and front it with an authenticating reverse proxy.
@@ -53,10 +63,23 @@ services:
 
       - TREZARR_CONFIG_PATH=/config/config.yaml
 
-      # Optional: override *arr keys via env instead of config.yaml.
+      # ── *arr connection (PATH B: pure-env override) ──────────────────────────────
+      # Uncomment all four vars per service. ENABLED=true is mandatory (see header).
+      # Sonarr (default port 8989)
+      # - TREZARR_SONARR_HOST=${TREZARR_SONARR_HOST:-}
+      # - TREZARR_SONARR_PORT=${TREZARR_SONARR_PORT:-8989}
       # - TREZARR_SONARR_API_KEY=${TREZARR_SONARR_API_KEY:-}
+      # - TREZARR_SONARR_ENABLED=${TREZARR_SONARR_ENABLED:-false}
+      # Radarr (default port 7878)
+      # - TREZARR_RADARR_HOST=${TREZARR_RADARR_HOST:-}
+      # - TREZARR_RADARR_PORT=${TREZARR_RADARR_PORT:-7878}
       # - TREZARR_RADARR_API_KEY=${TREZARR_RADARR_API_KEY:-}
+      # - TREZARR_RADARR_ENABLED=${TREZARR_RADARR_ENABLED:-false}
+      # Bazarr (default port 6767)
+      # - TREZARR_BAZARR_HOST=${TREZARR_BAZARR_HOST:-}
+      # - TREZARR_BAZARR_PORT=${TREZARR_BAZARR_PORT:-6767}
       # - TREZARR_BAZARR_API_KEY=${TREZARR_BAZARR_API_KEY:-}
+      # - TREZARR_BAZARR_ENABLED=${TREZARR_BAZARR_ENABLED:-false}
 
     # Healthcheck (curl http://localhost:6868/api/health) is defined in the
     # Dockerfile and inherited automatically — no need to redeclare it here.
