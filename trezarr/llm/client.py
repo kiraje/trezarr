@@ -66,12 +66,17 @@ class LLMClient:
             if settings.llm_disable_thinking
             else {}
         )
+        # Per-call reasoning override (FIX-B, 260607-dbe): the effort level to forward
+        # to the DeepSeek reasoning_effort param when a per-call thinking=True is supplied.
+        # Stored once from settings so _call_with_fallback does not need a settings reference.
+        self._reasoning_effort: str = settings.llm_reasoning_effort
 
     async def call(
         self,
         messages: list[dict],
         response_model: type[BaseModel] | None = None,
         model: str | None = None,   # D-113: per-call model override; None = use self._model
+        thinking: bool | None = None,  # FIX-B: per-call reasoning override; None = global default
     ) -> BaseModel | str:
         """Make an LLM call, applying the configured structured-output tier strategy.
 
@@ -82,6 +87,11 @@ class LLMClient:
             model: Optional per-call model name override (D-113).  When provided,
                 overrides self._model for this single call.  When None (default),
                 self._model is used.  The single _semaphore is unchanged (D-06).
+            thinking: Optional per-call reasoning (thinking) mode override (FIX-B, 260607-dbe).
+                True  — force enabled+reasoning_effort for this call only.
+                False — force disabled for this call only (overrides global default).
+                None  — use self._call_kwargs unchanged (zero regression for existing callers).
+                self._call_kwargs is NEVER mutated; effective_call_kwargs is a local variable.
 
         Returns:
             When Tier 1 (json_schema) succeeds with a ``response_model``, the parsed
@@ -101,13 +111,14 @@ class LLMClient:
             raise ValueError("messages must be a non-empty list of chat messages")
 
         async with self._semaphore:  # D-06: enforce concurrency cap — UNCHANGED
-            return await self._call_with_fallback(messages, response_model, model)
+            return await self._call_with_fallback(messages, response_model, model, thinking)
 
     async def _call_with_fallback(
         self,
         messages: list[dict],
         response_model: type[BaseModel] | None,
         model: str | None = None,  # D-113: per-call override; None = use self._model
+        thinking: bool | None = None,  # FIX-B: per-call reasoning override; None = global default
     ) -> BaseModel | str:
         """Internal dispatch implementing the three-tier degradation (D-04).
 
@@ -124,9 +135,28 @@ class LLMClient:
             Used as final fallback in auto mode or when mode == "text".
 
         Pinned modes (json_schema|json_object) propagate exceptions instead of falling back.
+
+        Args:
+            thinking: Per-call override for the reasoning/thinking mode (FIX-B, 260607-dbe).
+                True  — build effective_call_kwargs with enabled extra_body + reasoning_effort.
+                False — build effective_call_kwargs with disabled extra_body only.
+                None  — use self._call_kwargs as-is (zero regression for existing callers).
+                self._call_kwargs is NEVER mutated; effective_call_kwargs is a local per-call variable.
         """
         mode = self._mode
         effective_model = model or self._model  # D-113: per-call override, falls back to global
+
+        # FIX-B (T-dbe-01 mitigation): compute effective_call_kwargs as a LOCAL variable per call.
+        # self._call_kwargs is NEVER mutated — no state leaks between sequential calls.
+        if thinking is None:
+            effective_call_kwargs = self._call_kwargs  # global default (zero regression)
+        elif thinking is False:
+            effective_call_kwargs = {"extra_body": {"thinking": {"type": "disabled"}}}
+        else:  # thinking is True
+            effective_call_kwargs = {
+                "extra_body": {"thinking": {"type": "enabled"}},
+                "reasoning_effort": self._reasoning_effort,
+            }
 
         # ── Tier 1: json_schema (strict structured output) ────────────────────
         # parse() is attempted in auto/json_schema mode regardless of whether
@@ -142,7 +172,7 @@ class LLMClient:
                     model=effective_model,
                     messages=messages,
                     **parse_kwargs,
-                    **self._call_kwargs,  # thinking-mode toggle (empty unless disabled)
+                    **effective_call_kwargs,  # thinking-mode toggle (local per-call)
                 )
                 msg = parsed.choices[0].message
                 # CR-02: a model refusal carries no usable output — surface it
@@ -186,7 +216,7 @@ class LLMClient:
                     model=effective_model,
                     messages=messages,
                     response_format={"type": "json_object"},
-                    **self._call_kwargs,  # thinking-mode toggle (empty unless disabled)
+                    **effective_call_kwargs,  # thinking-mode toggle (local per-call)
                 )
                 content = resp.choices[0].message.content
                 if content is None:
@@ -201,7 +231,7 @@ class LLMClient:
         resp = await self._client.chat.completions.create(
             model=effective_model,
             messages=messages,
-            **self._call_kwargs,  # thinking-mode toggle (empty unless disabled)
+            **effective_call_kwargs,  # thinking-mode toggle (local per-call)
         )
         content = resp.choices[0].message.content
         if content is None:

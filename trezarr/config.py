@@ -68,6 +68,17 @@ class TrezarrSettings(BaseSettings):
     # endpoints that don't recognise the key simply ignore it (safe for all backends).
     llm_disable_thinking: bool = False
 
+    # Per-pass reasoning override (FIX-B, 260607-dbe):
+    #   enable_reasoning_analysis  — when True, Pass-1 (analyze_file) forces thinking=enabled
+    #                                on its LLM call even if llm_disable_thinking is set.
+    #   enable_reasoning_attribution — same for Pass-2 (attribute_batch).
+    #   llm_reasoning_effort       — value forwarded to the DeepSeek reasoning_effort param
+    #                                when thinking is forced enabled. "high" is the default;
+    #                                "low"/"medium" may reduce cost for lighter tasks.
+    enable_reasoning_analysis: bool = True
+    enable_reasoning_attribution: bool = True
+    llm_reasoning_effort: str = "high"
+
     # ── Context window (D-05 — used by Phase 2 batching) ──────────────────────
     llm_context_window: int = 32768
 
