@@ -885,7 +885,8 @@ async def test_merge_bible_analysis_called_with_settings_on_pass1_path(session_f
         ]
     )
 
-    async def mock_llm_call(messages, response_model=None, model=None):
+    async def mock_llm_call(messages, response_model=None, model=None, **kwargs):
+        # D-113 / FIX-B: accept model + thinking kwargs forwarded by LLMClient.call
         if response_model is BibleAnalysis:
             return bible_analysis
         if response_model is BatchAttribution:

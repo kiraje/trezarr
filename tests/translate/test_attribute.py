@@ -42,12 +42,14 @@ class _FakeBatch:
     context_after: list[Any] = field(default_factory=list)
 
 
-def _make_settings(*, enable_attribution: bool = True, mode: str = "json_schema") -> Any:
+def _make_settings(*, enable_attribution: bool = True, mode: str = "json_schema",
+                   enable_reasoning_attribution: bool = True) -> Any:
     """Return a minimal settings-like namespace."""
     from types import SimpleNamespace
     return SimpleNamespace(
         enable_attribution=enable_attribution,
         attribute_context_lines_k=8,
+        enable_reasoning_attribution=enable_reasoning_attribution,
     )
 
 
@@ -237,3 +239,70 @@ async def test_tier2_invalid_json_returns_all_low():
     assert len(result) == 1
     assert result[0].confidence == AttributionConfidence.LOW
     assert result[0].speaker is None
+
+
+# ── thinking kwarg threading tests (FIX-B, 260607-dbe) ───────────────────────
+
+
+async def test_attribute_batch_passes_thinking_kwarg():
+    """attribute_batch() passes thinking=settings.enable_reasoning_attribution to llm_client.call.
+
+    When enable_reasoning_attribution=True, the call must be made with thinking=True.
+    """
+    from types import SimpleNamespace
+
+    batch = _FakeBatch(
+        cues=[_FakeSubLine("I see you.")]
+    )
+    john = CharacterDTO(id=1, series_id=1, original_latin_name="John", gender="male")
+    bible = _make_bible([john])
+
+    # Use a settings object that explicitly has enable_reasoning_attribution=True
+    settings = SimpleNamespace(
+        enable_attribution=True,
+        attribute_context_lines_k=8,
+        enable_reasoning_attribution=True,
+    )
+
+    # Build a valid BatchAttribution response for the mock
+    mock_response = BatchAttribution(
+        attributions=[
+            LineAttribution(line_index=1, speaker="John", confidence=AttributionConfidence.HIGH)
+        ]
+    )
+    llm_client = _make_llm_client(mock_response)
+
+    await attribute_batch(batch, bible, llm_client, settings)
+
+    # Assert llm_client.call was called with thinking=True
+    llm_client.call.assert_awaited_once()
+    _, kwargs = llm_client.call.call_args
+    assert kwargs.get("thinking") is True, (
+        f"attribute_batch must pass thinking=True when enable_reasoning_attribution=True; "
+        f"got {kwargs.get('thinking')!r}"
+    )
+
+
+async def test_attribute_batch_passes_thinking_false_when_disabled():
+    """When enable_reasoning_attribution=False, attribute_batch returns early (fast path).
+
+    The fast-path (enable_attribution=False OR enable_reasoning_attribution=False for thinking)
+    actually only fast-paths on enable_attribution=False. When enable_reasoning_attribution=False,
+    thinking=False is passed to llm_client.call — verify the function returns without raising.
+    """
+    from types import SimpleNamespace
+
+    batch = _FakeBatch(cues=[_FakeSubLine("Hello.")])
+    bible = _make_bible([])
+
+    settings = SimpleNamespace(
+        enable_attribution=False,  # fast-path: returns all-LOW without calling LLM
+        attribute_context_lines_k=8,
+        enable_reasoning_attribution=False,
+    )
+    llm_client = _make_llm_client(BatchAttribution(attributions=[]))
+
+    # Must return without raising even when both attribution flags are off
+    result = await attribute_batch(batch, bible, llm_client, settings)
+    assert len(result) == 1
+    assert result[0].confidence == AttributionConfidence.LOW

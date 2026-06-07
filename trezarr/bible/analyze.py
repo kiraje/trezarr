@@ -398,9 +398,13 @@ async def analyze_file(
         prompt = _build_analysis_prompt(chunk_texts, bible, arr_metadata, episode_key=episode_key)
         # Sole concurrency gate is inside LLMClient._semaphore (D-06, Pitfall A).
         # NEVER add asyncio.Semaphore here. response_model triggers the Tier-1/2 path (D-47).
+        # FIX-B (260607-dbe): pass thinking= from settings.enable_reasoning_analysis so Pass-1
+        # analysis always gets reasoning horsepower when the flag is set (captured from the
+        # enclosing analyze_file() scope via closure).
         result = await llm_client.call(
             messages=[{"role": "user", "content": prompt}],
             response_model=BibleAnalysis,
+            thinking=settings.enable_reasoning_analysis,
         )
         if isinstance(result, BibleAnalysis):
             return result

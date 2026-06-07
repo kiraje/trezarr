@@ -279,3 +279,55 @@ async def test_analyze_file_chunk_loop_tolerates_one_bad_chunk():
     assert disabled_client.call.await_count == 0, (
         "enable_pass1_analysis=False must not make an LLM call (D-50)"
     )
+
+
+# ---------------------------------------------------------------------------
+# FIX-B — thinking kwarg threading (260607-dbe)
+# ---------------------------------------------------------------------------
+
+
+async def test_analyze_file_passes_thinking_kwarg():
+    """analyze_file() passes thinking=settings.enable_reasoning_analysis to llm_client.call.
+
+    When enable_reasoning_analysis=True, every _analyze_one_chunk LLM call must be made
+    with keyword argument thinking=True.
+    """
+    from unittest.mock import AsyncMock
+
+    settings = _make_settings(enable_reasoning_analysis=True, pass1_max_cues_per_chunk=0)
+    source_doc = _make_subdoc(["Hello world.", "Who are you?"])
+
+    # Minimal valid BibleAnalysis JSON response
+    valid_analysis = BibleAnalysis(
+        register_value="xianxia",
+        characters=[CharacterInference(original_latin_name="Han")],
+    )
+
+    call_kwargs_captured: list[dict] = []
+
+    async def _capturing_call(messages=None, response_model=None, **kwargs):
+        call_kwargs_captured.append(dict(kwargs))
+        return valid_analysis
+
+    llm_client = AsyncMock()
+    llm_client._mode = "json_schema"
+    llm_client.call = AsyncMock(side_effect=_capturing_call)
+
+    result = await analyze_file(
+        source_doc=source_doc,
+        bible=_empty_bible(),
+        arr_metadata={"title": "Test Show"},
+        llm_client=llm_client,
+        settings=settings,
+        episode_key="S01E01",
+    )
+
+    assert llm_client.call.await_count >= 1, "analyze_file must make at least one LLM call"
+    for kw in call_kwargs_captured:
+        assert kw.get("thinking") is True, (
+            f"Every _analyze_one_chunk call must pass thinking=True when "
+            f"enable_reasoning_analysis=True; got {kw!r}"
+        )
+    # Basic sanity: result must contain the character we returned
+    names = {c.original_latin_name for c in result.characters}
+    assert "Han" in names

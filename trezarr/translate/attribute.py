@@ -295,9 +295,13 @@ async def attribute_batch(
 
     # Call LLMClient — sole concurrency gate is inside LLMClient._semaphore (D-06, Pitfall A).
     # NEVER add asyncio.Semaphore here. response_model triggers Tier-1/2 path (D-47).
+    # FIX-B (260607-dbe): pass thinking= derived from settings.enable_reasoning_attribution so
+    # Pass-2 attribution always gets reasoning horsepower when the flag is set, even if the
+    # global llm_disable_thinking is True (attribution accuracy is more important than cost here).
     raw = await llm_client.call(
         messages=[{"role": "user", "content": prompt}],
         response_model=BatchAttribution,
+        thinking=settings.enable_reasoning_attribution,
     )
 
     # Tier 1: raw is a BatchAttribution instance (json_schema mode succeeded)
