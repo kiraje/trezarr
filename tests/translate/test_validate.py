@@ -650,3 +650,87 @@ def test_validate_subdoc_backward_compatible_signature():
     with pytest.raises(GateError) as ei8:
         validate_subdoc(trn_s, src_s, _settings())
     assert ei8.value.failure.check == 8
+
+
+# ── H4-fix: parenthesis preservation — validate gate regression ───────────────
+
+
+def test_h4_vietnamese_parenthetical_passes_gate():
+    """Test D: a properly-translated Vietnamese parenthetical passes Check 10 + Check 12.
+
+    Source: "(A Record of Mortal's Journey to Immortality\\nUpheaval in Outer Sea Season 3)"
+    Translated: "(Phàm Nhân Tu Tiên Ký\\nNgoại Hải Phong Vân)"
+
+    The translated cue has Vietnamese diacritics inside the parentheses, so:
+    - Check 10: VN_DIACRITIC_RE matches → skipped (not a source passthrough)
+    - Check 12: LATIN_DIACRITIC_RE matches the inner text → skipped (not an English gloss)
+    Expected: validate_subdoc returns None (no gate failure).
+    """
+    validate_mod = pytest.importorskip("trezarr.translate.validate")
+    GateError = validate_mod.GateError
+    validate_subdoc = validate_mod.validate_subdoc
+
+    # Source cue: English title card with parentheses
+    src_text = "(A Record of Mortal's Journey to Immortality\nUpheaval in Outer Sea Season 3)"
+    # Translated cue: Vietnamese rendering with diacritics, preserving the parentheses
+    trn_text = "(Phàm Nhân Tu Tiên Ký\nNgoại Hải Phong Vân)"
+
+    # Pad with VI cues so the per-file Check 3 ratio stays above threshold when the
+    # parenthetical cue has diacritics (it clears Check 3 on its own; padding ensures
+    # the doc has enough lines for a robust ratio even in edge cases).
+    src_lines = [_make_line(1, text=src_text)] + [
+        _make_line(i + 2, text=p) for i, p in enumerate(["Hello there", "I am well", "Thanks"])
+    ]
+    trn_lines = [_make_line(1, text=trn_text)] + [
+        _make_line(i + 2, text=p) for i, p in enumerate(["Xin chào bạn", "Tôi rất khỏe", "Cảm ơn"])
+    ]
+    src = _make_doc(src_lines)
+    trn = _make_doc(trn_lines)
+
+    result = validate_subdoc(trn, src, _settings())
+    assert result is None, (
+        f"Expected None (no gate failure) for a properly-translated Vietnamese parenthetical "
+        f"with diacritics. Got: {result!r}. A Vietnamese title card like '(Phàm Nhân Tu Tiên "
+        f"Ký)' must NOT trigger Check 10 (VI diacritics detected) or Check 12 (LATIN_DIACRITIC_RE "
+        f"matches Vietnamese diacritics → not an English gloss)."
+    )
+
+
+def test_h4_verbatim_sdh_sound_cue_raises_check10():
+    """Test E: a verbatim SDH sound cue kept in source language raises GateError(check=10).
+
+    Source: "(WIND HOWLING)" — an SDH sound description
+    Translated: "(WIND HOWLING)" — kept verbatim in English (not translated)
+
+    This is the known Check 10 behavior: a no-diacritic cue whose ASCII word tokens
+    ("WIND", "HOWLING") all appear verbatim in the corresponding source cue is flagged
+    as a source-passthrough leak. This test documents the pre-existing behavior and
+    prevents the Task 1 prompt change from accidentally masking it.
+
+    NOTE: This is EXPECTED behavior. The model should translate SDH cues, not pass them
+    through verbatim. A properly-translated cue like "(Tiếng gió hú)" would pass.
+    """
+    validate_mod = pytest.importorskip("trezarr.translate.validate")
+    GateError = validate_mod.GateError
+    validate_subdoc = validate_mod.validate_subdoc
+
+    src_text = "(WIND HOWLING)"
+    trn_text = "(WIND HOWLING)"  # verbatim, untranslated
+
+    src_lines = [_make_line(1, text=src_text)] + [
+        _make_line(i + 2, text=p) for i, p in enumerate(["Hello there", "I am well", "Thanks"])
+    ]
+    trn_lines = [_make_line(1, text=trn_text)] + [
+        _make_line(i + 2, text=p) for i, p in enumerate(["Xin chào bạn", "Tôi rất khỏe", "Cảm ơn"])
+    ]
+    src = _make_doc(src_lines)
+    trn = _make_doc(trn_lines)
+
+    with pytest.raises(GateError) as exc_info:
+        validate_subdoc(trn, src, _settings())
+
+    assert exc_info.value.failure.check == 10, (
+        f"Expected GateError.failure.check == 10 (source-passthrough: verbatim SDH English), "
+        f"got check={exc_info.value.failure.check}. A verbatim English SDH cue '(WIND HOWLING)' "
+        f"must still be quarantined by Check 10 — the model must translate it, not pass it through."
+    )
