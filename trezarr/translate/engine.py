@@ -302,13 +302,23 @@ def build_translate_prompt(
     # (a) positively preserve the delimiter envelope when it is already in the source cue,
     # and (b) still forbid the model from ADDING its own glosses or translator notes.
     # validate.py Check 12 (GLOSS_PAREN_RE) remains the hard backstop against model-added
-    # English-gloss parentheticals. [linguist: refine wording]
+    # English-gloss parentheticals.
+    #
+    # SCAFFOLDING-LEAK CARVE-OUT (trezarr-quality HIGH, 260607): the per-line attribution
+    # hint below is itself a LEADING parenthetical "(speaker says: …; addresses as: …)".
+    # Without this carve-out, "preserve source parentheses" reads as license to echo that
+    # hint on-screen — re-opening the 260604/260607 scaffolding leak (the Ep-142 audit saw
+    # "(speaker says: tại hạ; addresses as: Mai cô nương)" ship in 7 cues). The rule names
+    # the hint and marks it a PRIVATE instruction to strip. validate.py Check 8
+    # (HINT_SCAFFOLD_RE) is the gate-layer backstop. [linguist: refine wording]
     parts.append(
         f"{rule_n}. If the source cue contains parentheses \"( )\" or square brackets \"[ ]\", "
         "TRANSLATE the text inside them and PRESERVE the surrounding \"(\" \")\" / \"[\" \"]\" "
         "envelope in the output — do NOT strip the delimiters. Do NOT add new glosses, "
         "translator notes, or explanatory parentheticals that are NOT already present in the "
-        "source cue."
+        "source cue. EXCEPTION: a leading note in the form \"(speaker says: …; addresses as: "
+        "…)\" is a PRIVATE pronoun instruction, NOT subtitle text — use it only to choose "
+        "pronouns, then NEVER translate, echo, or keep it or its parentheses in your output."
     )
     rule_n += 1
     if register:

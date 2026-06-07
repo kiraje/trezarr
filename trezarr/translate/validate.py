@@ -55,6 +55,17 @@ SENTINEL_RE = re.compile(r'<<T\d+>>')
 # (A *translated* scaffold token, e.g. "(nguồn:", is residual risk — not matched.)
 REVIEW_SCAFFOLD_RE = re.compile(r'\(\s*source\s*:', re.IGNORECASE)
 
+# Pass-3 attribution-hint scaffolding signature. build_translate_prompt injects the
+# per-line pronoun hint as a LEADING parenthetical: "[N] (speaker says: <self>; addresses
+# as: <addr>) <text>". A weak model can echo that note into the cue — the same
+# scaffolding-leak class as the Pass-4 "(source:" leak (260604-gza/hp2); the Ep-142 audit
+# saw "(speaker says: tại hạ; addresses as: Mai cô nương)" ship in 7 on-screen cues, and
+# the H4 paren-preserve rule (engine.py) *raises* that echo risk. Shared by gate Check 8 as
+# the defense-in-depth backstop: a leaked hint quarantines, never ships. Anchored on "(" +
+# the English label, whitespace/case-tolerant — mirrors REVIEW_SCAFFOLD_RE. (A
+# *translated*-label echo, e.g. "(người nói:", is residual risk — not matched, same stance.)
+HINT_SCAFFOLD_RE = re.compile(r'\(\s*speaker\s+says\s*:', re.IGNORECASE)
+
 # ── Per-cue leak detectors (audit B2/H4/H5/M3) ──────────────────────────────────
 # The per-FILE diacritic average (Check 3) cannot see a single bad cue — ~40 short
 # Vietnamese cues average ~40 raw passthroughs away.  Checks 9-12 inspect each cue.
@@ -348,17 +359,19 @@ def validate_subdoc(
                 failing_indices=[i],
             )) from exc
 
-    # Check 8: no Pass-4 review-prompt scaffolding leaked into output. The
-    # _review_batch splice guard should already strip any "(source: …)" echo, so
-    # this is defense-in-depth: it guarantees that review-scaffolding corruption
-    # can NEVER ship a sidecar even if a future path reintroduces it (the blind-
-    # trust bar). A lone "(source:" is English prompt scaffolding, not Vietnamese
-    # dialogue, so quarantining on it is safe.
+    # Check 8: no prompt scaffolding leaked into output. Two signatures, same
+    # defense-in-depth class — a sidecar containing internal prompt machinery must
+    # NEVER ship even if an upstream guard is bypassed (the blind-trust bar):
+    #   - REVIEW_SCAFFOLD_RE  → Pass-4 "(source: …)" review echo (260604-gza/hp2).
+    #   - HINT_SCAFFOLD_RE     → Pass-3 "(speaker says: …; addresses as: …)" pronoun-hint
+    #     echo (260607 trezarr-quality HIGH; the H4 paren-preserve rule raises this risk,
+    #     and the per-cue Check 10/12 below provably do NOT catch a diacritic-bearing hint).
+    # Both are English prompt scaffolding, not Vietnamese dialogue, so quarantining is safe.
     for i, sl in enumerate(translated.lines):
-        if REVIEW_SCAFFOLD_RE.search(sl.text):
+        if REVIEW_SCAFFOLD_RE.search(sl.text) or HINT_SCAFFOLD_RE.search(sl.text):
             raise GateError(GateFailure(
                 8,
-                f"Review-prompt scaffolding leaked into cue {i}: {sl.text!r}",
+                f"Prompt scaffolding leaked into cue {i}: {sl.text!r}",
                 failing_indices=[i],
             ))
 

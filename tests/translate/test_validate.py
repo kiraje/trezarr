@@ -667,7 +667,6 @@ def test_h4_vietnamese_parenthetical_passes_gate():
     Expected: validate_subdoc returns None (no gate failure).
     """
     validate_mod = pytest.importorskip("trezarr.translate.validate")
-    GateError = validate_mod.GateError
     validate_subdoc = validate_mod.validate_subdoc
 
     # Source cue: English title card with parentheses
@@ -733,4 +732,54 @@ def test_h4_verbatim_sdh_sound_cue_raises_check10():
         f"Expected GateError.failure.check == 10 (source-passthrough: verbatim SDH English), "
         f"got check={exc_info.value.failure.check}. A verbatim English SDH cue '(WIND HOWLING)' "
         f"must still be quarantined by Check 10 — the model must translate it, not pass it through."
+    )
+
+
+@pytest.mark.parametrize(
+    "leaked",
+    [
+        # classical/diacritic variant — the exact string the Ep-142 audit saw leak on-screen
+        "(speaker says: tại hạ; addresses as: Mai cô nương) Ba tháng,",
+        # modern variant
+        "(speaker says: anh; addresses as: em) Em đừng đi.",
+        # recased / spaced echo
+        "( Speaker Says: ta; addresses as: ngươi) Ngươi tới rồi.",
+    ],
+)
+def test_h4_leaked_pass3_pronoun_hint_raises_check8(leaked):
+    """A leaked Pass-3 pronoun-hint parenthetical must be quarantined by Check 8.
+
+    Regression for the trezarr-quality HIGH finding on the parenthesis-preservation
+    rework: build_translate_prompt injects the per-line attribution hint as a LEADING
+    parenthetical "(speaker says: …; addresses as: …)". The H4 "preserve source
+    parentheses" rule raises the risk that a weak model (DeepSeek class) echoes that
+    note into the cue — the 260604/260607 scaffolding-leak class (the audit showed
+    "(speaker says: tại hạ; addresses as: Mai cô nương)" shipping in 7 on-screen cues).
+
+    Defense-in-depth backstop: even though the rule wording now tells the model the hint
+    is private, a leaked hint must NEVER ship — the gate quarantines it on Check 8. Each
+    leaked cue carries VI diacritics in its dialogue tail so it clears Check 3 and reaches
+    Check 8 (which runs before the per-cue Check 10/12 that the audit proved this string
+    slips past).
+    """
+    validate_mod = pytest.importorskip("trezarr.translate.validate")
+    GateError = validate_mod.GateError
+    validate_subdoc = validate_mod.validate_subdoc
+
+    src_lines = [_make_line(1, text="Three months,")] + [
+        _make_line(i + 2, text=p) for i, p in enumerate(["Hello there", "I am well", "Thanks"])
+    ]
+    trn_lines = [_make_line(1, text=leaked)] + [
+        _make_line(i + 2, text=p) for i, p in enumerate(["Xin chào bạn", "Tôi rất khỏe", "Cảm ơn"])
+    ]
+    src = _make_doc(src_lines)
+    trn = _make_doc(trn_lines)
+
+    with pytest.raises(GateError) as exc_info:
+        validate_subdoc(trn, src, _settings())
+
+    assert exc_info.value.failure.check == 8, (
+        f"Expected GateError.failure.check == 8 (Pass-3 hint scaffolding leak), got "
+        f"check={exc_info.value.failure.check} for leaked cue {leaked!r}. A leaked "
+        f"'(speaker says: …; addresses as: …)' hint must be quarantined, never shipped."
     )

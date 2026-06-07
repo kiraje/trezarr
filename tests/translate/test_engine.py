@@ -1151,7 +1151,7 @@ def test_h4_preserve_instruction_present():
         "The H4 RULE must positively instruct the model to PRESERVE parentheses/brackets "
         "that are already present in the source cue. Expected one of: 'PRESERVE', "
         "'already present', or 'source ... parenthes' in the prompt. "
-        f"Got prompt excerpt:\n{[l for l in prompt.splitlines() if 'paren' in l.lower() or 'bracket' in l.lower() or 'PRESERVE' in l]}"
+        f"Got prompt excerpt:\n{[ln for ln in prompt.splitlines() if 'paren' in ln.lower() or 'bracket' in ln.lower() or 'PRESERVE' in ln]}"
     )
 
 
@@ -1181,4 +1181,37 @@ def test_h4_anti_gloss_instruction_remains():
         "The H4 RULE must still forbid the model from ADDING its own glosses/translator "
         "notes. Expected 'gloss', 'translator note', or ('add' + 'parenthetical') in the "
         "prompt. The anti-gloss backstop must not be removed."
+    )
+
+
+def test_h4_carves_out_pass3_pronoun_hint_from_preserve():
+    """Test D: the paren-preserve rule must EXCLUDE the Pass-3 pronoun-hint parenthetical.
+
+    Regression for the trezarr-quality HIGH finding: the per-line attribution hint is
+    injected as a leading parenthetical "(speaker says: …; addresses as: …)" (see the
+    pronoun_hints branch of build_translate_prompt). Telling the model to "PRESERVE
+    parentheses present in the source" must NOT be readable as license to echo that hint
+    on-screen (the 260604/260607 scaffolding-leak class). The rule must name the hint and
+    mark it a private instruction the model must never echo/keep.
+
+    Asserted on a prompt built WITHOUT pronoun_hints, so the "speaker says" reference can
+    only come from the static carve-out in the RULE, not from a per-line hint.
+    """
+    from trezarr.translate.engine import build_translate_prompt  # noqa: PLC0415
+
+    prompt = build_translate_prompt(["(Title Card A<<BR>>Line B)"], [], [], register="xianxia")
+    low = prompt.lower()
+    # The carve-out must reference the hint signature...
+    assert "speaker says" in low and "addresses as" in low, (
+        "The H4 RULE must explicitly name the Pass-3 attribution hint "
+        "'(speaker says: …; addresses as: …)' so the preserve-parentheses instruction "
+        "cannot be misread as license to echo it. Neither phrase was found in the prompt "
+        "built without pronoun_hints (so it must come from the static carve-out)."
+    )
+    # ...and mark it private / never-echo so the model strips it.
+    assert ("private" in low) and ("never" in low) and ("echo" in low or "keep" in low), (
+        "The H4 RULE carve-out must mark the '(speaker says: …)' hint as a PRIVATE "
+        "instruction the model must NEVER echo/keep. Expected 'private' + 'never' + "
+        "('echo' or 'keep') near the hint reference. This is the scaffolding-leak backstop "
+        "at the prompt layer (validate.py Check 8 is the gate-layer backstop)."
     )
