@@ -1099,3 +1099,86 @@ def test_guardrail_rule_numbering_sequential():
     assert rule_numbers == expected, (
         f"Rules must be numbered sequentially 1..N; got {rule_numbers}"
     )
+
+
+# ── H4-fix: parenthesis preservation ─────────────────────────────────────────
+
+
+def test_h4_no_unqualified_do_not_add_parentheticals():
+    """Test A: the old unqualified 'Do NOT add parentheticals' rule is gone.
+
+    The H4 RULE must no longer contain the unqualified string "Do NOT add parentheticals"
+    as a standalone instruction — it caused DeepSeek to strip parentheses that were
+    ALREADY in the source cue (e.g. title card '(A Record…)' → 'A Record…').
+    """
+    from trezarr.translate.engine import build_translate_prompt  # noqa: PLC0415
+
+    prompt = build_translate_prompt(
+        ["(Title Card A<<BR>>Line B)"],
+        [],
+        [],
+    )
+    # The old unqualified form must be gone
+    assert "Do NOT add parentheticals" not in prompt, (
+        "The unqualified 'Do NOT add parentheticals' instruction must be removed from the "
+        "H4 RULE — it causes weak models to strip source-present parentheses. "
+        "The rule must now be qualified (preserve present / forbid adding new)."
+    )
+
+
+def test_h4_preserve_instruction_present():
+    """Test B: the H4 RULE positively instructs the model to PRESERVE source-present parens.
+
+    When a cue contains parentheses/brackets already present in the source, the prompt
+    must contain an instruction to keep the surrounding '(' ')' / '[' ']' envelope and
+    translate the text inside.
+    """
+    from trezarr.translate.engine import build_translate_prompt  # noqa: PLC0415
+
+    prompt = build_translate_prompt(
+        ["(Title Card A<<BR>>Line B)"],
+        [],
+        [],
+    )
+    # The prompt must contain a positive preservation instruction — at minimum one of
+    # "PRESERVE" / "already present" / ("source" and "parenthes")
+    has_preserve = (
+        "PRESERVE" in prompt
+        or "already present" in prompt
+        or ("source" in prompt.lower() and "parenthes" in prompt.lower())
+    )
+    assert has_preserve, (
+        "The H4 RULE must positively instruct the model to PRESERVE parentheses/brackets "
+        "that are already present in the source cue. Expected one of: 'PRESERVE', "
+        "'already present', or 'source ... parenthes' in the prompt. "
+        f"Got prompt excerpt:\n{[l for l in prompt.splitlines() if 'paren' in l.lower() or 'bracket' in l.lower() or 'PRESERVE' in l]}"
+    )
+
+
+def test_h4_anti_gloss_instruction_remains():
+    """Test C: the H4 RULE still forbids the model from ADDING its own glosses/translator notes.
+
+    The anti-gloss half of the H4 rule must survive the parenthesis-preservation rework.
+    Specifically, the prompt must still contain language that:
+    - forbids adding new explanatory parentheticals/glosses not present in the source, AND
+    - references either 'gloss', 'translator note', or ('add' + 'parenthetical')
+    """
+    from trezarr.translate.engine import build_translate_prompt  # noqa: PLC0415
+
+    prompt = build_translate_prompt(
+        ["(Title Card A<<BR>>Line B)"],
+        [],
+        [],
+    )
+    # The anti-gloss wording must remain — check for the key vocabulary
+    prompt_lower = prompt.lower()
+    has_anti_gloss = (
+        "gloss" in prompt_lower
+        or "translator note" in prompt_lower
+        or ("add" in prompt_lower and "parenthetical" in prompt_lower)
+    )
+    assert has_anti_gloss, (
+        "The H4 RULE must still forbid the model from ADDING its own glosses/translator "
+        "notes. Expected 'gloss', 'translator note', or ('add' + 'parenthetical') in the "
+        "prompt. The anti-gloss backstop must not be removed."
+    )

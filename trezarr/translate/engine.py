@@ -295,10 +295,20 @@ def build_translate_prompt(
             "language script."
         )
         rule_n += 1
-    # H4 fix: forbid adding explanatory parentheticals/glosses (e.g. "(Miss Mei's brother)").
+    # H4 fix: PRESERVE source-present parentheses/brackets and forbid ADDING new explanatory
+    # glosses. The old unqualified "Do NOT add parentheticals" caused weak models (DeepSeek)
+    # to strip parentheses already in the source — e.g. a title card "(A Record of Mortal's
+    # Journey to Immortality)" became "A Record…" with no parens. The fix is two-part:
+    # (a) positively preserve the delimiter envelope when it is already in the source cue,
+    # and (b) still forbid the model from ADDING its own glosses or translator notes.
+    # validate.py Check 12 (GLOSS_PAREN_RE) remains the hard backstop against model-added
+    # English-gloss parentheticals. [linguist: refine wording]
     parts.append(
-        f"{rule_n}. Do NOT add parentheticals, glosses, or translator notes. Translate the "
-        "dialogue only."
+        f"{rule_n}. If the source cue contains parentheses \"( )\" or square brackets \"[ ]\", "
+        "TRANSLATE the text inside them and PRESERVE the surrounding \"(\" \")\" / \"[\" \"]\" "
+        "envelope in the output — do NOT strip the delimiters. Do NOT add new glosses, "
+        "translator notes, or explanatory parentheticals that are NOT already present in the "
+        "source cue."
     )
     rule_n += 1
     if register:
