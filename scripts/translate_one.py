@@ -66,6 +66,24 @@ async def main() -> None:
     args = _parse_args()
 
     # ── 1. Load settings from env / .env ──────────────────────────────────────
+    # DEV CONVENIENCE: TrezarrSettings reads OS env vars (env_prefix TREZARR_) + YAML +
+    # code defaults — it does NOT read a .env file (that's a docker-compose convention,
+    # not pydantic-settings). A bare local run would otherwise fall back to the code
+    # defaults (http://localhost:1234/v1 / gpt-4o) instead of the configured endpoint.
+    # Load .env into os.environ here (setdefault → a real OS env var still wins) so this
+    # runner hits the SAME LLM endpoint the deployed daemon does.
+    _dotenv = Path(".env")
+    if _dotenv.exists():
+        for _line in _dotenv.read_text(encoding="utf-8").splitlines():
+            _s = _line.strip()
+            if not _s or _s.startswith("#") or "=" not in _s:
+                continue
+            _k, _, _v = _s.partition("=")
+            _k = _k.strip()
+            _v = _v.strip().strip('"').strip("'")
+            if _k:
+                os.environ.setdefault(_k, _v)
+
     from trezarr.config import TrezarrSettings
 
     settings = TrezarrSettings(
@@ -128,15 +146,25 @@ async def main() -> None:
 
         ledger = Ledger(_tmp_ledger_path)
 
-        # ── 9. Build minimal EligibleItem ─────────────────────────────────────
-        from unittest.mock import MagicMock
-
+        # ── 9. Build minimal EligibleItem with a REAL MediaItem ───────────────
+        # A MagicMock media_item leaks Mock objects into translate_file's
+        # derive_episode_key() (re.sub on a Mock → TypeError), arr_kind, arr_metadata,
+        # and tvdb_id/tmdb_id reads. Use a real MediaItem so the pipeline sees plain
+        # str/int/None. source_type="episode" routes derive_episode_key to the SxxExx
+        # parse (falls back to S00E00 when the filename has no SxxExx — fine for a
+        # throwaway single-file run).
+        from trezarr.arr.sonarr import MediaItem
         from trezarr.discover.scan import EligibleItem
 
         source_path = Path(args.source).resolve()
-        media_item = MagicMock()
-        media_item.series_id = args.series_id if args.series_id is not None else 0
-        media_item.local_path = source_path
+        media_item = MediaItem(
+            local_path=source_path,
+            title=source_path.stem,
+            source_type="episode",
+            series_id=args.series_id if args.series_id is not None else 0,
+            season_number=0,
+            arr_kind="sonarr",
+        )
         eligible_item = EligibleItem(
             media_item=media_item,
             source_sub_path=source_path,
