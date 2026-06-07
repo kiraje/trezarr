@@ -432,7 +432,7 @@ async def test_reassembly_preserves_raw_cues_at_original_positions(settings_fact
     interleaves skipped raw cues with translated cues in document order.
     """
     pytest.importorskip("trezarr.translate.engine")
-    from unittest.mock import patch, AsyncMock
+    from unittest.mock import patch
     from trezarr.translate.engine import translate_file
     from trezarr.output.ledger import Ledger
 
@@ -953,13 +953,26 @@ async def test_merge_bible_analysis_called_with_settings_on_pass1_path(session_f
 # ── Unhinted-line guardrail tests (FIX-A, 260607-dbe) ───────────────────────────
 
 
+def _guardrail_line(prompt: str) -> str:
+    """Return the single unhinted-line guardrail RULE line from a built prompt.
+
+    Asserting on the whole prompt is unsafe — 'ngươi'/'các hạ' also appear in the
+    [REGISTER] block and the mixed-gender plural rule. The policy this test encodes
+    (lead với các hạ/bạn; never ngươi/em as a default) lives only on the guardrail line.
+    """
+    return next(
+        (ln for ln in prompt.splitlines() if "without a (speaker says" in ln.lower()), ""
+    )
+
+
 def test_guardrail_rule_present_no_register():
-    """build_translate_prompt with no register → guardrail rule present with modern pronouns.
+    """No register → guardrail uses the modern safe-default fallback.
 
     The guardrail rule must:
-    - Mention "no speaker/addressee hint" (or equivalent condition phrase)
-    - Include modern 2nd-person pronoun examples: anh, em, or bạn
-    - NOT include classical pronoun ngươi or các hạ (since no register is specified)
+    - Mention the unhinted-line condition ("WITHOUT a (speaker says...)")
+    - Lead with the neutral 'bạn' and explicitly forbid the intimate 'em' as a default
+      (reconcile floor is tôi+anh/chị/bạn, never 'em'-on-a-guess)
+    - NOT offer a classical pronoun (ngươi) on a modern line
     """
     engine_mod = pytest.importorskip("trezarr.translate.engine")
     build_translate_prompt = engine_mod.build_translate_prompt
@@ -972,21 +985,21 @@ def test_guardrail_rule_present_no_register():
         pronoun_hints=None,
     )
 
-    assert "no speaker/addressee hint" in prompt.lower() or "without a" in prompt.lower(), (
-        "Guardrail must mention the unhinted-line condition"
-    )
-    # Modern pronoun examples present
-    assert "anh" in prompt or "em" in prompt or "bạn" in prompt, (
-        "Guardrail for no-register must include modern 2nd-person pronouns (anh/em/bạn)"
-    )
+    line = _guardrail_line(prompt)
+    assert line, "Guardrail must mention the unhinted-line condition"
+    assert "bạn" in line, "Modern guardrail must offer the neutral 'bạn'"
+    assert "never 'em'" in line, "Modern guardrail must forbid the intimate 'em' as a default"
+    assert "ngươi" not in line, "Modern guardrail must not offer a classical pronoun"
 
 
 def test_guardrail_rule_present_classical_register():
-    """build_translate_prompt with register='xianxia' → guardrail uses classical pronoun examples.
+    """register='xianxia' → guardrail leads with the safe classical 'các hạ', NOT 'ngươi'.
 
     Classical registers (xianxia, wuxia, cultivation, historical) must get:
-    - ngươi or các hạ in the guardrail rule
-    - NOT substitute a character name instruction
+    - 'các hạ' (respectful, non-gendered) as the unhinted fallback
+    - NOT 'ngươi' as the default — reconcile.py deliberately excludes it as
+      presumptuous/superior, and an unhinted line has no relationship signal (HIGH #1)
+    - the NEVER-substitute-a-character-name instruction
     """
     engine_mod = pytest.importorskip("trezarr.translate.engine")
     build_translate_prompt = engine_mod.build_translate_prompt
@@ -999,19 +1012,23 @@ def test_guardrail_rule_present_classical_register():
         pronoun_hints=None,
     )
 
-    # Classical pronoun examples in guardrail
-    assert "ngươi" in prompt or "các hạ" in prompt, (
-        "Guardrail for xianxia register must include classical pronouns (ngươi/các hạ)"
+    line = _guardrail_line(prompt)
+    assert line, "Guardrail must be present for a classical register"
+    assert "các hạ" in line, "Classical guardrail must offer the safe 'các hạ'"
+    assert "ngươi" not in line, (
+        "Classical guardrail must NOT offer 'ngươi' as the unhinted default "
+        "(presumptuous/superior — excluded from reconcile's safe-default ladder)"
     )
-    assert "not a proper name" in prompt.lower() or "never substitute" in prompt.lower() or "never" in prompt.lower(), (
-        "Guardrail must instruct model to NEVER substitute a character name"
+    assert "never" in line.lower(), (
+        "Guardrail must instruct the model to NEVER substitute a character name"
     )
 
 
 def test_guardrail_rule_present_modern_register():
-    """build_translate_prompt with register='romantic' → guardrail uses modern pronoun examples.
+    """register='romantic' → guardrail uses the modern safe-default fallback ('bạn'), not classical.
 
-    A modern (non-classical) register must use anh/em/bạn, not classical ngươi/các hạ.
+    A modern (non-classical) register must lead with 'bạn' (forbidding 'em' as a default)
+    and must NOT offer the classical 'các hạ'/'ngươi' on the guardrail line.
     """
     engine_mod = pytest.importorskip("trezarr.translate.engine")
     build_translate_prompt = engine_mod.build_translate_prompt
@@ -1024,9 +1041,11 @@ def test_guardrail_rule_present_modern_register():
         pronoun_hints=None,
     )
 
-    # Modern pronouns present
-    assert "anh" in prompt or "em" in prompt or "bạn" in prompt, (
-        "Guardrail for romantic register must include modern pronouns (anh/em/bạn)"
+    line = _guardrail_line(prompt)
+    assert line, "Guardrail must be present for a modern register"
+    assert "bạn" in line, "Modern guardrail must offer the neutral 'bạn'"
+    assert "các hạ" not in line and "ngươi" not in line, (
+        "Modern guardrail must not offer classical pronouns"
     )
 
 

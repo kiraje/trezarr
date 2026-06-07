@@ -75,6 +75,12 @@ class TrezarrSettings(BaseSettings):
     #   llm_reasoning_effort       — value forwarded to the DeepSeek reasoning_effort param
     #                                when thinking is forced enabled. "high" is the default;
     #                                "low"/"medium" may reduce cost for lighter tasks.
+    # BY DESIGN these two flags OVERRIDE a global llm_disable_thinking=true (there is no global
+    # kill-switch for Pass-1/Pass-2). Rationale: the live deployment runs with thinking globally
+    # disabled for speed, but analysis (roster/relationships) and attribution (who-speaks-to-whom)
+    # are the reasoning-heavy passes the consistency moat depends on — they must reason even while
+    # bulk Pass-3 translation + Pass-4 review stay fast. Set a flag to False to opt that pass back
+    # into the global default. (trezarr-quality review 260607-dbe MEDIUM #4: keep-as-is + document.)
     enable_reasoning_analysis: bool = True
     enable_reasoning_attribution: bool = True
     llm_reasoning_effort: str = "high"

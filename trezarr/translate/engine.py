@@ -328,24 +328,20 @@ def build_translate_prompt(
     rule_n += 1
     # FIX-A (260607-dbe): unhinted-line guardrail — forbid character-name substitution for
     # 2nd-person pronouns when no (speaker says / addresses as) hint is on the line.
-    # Classical/historical/wuxia/xianxia/cultivation registers get classical pronoun examples;
-    # modern (or no register) gets modern examples. Keyword set mirrors the existing register
-    # RULE block above so classification is consistent across the prompt.
-    # [linguist: confirm wording]
-    _is_classical = bool(
-        register and any(
-            k in register.lower()
-            for k in ("classical", "historical", "wuxia", "xianxia", "cultivation",
-                      "cổ trang", "tiên hiệp", "kiếm hiệp")
-        )
-    )
-    if _is_classical:
-        _pronoun_examples = "ngươi or các hạ (not a proper name)"
+    # Review fix (260607-dbe quality pass): reuse reconcile._is_classical_register (the canonical
+    # 16-token classifier) instead of a divergent inline keyword set, and offer ONLY
+    # safe-default-ladder pronouns — never `ngươi` (presumptuous/superior, deliberately excluded
+    # from reconcile's safe-default ladder) or `em` (intimate) on a no-relationship-signal line.
+    # This mirrors reconcile.get_safe_default's policy so the unhinted fallback can never drift
+    # from it. Function-local import matches the existing engine<->reconcile cycle-avoidance pattern.
+    from trezarr.translate.reconcile import _is_classical_register
+    if _is_classical_register(register):
+        _pronoun_examples = "các hạ (respectful, non-gendered) — never a proper name"
     else:
-        _pronoun_examples = "anh, em, or bạn depending on context (not a proper name)"
+        _pronoun_examples = "bạn, or anh/chị by gender — never 'em' and never a proper name"
     parts.append(
         f"{rule_n}. For any line WITHOUT a (speaker says / addresses as) hint: render English "
-        "'you/your/yourself' as a register-appropriate 2nd-person Vietnamese pronoun — NEVER "
+        "'you/your/yourself' as a safe, non-presumptuous 2nd-person Vietnamese pronoun — NEVER "
         "substitute a character name. "
         f"Use {_pronoun_examples}."
     )
