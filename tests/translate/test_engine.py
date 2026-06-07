@@ -947,3 +947,135 @@ async def test_merge_bible_analysis_called_with_settings_on_pass1_path(session_f
         "M1: merge_bible_analysis must be called with settings=settings (the same object), "
         f"so enable_relationship_events is honoured; got {captured['settings']!r}"
     )
+
+
+# ── Unhinted-line guardrail tests (FIX-A, 260607-dbe) ───────────────────────────
+
+
+def test_guardrail_rule_present_no_register():
+    """build_translate_prompt with no register → guardrail rule present with modern pronouns.
+
+    The guardrail rule must:
+    - Mention "no speaker/addressee hint" (or equivalent condition phrase)
+    - Include modern 2nd-person pronoun examples: anh, em, or bạn
+    - NOT include classical pronoun ngươi or các hạ (since no register is specified)
+    """
+    engine_mod = pytest.importorskip("trezarr.translate.engine")
+    build_translate_prompt = engine_mod.build_translate_prompt
+
+    prompt = build_translate_prompt(
+        batch_texts=["Hello.", "How are you?"],
+        context_before=[],
+        context_after=[],
+        register=None,
+        pronoun_hints=None,
+    )
+
+    assert "no speaker/addressee hint" in prompt.lower() or "without a" in prompt.lower(), (
+        "Guardrail must mention the unhinted-line condition"
+    )
+    # Modern pronoun examples present
+    assert "anh" in prompt or "em" in prompt or "bạn" in prompt, (
+        "Guardrail for no-register must include modern 2nd-person pronouns (anh/em/bạn)"
+    )
+
+
+def test_guardrail_rule_present_classical_register():
+    """build_translate_prompt with register='xianxia' → guardrail uses classical pronoun examples.
+
+    Classical registers (xianxia, wuxia, cultivation, historical) must get:
+    - ngươi or các hạ in the guardrail rule
+    - NOT substitute a character name instruction
+    """
+    engine_mod = pytest.importorskip("trezarr.translate.engine")
+    build_translate_prompt = engine_mod.build_translate_prompt
+
+    prompt = build_translate_prompt(
+        batch_texts=["Who are you?"],
+        context_before=[],
+        context_after=[],
+        register="xianxia",
+        pronoun_hints=None,
+    )
+
+    # Classical pronoun examples in guardrail
+    assert "ngươi" in prompt or "các hạ" in prompt, (
+        "Guardrail for xianxia register must include classical pronouns (ngươi/các hạ)"
+    )
+    assert "not a proper name" in prompt.lower() or "never substitute" in prompt.lower() or "never" in prompt.lower(), (
+        "Guardrail must instruct model to NEVER substitute a character name"
+    )
+
+
+def test_guardrail_rule_present_modern_register():
+    """build_translate_prompt with register='romantic' → guardrail uses modern pronoun examples.
+
+    A modern (non-classical) register must use anh/em/bạn, not classical ngươi/các hạ.
+    """
+    engine_mod = pytest.importorskip("trezarr.translate.engine")
+    build_translate_prompt = engine_mod.build_translate_prompt
+
+    prompt = build_translate_prompt(
+        batch_texts=["What do you want?"],
+        context_before=[],
+        context_after=[],
+        register="romantic",
+        pronoun_hints=None,
+    )
+
+    # Modern pronouns present
+    assert "anh" in prompt or "em" in prompt or "bạn" in prompt, (
+        "Guardrail for romantic register must include modern pronouns (anh/em/bạn)"
+    )
+
+
+def test_guardrail_rule_does_not_affect_hinted_lines():
+    """When a line has a pronoun_hint, the '(speaker says: X; addresses as: Y)' format is preserved.
+
+    The guardrail rule must not change how hinted lines are emitted.
+    """
+    engine_mod = pytest.importorskip("trezarr.translate.engine")
+    build_translate_prompt = engine_mod.build_translate_prompt
+
+    prompt = build_translate_prompt(
+        batch_texts=["I see you.", "You did well."],
+        context_before=[],
+        context_after=[],
+        pronoun_hints={1: ("ta", "ngươi"), 2: ("tôi", "bạn")},
+    )
+
+    # Hinted line format must be present
+    assert "(speaker says: ta; addresses as: ngươi)" in prompt, (
+        "Hinted line 1 must carry '(speaker says: ta; addresses as: ngươi)'"
+    )
+    assert "(speaker says: tôi; addresses as: bạn)" in prompt, (
+        "Hinted line 2 must carry '(speaker says: tôi; addresses as: bạn)'"
+    )
+
+
+def test_guardrail_rule_numbering_sequential():
+    """When both glossary and register are supplied, all RULES are numbered sequentially.
+
+    No duplicate or skipped rule numbers.
+    """
+    engine_mod = pytest.importorskip("trezarr.translate.engine")
+    build_translate_prompt = engine_mod.build_translate_prompt
+
+    import re as _re
+
+    prompt = build_translate_prompt(
+        batch_texts=["Text here."],
+        context_before=[],
+        context_after=[],
+        glossary=["Han → Hàn"],
+        register="wuxia",
+    )
+
+    # Collect all rule numbers from the RULES block lines
+    rule_numbers = [int(m.group(1)) for m in _re.finditer(r'^(\d+)\.', prompt, _re.MULTILINE)]
+    assert rule_numbers, "Must have at least some numbered rules"
+    # Sequential: should be 1, 2, 3, ... N without gaps or duplicates
+    expected = list(range(1, len(rule_numbers) + 1))
+    assert rule_numbers == expected, (
+        f"Rules must be numbered sequentially 1..N; got {rule_numbers}"
+    )
