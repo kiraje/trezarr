@@ -326,6 +326,30 @@ def build_translate_prompt(
         "gendered term."
     )
     rule_n += 1
+    # FIX-A (260607-dbe): unhinted-line guardrail — forbid character-name substitution for
+    # 2nd-person pronouns when no (speaker says / addresses as) hint is on the line.
+    # Classical/historical/wuxia/xianxia/cultivation registers get classical pronoun examples;
+    # modern (or no register) gets modern examples. Keyword set mirrors the existing register
+    # RULE block above so classification is consistent across the prompt.
+    # [linguist: confirm wording]
+    _is_classical = bool(
+        register and any(
+            k in register.lower()
+            for k in ("classical", "historical", "wuxia", "xianxia", "cultivation",
+                      "cổ trang", "tiên hiệp", "kiếm hiệp")
+        )
+    )
+    if _is_classical:
+        _pronoun_examples = "ngươi or các hạ (not a proper name)"
+    else:
+        _pronoun_examples = "anh, em, or bạn depending on context (not a proper name)"
+    parts.append(
+        f"{rule_n}. For any line WITHOUT a (speaker says / addresses as) hint: render English "
+        "'you/your/yourself' as a register-appropriate 2nd-person Vietnamese pronoun — NEVER "
+        "substitute a character name. "
+        f"Use {_pronoun_examples}."
+    )
+    rule_n += 1
     parts.append("")
 
     # C3/H1 fix: inject a [REGISTER] note so the translator matches the series tone. A
