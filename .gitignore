@@ -77,3 +77,6 @@ tmp/
 # Frontend build artifacts (built by `cd frontend && npm run build`)
 trezarr/web/static/
 frontend/tsconfig.tsbuildinfo
+
+# Dev-runner output: translate_one.py may write .vi.srt next to a source file
+scripts/*.srt
