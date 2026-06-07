@@ -7,8 +7,13 @@ Design decisions honoured:
   D-15  Context window (K source lines before/after) included in every prompt.
   D-16  Document-level gate via validate_subdoc() before any write.
   D-17  Untranslated-line detection inside validate_subdoc().
-  D-18  Bounded per-batch retry via tenacity on BatchValidationError ONLY.
-        openai.APIError is NOT caught by tenacity (SDK handles transport failures).
+  D-18  Bounded per-batch retry via an internal message-accumulating correction loop.
+        When the LLM returns a structurally defective response (wrong count / bad sentinel),
+        the bad assistant reply and a structural-only correction user turn are appended to the
+        messages list and the LLM is called again — up to translate_batch_retry_attempts
+        retries. BatchValidationError is the sole recovery mechanism for count/sentinel failures;
+        tenacity is NOT used for BatchValidationError (no retry storm).
+        openai.APIError is NOT caught here — the SDK handles transport failures.
   D-19  Atomic UTF-8 sidecar write via write_vi_sidecar().
   D-20  Idempotency: await ledger.check() at entry; await ledger.record() after write/quarantine.
   D-37  ledger.check/record are async (Phase 4 — BREAKING INTERNAL API CHANGE, see
@@ -17,8 +22,9 @@ Design decisions honoured:
 
 Critical constraints:
   - No asyncio.Semaphore in this module.  LLMClient._semaphore is the sole gate (Pitfall 1).
-  - tenacity retry wraps ONLY _translate_batch, not translate_file.
-  - retry_if_exception_type(BatchValidationError) — never includes openai.APIError (Pitfall 5).
+  - No tenacity decorator on _translate_batch_inner; the correction loop is bounded by
+    translate_batch_retry_attempts + 1 total LLM calls (Pitfall 5 — no double-retry storm).
+  - BatchValidationError is handled exclusively by the correction loop, never by tenacity.
   - New SubLine objects for translated doc — never mutate source SubLines (Pitfall 8).
   - Pass 4 self-review: _review_batch returns list[str] | None — NEVER raises (D-59).
   - No quarantine path in Pass 4 — validate_subdoc remains the sole arbiter (D-55/D-59).
@@ -35,8 +41,6 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING
-
-from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
 
 from trezarr.llm.client import LLMClient
 from trezarr.output._ledger_protocol import LedgerProtocol
@@ -149,16 +153,19 @@ def derive_episode_key(media_item: object, source_sub_path: "str | Path | None" 
 class BatchValidationError(Exception):
     """Raised when a translated batch fails batch-level gate checks.
 
-    Caught ONLY by the tenacity @retry decorator in _translate_batch.
-    Triggers a retry of the batch (up to translate_batch_retry_attempts times).
+    Caught ONLY by the internal correction loop in _translate_batch_inner.
+    When the LLM drops a line or returns a wrong count, the bad reply and a
+    structural-only correction turn are appended to the messages list and the
+    LLM is called again — up to translate_batch_retry_attempts times.
+    After budget exhaustion, BatchValidationError propagates to translate_file
+    → quarantine. Tenacity does NOT catch this exception (no double-retry storm).
     """
 
 
 class TranslationError(Exception):
     """Raised for whole-file translation failures that trigger quarantine.
 
-    Propagates out of _translate_batch when all tenacity retries are exhausted,
-    and from translate_file when the document-level gate fails.
+    Propagates from translate_file when the document-level gate fails.
     """
 
 
@@ -733,23 +740,40 @@ def parse_numbered_response(
     return [parsed[n] for n in range(1, expected_count + 1)]
 
 
-# ── Batch translation with tenacity retry ─────────────────────────────────────
+# ── Batch translation with message-accumulating correction loop ────────────────
+
+# Module-level correction-turn template (D-18, IMP-02).
+#
+# MOAT INVARIANT: this template references pronoun hints as "from my FIRST message"
+# and contains NO slot for pronoun-pair content — the hint/glossary/register live
+# exclusively in messages[0] (the original prompt from build_translate_prompt).
+# The correction turn NEVER re-emits "(speaker says: …)" content.
+# Test B in test_batch_self_correct.py asserts "(speaker says:" is absent.
+_STRUCT_CORRECTION_MSG = (
+    "Your response had a structural error: {defect}. "
+    "I need EXACTLY {n} lines, numbered [1] through [{n}], one per source line, in order. "
+    "Do NOT skip any number. Keep every <<T0>>/<<BR>> token exactly as in my first message. "
+    "Follow ALL rules, the GLOSSARY, the REGISTER, and all pronoun hints from my FIRST message. "
+    "Output ONLY the {n} numbered lines."
+)
+
 
 def _make_translate_batch_fn(settings: "TrezarrSettings"):
-    """Build a tenacity-decorated _translate_batch function bound to settings.
+    """Build a _translate_batch function bound to settings.
 
-    The retry parameters depend on settings.translate_batch_retry_attempts, which
-    is only known at runtime.  We construct the decorated function once per
-    translate_file() call so the stop_after_attempt value is correct.
+    The correction loop parameters depend on settings.translate_batch_retry_attempts,
+    which is only known at runtime.  We construct the inner function once per
+    translate_file() call so the attempt budget is correct.
+
+    Design (D-18, IMP-02): the returned function is a plain async def with no tenacity
+    decorator. BatchValidationError is handled exclusively by an internal bounded
+    message-accumulating correction loop — NOT tenacity. Tenacity is removed from this
+    function entirely (it was only needed for the retry-on-error pattern, which the
+    correction loop now owns). openai.APIError propagates unmodified; the SDK handles
+    transport-level retries (D-07, Pitfall 5).
     """
-    attempts = settings.translate_batch_retry_attempts + 1  # attempts = retries + 1 initial
+    attempts = settings.translate_batch_retry_attempts + 1  # total LLM calls = 1 initial + N retries
 
-    @retry(
-        retry=retry_if_exception_type(BatchValidationError),
-        stop=stop_after_attempt(attempts),
-        wait=wait_exponential(multiplier=0.5, max=4),
-        reraise=True,
-    )
     async def _translate_batch_inner(
         batch: Batch,
         llm_client: LLMClient,
@@ -759,29 +783,40 @@ def _make_translate_batch_fn(settings: "TrezarrSettings"):
         glossary: "list[str] | None" = None,
         register: "str | None" = None,  # H1 fix: thread series register into Pass-3
     ) -> list[str]:
-        """Translate a single batch, retrying on BatchValidationError only (D-18).
+        """Translate a single batch with a bounded message-accumulating correction loop (D-18).
 
-        Steps per attempt:
+        Steps:
           1. Extract sentinels from each cue's text (D-12)
           2. Build numbered-line prompt with context (D-13, D-15)
-          3. Call LLMClient.call() — NEVER bypassed, NEVER wrapped in a second Semaphore
-          4. Parse the numbered-line response
-          5. Reinsert sentinels; raise BatchValidationError if integrity fails
+          3. Initialize messages = [{"role": "user", "content": prompt}]
+          4. Loop up to `attempts` times:
+               a. Call LLMClient.call(messages) — NEVER bypassed, NEVER wrapped in a second Semaphore
+               b. Parse the numbered-line response + reinsert sentinels
+               c. On success: return restored texts
+               d. On BatchValidationError: if last attempt → raise; else append bad reply +
+                  correction user-turn to messages and continue
 
-        openai.APIError is intentionally NOT caught by tenacity — the SDK handles
-        transport-level retries (D-07, Pitfall 5).
+        The original prompt in messages[0] stays authoritative and is never re-emitted or
+        paraphrased, protecting the pronoun-hint moat (MOAT INVARIANT).
+
+        openai.APIError propagates unmodified — the SDK handles transport-level retries
+        (D-07, Pitfall 5). No tenacity wrapper. No second asyncio.Semaphore (D-06, Pitfall 1).
 
         Args:
             batch:          The Batch to translate.
             llm_client:     The LLM client to call.
-            _settings:      Settings (passed through for future use; not used in body).
+            _settings:      Settings (passed through; not used in body).
             pronoun_hints:  Optional {1-based line index → (self_term, address_term)} (D-46).
+            model:          Optional per-call model override (D-113).
+            glossary:       Optional glossary lines for proper noun pinning.
+            register:       Optional series register/tone (H1 fix).
 
         Returns:
             List of translated text strings (one per cue in batch.cues).
 
         Raises:
-            BatchValidationError: On count/empty/sentinel gate failure (triggers retry).
+            BatchValidationError: After translate_batch_retry_attempts+1 total LLM calls
+                                  with no valid response. Propagates to translate_file → quarantine.
         """
         # Step 1: Extract sentinels from each cue
         cleaned_texts: list[str] = []
@@ -801,33 +836,65 @@ def _make_translate_batch_fn(settings: "TrezarrSettings"):
             register=register,  # H1 fix
         )
 
-        # Step 3: Call LLMClient (the sole concurrency gate is inside LLMClient._semaphore)
-        # D-113: forward per-call model override; None = use client's global model
-        raw_response = await llm_client.call([{"role": "user", "content": prompt}], model=model)
+        # Step 3: Initialize message list — messages[0] stays the sole authoritative
+        # carrier of hints/glossary/register. The correction loop NEVER re-emits it.
+        messages: list[dict] = [{"role": "user", "content": prompt}]
 
-        # Step 4: Parse the numbered-line response (MEDIUM-4: only multi-line source cues
-        # accept continuation lines, so trailing model prose is dropped, not spliced in).
+        # Step 4: Bounded correction loop — up to `attempts` total LLM calls
         _ml_idx = {i for i, t in enumerate(cleaned_texts, 1) if "\n" in t}
-        translated_texts = parse_numbered_response(
-            str(raw_response), len(batch.cues), multiline_indices=_ml_idx
-        )
+        n = len(batch.cues)
 
-        # Step 5: Reinsert sentinels. Always call (even for an empty smap) so a
-        # hallucinated orphan <<TN>> in an untagged cue is stripped rather than
-        # surviving to the document gate → whole-file quarantine (v1.0 #5).
-        # integrity_ok is False only on a LOST REAL sentinel — that still
-        # quarantines (we must not emit output missing a real tag).
-        restored: list[str] = []
-        for i, (text, smap) in enumerate(zip(translated_texts, sentinel_maps)):
-            restored_text, integrity_ok = reinsert_sentinels(text, smap)
-            if not integrity_ok:
-                raise BatchValidationError(
-                    f"Sentinel integrity failure for cue {i}: "
-                    f"real sentinel(s) lost from {restored_text!r}"
+        for attempt_num in range(attempts):
+            is_last_attempt = (attempt_num == attempts - 1)
+
+            # Step 4a: Call LLMClient — the sole concurrency gate is inside LLMClient._semaphore
+            # D-113: forward per-call model override; None = use client's global model
+            # Pass-3 stays fast: no thinking= kwarg (Pass-1/Pass-2 get thinking=True per FIX-B)
+            raw_response = await llm_client.call(messages, model=model)
+
+            try:
+                # Step 4b: Parse + reinsert sentinels — both raise BatchValidationError on failure.
+                # MEDIUM-4: only multi-line source cues accept continuation lines.
+                translated_texts = parse_numbered_response(
+                    str(raw_response), n, multiline_indices=_ml_idx
                 )
-            restored.append(restored_text)
 
-        return restored
+                # Reinsert sentinels. Always call (even for an empty smap) so a hallucinated
+                # orphan <<TN>> in an untagged cue is stripped rather than surviving to the
+                # document gate → whole-file quarantine (v1.0 #5).
+                # integrity_ok is False only on a LOST REAL sentinel — structural failure,
+                # triggers the correction loop just like a wrong count.
+                restored: list[str] = []
+                for i, (text, smap) in enumerate(zip(translated_texts, sentinel_maps)):
+                    restored_text, integrity_ok = reinsert_sentinels(text, smap)
+                    if not integrity_ok:
+                        raise BatchValidationError(
+                            f"Sentinel integrity failure for cue {i}: "
+                            f"real sentinel(s) lost from {restored_text!r}"
+                        )
+                    restored.append(restored_text)
+
+                # Step 4c: Success — return translated texts
+                return restored
+
+            except BatchValidationError as exc:
+                if is_last_attempt:
+                    # Step 4d (budget exhausted): re-raise so translate_file can quarantine.
+                    # This is the ONLY place BatchValidationError escapes — tenacity does
+                    # NOT add another retry layer on top (no double-retry storm, IMP-02 Test E).
+                    raise
+
+                # Step 4d (correction turn): append the bad reply + a structural-only correction
+                # user turn to the messages list. messages[0] is NEVER touched — it remains the
+                # sole authoritative carrier of hints/glossary/register (MOAT INVARIANT).
+                # The correction turn references them as "from my FIRST message" without quoting.
+                correction_turn = _STRUCT_CORRECTION_MSG.format(defect=str(exc), n=n)
+                messages.append({"role": "assistant", "content": str(raw_response)})
+                messages.append({"role": "user", "content": correction_turn})
+                # Continue to next loop iteration — LLM will see the full conversation context
+
+        # Unreachable: loop always returns or raises inside. Guard for type checker.
+        raise BatchValidationError("Correction loop exhausted without returning")  # pragma: no cover
 
     return _translate_batch_inner
 
@@ -841,10 +908,10 @@ async def _translate_batch(
     glossary: "list[str] | None" = None,
     register: "str | None" = None,  # H1 fix: thread series register into Pass-3
 ) -> list[str]:
-    """Public entry point for translating a single batch with retry.
+    """Public entry point for translating a single batch with the correction loop.
 
-    Thin wrapper that builds a settings-bound tenacity-decorated function and
-    calls it.  Exposed as a module-level name for testing (test_engine.py).
+    Thin wrapper that builds a settings-bound inner function and calls it.
+    Exposed as a module-level name for testing (test_engine.py).
 
     Args:
         batch:          The Batch to translate.
@@ -852,12 +919,14 @@ async def _translate_batch(
         settings:       Settings supplying translate_batch_retry_attempts.
         pronoun_hints:  Optional {1-based line index → (self_term, address_term)} (D-46).
         model:          Optional per-call model override (D-113).
+        glossary:       Optional glossary lines for proper noun pinning.
+        register:       Optional series register/tone (H1 fix).
 
     Returns:
         List of translated text strings.
 
     Raises:
-        BatchValidationError: If all retries are exhausted (reraise=True in decorator).
+        BatchValidationError: If all correction-loop retries are exhausted.
     """
     fn = _make_translate_batch_fn(settings)
     return await fn(batch, llm_client, settings, pronoun_hints, model, glossary, register)
