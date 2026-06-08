@@ -735,6 +735,121 @@ def test_h4_verbatim_sdh_sound_cue_raises_check10():
     )
 
 
+def test_gate_check9_credit_cue_passes():
+    """Check 9 (D-01 exemption): a fansub credit cue translated with a short CJK handle does NOT raise.
+
+    Live incident: Job #6 quarantined Moon Knight cue 437 because the model correctly rendered
+    the Chinese credit prefix into Vietnamese ('Phụ đề dịch bởi:') and left the fansub handle
+    '虫二' (a proper-name signature, untranslatable). This credit-line exemption must fire so
+    the whole 437-cue file is not quarantined over a single 2-char handle.
+
+    Preconditions: source carries CJK credit keywords (字幕翻译) AND translated CJK count ≤ threshold.
+    """
+    validate_mod = pytest.importorskip("trezarr.translate.validate")
+    GateError = validate_mod.GateError
+    validate_subdoc = validate_mod.validate_subdoc
+
+    src = _src_for_bad_cue("字幕翻译：虫二")
+    trn = _doc_with_bad_cue("Phụ đề dịch bởi: 虫二")
+
+    result = validate_subdoc(trn, src, _settings())
+    assert result is None, (
+        f"Expected None (credit cue with short CJK handle must NOT raise GateError(9) — D-01 exemption), "
+        f"got {result!r}. Live incident: 'Phụ đề dịch bởi: 虫二' quarantined the whole file."
+    )
+
+
+def test_gate_check9_credit_long_cjk_still_quarantines():
+    """Check 9 (D-01 threshold guard): a credit-keyword cue with a LONG CJK body STILL raises check 9.
+
+    A fully-untranslated credit block (many CJK chars) signals a real translation failure.
+    The narrow exemption must NOT mask it — both conditions must hold (keyword AND short CJK ≤ 8).
+    Source carries credit keyword (字幕翻译制作团队); translated is a long fully-CJK line (>8 chars).
+    """
+    validate_mod = pytest.importorskip("trezarr.translate.validate")
+    GateError = validate_mod.GateError
+    validate_subdoc = validate_mod.validate_subdoc
+
+    src = _src_for_bad_cue("字幕翻译制作团队")
+    # 12 CJK chars → exceeds CJK_CREDIT_EXEMPT_MAX_CJK threshold (8)
+    trn = _doc_with_bad_cue("字幕翻译制作团队制作感谢")
+
+    with pytest.raises(GateError) as ei:
+        validate_subdoc(trn, src, _settings())
+    assert ei.value.failure.check == 9, (
+        f"Expected check 9 (long CJK in credit cue must still quarantine — D-01 threshold guard), "
+        f"got check {ei.value.failure.check}"
+    )
+
+
+def test_gate_check9_noncredit_short_cjk_still_quarantines():
+    """Check 9 (D-01 narrow guard): a non-credit cue with a short CJK handle STILL raises check 9.
+
+    Both conditions are required: credit keyword in source AND short CJK count ≤ threshold.
+    A cue from plain dialogue (source has NO credit keyword) carrying a short 2-char CJK
+    handle ('虫二') must still be quarantined — the exemption must NOT fire on keyword absence.
+    """
+    validate_mod = pytest.importorskip("trezarr.translate.validate")
+    GateError = validate_mod.GateError
+    validate_subdoc = validate_mod.validate_subdoc
+
+    # Source is plain dialogue — no credit keyword at all
+    src = _src_for_bad_cue("Hello there friends")
+    trn = _doc_with_bad_cue("Đây là 虫二")
+
+    with pytest.raises(GateError) as ei:
+        validate_subdoc(trn, src, _settings())
+    assert ei.value.failure.check == 9, (
+        f"Expected check 9 (non-credit source with short CJK must still quarantine — D-01 narrow guard), "
+        f"got check {ei.value.failure.check}"
+    )
+
+
+def test_gate_check9_credit_no_cjk_passes():
+    """Check 9 (D-01 no-regression): a credit-keyword cue with NO CJK in translated passes.
+
+    Source carries 'Translated by FanSubTeam'; translated renders it in Vietnamese ('Phụ đề dịch bởi:
+    FanSubTeam') with zero CJK codepoints. Check 9 never fires anyway (CJK_LEAK_RE finds nothing),
+    so this is a no-regression test confirming the exemption path does not break the clean case.
+    """
+    validate_mod = pytest.importorskip("trezarr.translate.validate")
+    validate_subdoc = validate_mod.validate_subdoc
+
+    src = _src_for_bad_cue("Translated by FanSubTeam")
+    trn = _doc_with_bad_cue("Phụ đề dịch bởi: FanSubTeam")
+
+    result = validate_subdoc(trn, src, _settings())
+    assert result is None, (
+        f"Expected None (credit cue with no CJK passes Check 9 without exemption — D-01 no-regression), "
+        f"got {result!r}"
+    )
+
+
+def test_gate_check9_credit_english_keyword_cue_passes():
+    """Check 9 (D-01 English credit path): source 'Subtitles by 虫二' + translated 'Phụ đề bởi: 虫二'.
+
+    Strengthened moat test: source carries an English credit keyword ('Subtitles by') AND the
+    translated cue has a short 2-char CJK handle '虫二'. Without the fix, CJK_LEAK_RE fires on
+    '虫二' in the translated text → GateError(9). With the fix, is_credit_fansub_cue() detects
+    the English credit keyword in the source and the CJK count (2) ≤ CJK_CREDIT_EXEMPT_MAX_CJK
+    → exemption fires → no raise. This makes the test a real coverage test for the English path.
+    """
+    validate_mod = pytest.importorskip("trezarr.translate.validate")
+    GateError = validate_mod.GateError
+    validate_subdoc = validate_mod.validate_subdoc
+
+    # Source carries English credit keyword 'Subtitles by'; translated keeps the 2-char CJK handle
+    src = _src_for_bad_cue("Subtitles by 虫二")
+    trn = _doc_with_bad_cue("Phụ đề bởi: 虫二")
+
+    result = validate_subdoc(trn, src, _settings())
+    assert result is None, (
+        f"Expected None (English credit keyword + short CJK handle must pass via exemption — D-01), "
+        f"got {result!r}. Without fix: CJK_LEAK_RE fires on '虫二' → GateError(9); "
+        f"with fix: is_credit_fansub_cue detects 'Subtitles by' in source + CJK count 2 ≤ threshold."
+    )
+
+
 @pytest.mark.parametrize(
     "leaked",
     [
