@@ -244,6 +244,7 @@ def build_translate_prompt(
     pronoun_hints: "dict[int, tuple[str, str]] | None" = None,
     glossary: "list[str] | None" = None,
     register: "str | None" = None,
+    correction_directive: "str | None" = None,
 ) -> str:
     """Build the numbered-line translation prompt (D-13, D-15, ENG-03, D-46).
 
@@ -255,27 +256,32 @@ def build_translate_prompt(
       - Optional [CONTEXT] block after the lines to translate (context_after)
 
     Args:
-        batch_texts:     Source texts for the cues to translate, in order.
-        context_before:  Read-only context lines preceding this batch.
-        context_after:   Read-only context lines following this batch.
-        source_lang:     Human-readable source language name (default "English").
-        pronoun_hints:   Optional dict mapping 1-based line index to
-                         (self_term, address_term) pronoun pair (D-46).
-                         When provided, hinted lines render as:
-                         "[N] (speaker says: X; addresses as: Y) <text>"
-                         Unhinted lines render as "[N] <text>" (unchanged).
-        glossary:        Optional list of "source → canonical rendering" lines (character
-                         names + Term Dictionary). When provided, a [GLOSSARY] block + a
-                         "use these EXACTLY" rule are injected so proper nouns render
-                         identically across every cue (the consistency moat). Build it with
-                         build_glossary_lines(bible).
-        register:        Optional series register/tone (e.g. "xianxia", "wuxia",
-                         "cultivation", "historical", "romantic", "casual"). C3/H1 fix:
-                         when truthy, a [REGISTER] note + a RULE are injected instructing
-                         the translator to MATCH that tone — a classical/historical/wuxia/
-                         xianxia/cultivation register demands classical Sino-Vietnamese
-                         (Hán-Việt) vocabulary and pronouns, never flat modern speech.
-                         Thread it with bible.register_value (mirror of glossary).
+        batch_texts:          Source texts for the cues to translate, in order.
+        context_before:       Read-only context lines preceding this batch.
+        context_after:        Read-only context lines following this batch.
+        source_lang:          Human-readable source language name (default "English").
+        pronoun_hints:        Optional dict mapping 1-based line index to
+                              (self_term, address_term) pronoun pair (D-46).
+                              When provided, hinted lines render as:
+                              "[N] (speaker says: X; addresses as: Y) <text>"
+                              Unhinted lines render as "[N] <text>" (unchanged).
+        glossary:             Optional list of "source → canonical rendering" lines (character
+                              names + Term Dictionary). When provided, a [GLOSSARY] block + a
+                              "use these EXACTLY" rule are injected so proper nouns render
+                              identically across every cue (the consistency moat). Build it with
+                              build_glossary_lines(bible).
+        register:             Optional series register/tone (e.g. "xianxia", "wuxia",
+                              "cultivation", "historical", "romantic", "casual"). C3/H1 fix:
+                              when truthy, a [REGISTER] note + a RULE are injected instructing
+                              the translator to MATCH that tone — a classical/historical/wuxia/
+                              xianxia/cultivation register demands classical Sino-Vietnamese
+                              (Hán-Việt) vocabulary and pronouns, never flat modern speech.
+                              Thread it with bible.register_value (mirror of glossary).
+        correction_directive: Optional IMP-02b gate-repair correction instruction injected
+                              as a prominent RULE near the top of the RULES block (prefixed
+                              with "[CORRECTION REQUIRED]" so its echo is catchable by the
+                              parse-layer strip and validate.py Check 8 backstop). Must NOT
+                              be passed via context_before (proven echo-prone by e8r/job-9).
 
     B1 fix: a cue's internal newlines are encoded as the literal token ``<<BR>>`` on the
     [N] marker line (so a 2-line cue 'A' + newline + 'B' becomes "[N] A<<BR>>B"). A RULE
@@ -394,6 +400,18 @@ def build_translate_prompt(
         f"Use {_pronoun_examples}."
     )
     rule_n += 1
+    # IMP-02b FIX 1(a): inject gate-repair correction directive as a RULE (not context_before).
+    # context_before is rendered under "[CONTEXT - read only, do not output]" with the instruction
+    # "Do NOT translate or output the [context] lines" — the e8r/job-9 incident proved deepseek
+    # IGNORES that instruction and echoes context lines verbatim into output cues. Moving the
+    # directive into the RULES block (with the mandatory "[CORRECTION REQUIRED]" marker prefix so
+    # its echo is catchable by _LEAKED_DIRECTIVE_RE + validate.py CORRECTION_DIRECTIVE_RE) cuts
+    # the echo likelihood while keeping the gate-layer backstop. Markerless-paraphrase echoes
+    # (e.g. "Render EVERY name in its Vietnamese Hán-Việt form.") are accepted residual risk —
+    # their semantic content is benign instructions, not internal machinery tokens.
+    if correction_directive:
+        parts.append(f"{rule_n}. [CORRECTION REQUIRED] {correction_directive}")
+        rule_n += 1  # noqa: F841 — rule_n kept for future rules added after this block
     parts.append("")
 
     # C3/H1 fix: inject a [REGISTER] note so the translator matches the series tone. A
@@ -683,6 +701,20 @@ _LEAKED_HINT_RE = re.compile(
     re.IGNORECASE,
 )
 
+# IMP-02b: strip a LEADING echoed gate-repair directive from translated cue text.
+# _repair_failing_cues injects "[CORRECTION REQUIRED] <directive>" as an instruction in
+# the RULES block of the repair prompt. Proven by the codec guardian (2026-06-08):
+# deepseek echoes instruction phrases into output cues. Mirroring _LEAKED_HINT_RE:
+#   "[CORRECTION REQUIRED] Translate fully into Vietnamese." → "" → BatchValidationError
+#   "Chư vị tu sĩ..." → NOT matched (no [CORRECTION REQUIRED]) → preserved unchanged
+# Anchored at ^ + matches the whole "[CORRECTION REQUIRED] ..." prefix + optional newline.
+# [^\n]* stops at end of the directive line — no catastrophic backtracking.
+# validate.py Check 8 / CORRECTION_DIRECTIVE_RE remains the gate-layer backstop.
+_LEAKED_DIRECTIVE_RE = re.compile(
+    r"^\s*\[\s*CORRECTION\s+REQUIRED\s*\][^\n]*\n?",
+    re.IGNORECASE,
+)
+
 
 def parse_numbered_response(
     response: str,
@@ -778,6 +810,12 @@ def parse_numbered_response(
         # translated dialogue pronouns. validate.py Check 8 / HINT_SCAFFOLD_RE remains
         # the defense-in-depth backstop for any leak this strip does not catch.
         text = _LEAKED_HINT_RE.sub("", text)
+        # Strip a LEADING echoed gate-repair directive (IMP-02b, 2026-06-08).
+        # "[CORRECTION REQUIRED] ..." is an English internal-machinery phrase injected as
+        # a RULES instruction in the repair prompt. A leading echo collapses to empty →
+        # BatchValidationError → correction loop retries (same recovery as hint-strip above).
+        # validate.py Check 8 / CORRECTION_DIRECTIVE_RE is the gate-layer backstop.
+        text = _LEAKED_DIRECTIVE_RE.sub("", text)
         parsed[n] = text
         if not parsed[n].strip():
             raise BatchValidationError(f"Empty/whitespace-only text for line [{n}] in LLM response")
@@ -798,7 +836,13 @@ def parse_numbered_response(
 _REPAIRABLE_CHECKS: frozenset[int] = frozenset({3, 9, 10, 11, 12})
 
 # Per-check correction directives forwarded to the repair LLM (IMP-02b).
-# The directive is placed as context_before so the numbered-line protocol is unaffected.
+# IMP-02b FIX 1(a): directives are now injected via build_translate_prompt's
+# correction_directive param (as a RULE with "[CORRECTION REQUIRED]" prefix), NOT via
+# context_before. The e8r/job-9 incident proved deepseek echoes context-line instructions
+# verbatim into output cues; RULE-block injection is significantly less echo-prone.
+# FIX 4: "huynh" removed from the Check-11 suggestion list — it is a DIRECTED seniority
+# term that can cause an age/seniority inversion when the repair has no attribution.
+# Non-directed / safe-default terms only: cô / cô nương / tiền bối / trưởng lão / các hạ.
 _REPAIR_DIRECTIVE: dict[int, str] = {
     3: (
         "One or more lines lacked Vietnamese diacritics (possible source-language passthrough). "
@@ -815,11 +859,11 @@ _REPAIR_DIRECTIVE: dict[int, str] = {
     11: (
         "A prior attempt left an English honorific+name untranslated (e.g. 'Miss Mei', 'Mr. Han'). "
         "Render EVERY name in its Vietnamese Hán-Việt form and EVERY honorific/title as a "
-        "kinship/address word (cô / cô nương / tiền bối / huynh / trưởng lão / …). "
+        "non-directed kinship/address word (cô / cô nương / tiền bối / trưởng lão / các hạ / …). "
         "NEVER output an English honorific like 'Miss/Mr/Elder + Name'."
     ),
     12: (
-        "A prior attempt added an English-gloss parenthetical (e.g. '(Miss Mei's brother)'). "
+        "A prior attempt added an English-gloss parenthetical (e.g. '(Miss Mei\\'s brother)'). "
         "NEVER add parentheticals not in the source. "
         "Remove any English-gloss parenthetical from the output."
     ),
@@ -868,6 +912,7 @@ def _make_translate_batch_fn(settings: "TrezarrSettings"):
         model: "str | None" = None,  # D-113: per-call model override
         glossary: "list[str] | None" = None,
         register: "str | None" = None,  # H1 fix: thread series register into Pass-3
+        correction_directive: "str | None" = None,  # IMP-02b FIX 1(a): repair directive as RULE
     ) -> list[str]:
         """Translate a single batch with a bounded message-accumulating correction loop (D-18).
 
@@ -889,13 +934,15 @@ def _make_translate_batch_fn(settings: "TrezarrSettings"):
         (D-07, Pitfall 5). No tenacity wrapper. No second asyncio.Semaphore (D-06, Pitfall 1).
 
         Args:
-            batch:          The Batch to translate.
-            llm_client:     The LLM client to call.
-            _settings:      Settings (passed through; not used in body).
-            pronoun_hints:  Optional {1-based line index → (self_term, address_term)} (D-46).
-            model:          Optional per-call model override (D-113).
-            glossary:       Optional glossary lines for proper noun pinning.
-            register:       Optional series register/tone (H1 fix).
+            batch:                The Batch to translate.
+            llm_client:           The LLM client to call.
+            _settings:            Settings (passed through; not used in body).
+            pronoun_hints:        Optional {1-based line index → (self_term, address_term)} (D-46).
+            model:                Optional per-call model override (D-113).
+            glossary:             Optional glossary lines for proper noun pinning.
+            register:             Optional series register/tone (H1 fix).
+            correction_directive: Optional IMP-02b gate-repair correction instruction
+                                  (injected as a RULE in build_translate_prompt, not context_before).
 
         Returns:
             List of translated text strings (one per cue in batch.cues).
@@ -922,6 +969,7 @@ def _make_translate_batch_fn(settings: "TrezarrSettings"):
             pronoun_hints=pronoun_hints,
             glossary=glossary,
             register=register,  # H1 fix
+            correction_directive=correction_directive,  # IMP-02b FIX 1(a)
         )
 
         # Step 3: Initialize message list — messages[0] stays the sole authoritative
@@ -997,6 +1045,7 @@ async def _translate_batch(
     model: "str | None" = None,  # D-113: per-call model override
     glossary: "list[str] | None" = None,
     register: "str | None" = None,  # H1 fix: thread series register into Pass-3
+    correction_directive: "str | None" = None,  # IMP-02b FIX 1(a): repair directive as RULE
 ) -> list[str]:
     """Public entry point for translating a single batch with the correction loop.
 
@@ -1004,13 +1053,14 @@ async def _translate_batch(
     Exposed as a module-level name for testing (test_engine.py).
 
     Args:
-        batch:          The Batch to translate.
-        llm_client:     The LLM client to call.
-        settings:       Settings supplying translate_batch_retry_attempts.
-        pronoun_hints:  Optional {1-based line index → (self_term, address_term)} (D-46).
-        model:          Optional per-call model override (D-113).
-        glossary:       Optional glossary lines for proper noun pinning.
-        register:       Optional series register/tone (H1 fix).
+        batch:                The Batch to translate.
+        llm_client:           The LLM client to call.
+        settings:             Settings supplying translate_batch_retry_attempts.
+        pronoun_hints:        Optional {1-based line index → (self_term, address_term)} (D-46).
+        model:                Optional per-call model override (D-113).
+        glossary:             Optional glossary lines for proper noun pinning.
+        register:             Optional series register/tone (H1 fix).
+        correction_directive: Optional IMP-02b gate-repair correction instruction.
 
     Returns:
         List of translated text strings.
@@ -1019,7 +1069,9 @@ async def _translate_batch(
         BatchValidationError: If all correction-loop retries are exhausted.
     """
     fn = _make_translate_batch_fn(settings)
-    return await fn(batch, llm_client, settings, pronoun_hints, model, glossary, register)
+    return await fn(
+        batch, llm_client, settings, pronoun_hints, model, glossary, register, correction_directive
+    )
 
 
 # ── Quarantine artifact write ──────────────────────────────────────────────────
@@ -1151,70 +1203,119 @@ async def _repair_failing_cues(
     resolved_map: dict,
     bible: object,
     model: "str | None",
+    flat_attributions: "list | None" = None,
+    name_to_char_id: "dict[str, int] | None" = None,
 ) -> "list[SubLine] | None":
     """Re-translate only the failing source cues and return a full repaired lines list.
 
     Returns a NEW list of SubLine objects (same length as translated_doc.lines) with
-    only the failing indices replaced by fresh translations.  Returns None on any
-    LLM/parse failure so the caller can quarantine immediately.
+    only the failing indices replaced by fresh translations.  Returns None on a
+    BatchValidationError (genuine "repair couldn't produce a valid translation");
+    all other exceptions (including openai.APIError) propagate so the file is NOT
+    permanently quarantined on a transient endpoint error (D-47 / Pitfall B).
 
     MOAT INVARIANT: re-translates through the SAME _translate_batch machinery that
-    Pass-3 uses, forwarding the same glossary_lines, register_value, and resolved_map
-    pronoun hints for the failing cue indices — so Bible consistency is preserved and
-    the pronoun/relational moat is untouched (Pitfall 1: no new asyncio.Semaphore;
-    Pitfall 5: no tenacity around this call).
+    Pass-3 uses, forwarding the same glossary_lines, register_value, and directed
+    pronoun hints for the failing cue indices (built from flat_attributions + resolved_map
+    when attribution data is available) — so Bible consistency and the pronoun/relational
+    moat are preserved. Pitfall 1: no new asyncio.Semaphore. Pitfall 5: no tenacity.
 
     Args:
-        failing_indices:  0-based indices into translated_doc.lines that failed the gate.
-        source_doc:       The original source SubDoc.
-        translated_doc:   The translated SubDoc (with the failing cues).
-        check_number:     The gate check number that fired (must be in _REPAIRABLE_CHECKS).
-        llm_client:       LLMClient instance (its _semaphore is the sole concurrency gate).
-        settings:         TrezarrSettings.
-        glossary_lines:   Glossary lines from build_glossary_lines(bible), or None.
-        register_value:   Series register/tone from bible.register_value, or None.
-        resolved_map:     (speaker_id, addressee_id) → (self_term, address_term) from reconcile.
-        bible:            SeriesBibleDTO (or None for Bible-unaware mode).
-        model:            Per-call model override (D-113).
+        failing_indices:   0-based indices into translated_doc.lines that failed the gate.
+        source_doc:        The original source SubDoc.
+        translated_doc:    The translated SubDoc (with the failing cues).
+        check_number:      The gate check number that fired (must be in _REPAIRABLE_CHECKS).
+        llm_client:        LLMClient instance (its _semaphore is the sole concurrency gate).
+        settings:          TrezarrSettings.
+        glossary_lines:    Glossary lines from build_glossary_lines(bible), or None.
+        register_value:    Series register/tone from bible.register_value, or None.
+        resolved_map:      (speaker_id, addressee_id) → (self_term, address_term) from reconcile.
+        bible:             SeriesBibleDTO (or None for Bible-unaware mode).
+        model:             Per-call model override (D-113).
+        flat_attributions: Doc-global list of LineAttribution objects (1:1 with source cues),
+                           or None when the Phase-5 attribution pass is inactive. Used to
+                           thread the directed pronoun hint for each failing cue (FIX 3).
+        name_to_char_id:   Lowercased character name → character id reverse index
+                           (built from bible.characters in translate_file). Used with
+                           flat_attributions to resolve hints. None when inactive.
 
     Returns:
-        Full repaired list[SubLine] on success; None on any failure.
+        Full repaired list[SubLine] on success; None on BatchValidationError (repair miss).
+
+    Raises:
+        openai.APIError:  Propagates unmodified — transient transport failure; caller
+                          leaves the file in_progress for retry next poll (D-47/Pitfall B).
+        Any other non-BatchValidationError exception: propagates so bugs are loud.
     """
+    # FIX 2: narrow exception handling — only BatchValidationError is a "repair miss"
+    # (the LLM produced something structurally invalid after retries). Everything else
+    # (openai.APIError transport, RuntimeError empty-content, IndexError logic bug)
+    # propagates unmodified. This mirrors the Step-7 main translate path which catches
+    # ONLY BatchValidationError and lets APIError propagate (engine.py:1628).
     try:
         directive = _REPAIR_DIRECTIVE.get(check_number, "")
 
         # Build a minimal Batch containing only the failing source cues.
-        failing_source_cues = [source_doc.lines[i] for i in failing_indices]
+        # FIX 5: skip repair for any failing index where the source line is raw
+        # (opaque pass-through / ASS-VTT styling — D-98/D-99). Repairable checks
+        # {3,9,10,11,12} already skip raw cues in validate.py so this cannot fire today,
+        # but the splice must not assume it — defensively preserve the original raw cue.
+        failing_source_cues: list[SubLine] = []
+        repair_batch_local_indices: list[int] = []  # doc-global indices that enter the repair batch
+        for doc_idx in failing_indices:
+            line = translated_doc.lines[doc_idx]
+            if line.raw is not None:
+                # Opaque pass-through — cannot be re-translated; keep verbatim (FIX 5).
+                logger.debug(
+                    "Skipping repair for raw/opaque cue at index %d (D-98/D-99 pass-through)",
+                    doc_idx,
+                )
+                continue
+            failing_source_cues.append(source_doc.lines[doc_idx])
+            repair_batch_local_indices.append(doc_idx)
+
+        if not failing_source_cues:
+            # All failing indices were raw — nothing to repair.
+            return None
+
         repair_batch = Batch(
             cues=failing_source_cues,
             context_before=[],
             context_after=[],
         )
 
-        # Pronoun hints for the repair batch are not available (we have no attribution
-        # data for the isolated failing cues). The unhinted-line guardrail in
-        # build_translate_prompt handles the fallback safely.
+        # FIX 3: thread the directed pronoun hint for each failing cue into the repair batch.
+        # flat_attributions is doc-globally ordered 1:1 with source cues; failing_indices are
+        # 0-based doc-global indices. For each failing cue at doc index i, if attribution
+        # is present (flat_attributions[i].speaker / .addressee), resolve to char ids via
+        # name_to_char_id (exact-first, honorific-fallback per _resolve_char_id), then look up
+        # resolved_map[(spk_id, addr_id)] → (self_term, addr_term). Key the hint by the repair
+        # batch's LOCAL 1-based index (position among failing_source_cues). Missing attribution
+        # for a cue → no hint → safe-default floor (current behavior) — so the safe path is
+        # preserved exactly where attribution is genuinely absent.
         repair_pronoun_hints: dict[int, tuple[str, str]] | None = None
+        if flat_attributions and name_to_char_id and resolved_map:
+            _batch_hints: dict[int, tuple[str, str]] = {}
+            for local_idx, doc_idx in enumerate(repair_batch_local_indices, 1):
+                if doc_idx >= len(flat_attributions):
+                    continue
+                attr = flat_attributions[doc_idx]
+                spk_id = _resolve_char_id(name_to_char_id, getattr(attr, "speaker", None))
+                addr_id = _resolve_char_id(name_to_char_id, getattr(attr, "addressee", None))
+                if spk_id is not None and addr_id is not None:
+                    hint = resolved_map.get((spk_id, addr_id))
+                    if hint is not None:
+                        _batch_hints[local_idx] = hint
+            if _batch_hints:
+                repair_pronoun_hints = _batch_hints
 
-        # The correction directive is injected via the Batch.context_before field so
-        # the numbered-line protocol for the failing cues is unaffected. The directive
-        # appears as a "[context] ..." read-only line that the model sees but does not
-        # output (RULE 3 in build_translate_prompt). We wrap it in a fake SubLine to
-        # satisfy the Batch.context_before: list[SubLine] type contract.
-        from trezarr.subtitles.model import SubLine as _SubLine  # local to avoid shadowing
-
-        if directive:
-            _directive_line = _SubLine(
-                index="0",
-                start_tc="00:00:00,000",
-                end_tc="00:00:00,000",
-                text=f"[CORRECTION REQUIRED] {directive}",
-            )
-            repair_batch = Batch(
-                cues=failing_source_cues,
-                context_before=[_directive_line],
-                context_after=[],
-            )
+        # FIX 1(a): pass the correction directive via build_translate_prompt's
+        # correction_directive param (injected as a RULE with "[CORRECTION REQUIRED]" prefix),
+        # NOT via context_before. context_before is rendered under a "read only, do not output"
+        # block that the e8r/job-9 incident proved deepseek ignores — instruction-block injection
+        # is significantly less echo-prone. The "[CORRECTION REQUIRED]" marker prefix ensures
+        # any echo is catchable by _LEAKED_DIRECTIVE_RE and validate.py CORRECTION_DIRECTIVE_RE.
+        repair_directive_str = directive if directive else None
 
         # Re-use _translate_batch (which goes through LLMClient._semaphore — no new Semaphore).
         repair_translated_texts = await _translate_batch(
@@ -1225,6 +1326,7 @@ async def _repair_failing_cues(
             model=model,
             glossary=glossary_lines,
             register=register_value,
+            correction_directive=repair_directive_str,
         )
 
         # Build the full repaired SubLine list: walk translated_doc.lines, splice at
@@ -1232,9 +1334,9 @@ async def _repair_failing_cues(
         # translated_doc; replace ONLY .text.  NEVER mutate source SubLines (Pitfall 8).
         repair_text_iter = iter(repair_translated_texts)
         repaired_lines: list[SubLine] = []
-        failing_set = set(failing_indices)
+        repair_set = set(repair_batch_local_indices)  # doc-global indices that were re-translated
         for i, line in enumerate(translated_doc.lines):
-            if i in failing_set:
+            if i in repair_set:
                 new_text = next(repair_text_iter)
                 repaired_lines.append(
                     SubLine(
@@ -1243,6 +1345,17 @@ async def _repair_failing_cues(
                         end_tc=line.end_tc,
                         text=new_text,
                         raw=None,
+                    )
+                )
+            elif i in set(failing_indices):
+                # FIX 5: raw cue that was skipped — preserve verbatim (D-98/D-99).
+                repaired_lines.append(
+                    SubLine(
+                        index=line.index,
+                        start_tc=line.start_tc,
+                        end_tc=line.end_tc,
+                        text=line.text,
+                        raw=line.raw,
                     )
                 )
             else:
@@ -1258,9 +1371,13 @@ async def _repair_failing_cues(
 
         return repaired_lines
 
-    except Exception:
+    except BatchValidationError:
+        # FIX 2: genuine repair miss — the LLM could not produce a valid translation
+        # after all retries. Return None so the caller can quarantine immediately.
+        # Unlike openai.APIError (transient transport, should propagate), this is a
+        # validation-logic failure that means this specific repair attempt failed.
         logger.warning(
-            "Gate repair LLM call failed for check=%d failing=%r — quarantining",
+            "Gate repair batch validation failed for check=%d failing=%r — quarantining",
             check_number,
             failing_indices,
             exc_info=True,
@@ -1858,6 +1975,14 @@ async def translate_file(
                 check,
                 failing,
             )
+            # FIX 3: pass flat_attributions + name_to_char_id so the repair batch can
+            # thread directed pronoun hints for cues with known attribution (not always
+            # available — Phase-5 path only; None in Bible-unaware mode → safe-default).
+            _repair_name_to_char_id: dict[str, int] | None = None
+            if bible is not None and flat_attributions:
+                _repair_name_to_char_id = {
+                    c.original_latin_name.strip().lower(): c.id for c in bible.characters
+                }
             repaired_lines = await _repair_failing_cues(
                 failing_indices=failing,
                 source_doc=source_doc,
@@ -1870,6 +1995,8 @@ async def translate_file(
                 resolved_map=resolved_map,
                 bible=bible,
                 model=model,
+                flat_attributions=flat_attributions if flat_attributions else None,
+                name_to_char_id=_repair_name_to_char_id,
             )
             if repaired_lines is None:
                 # Repair LLM failed — treat as budget exhausted, quarantine now

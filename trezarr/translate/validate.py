@@ -12,6 +12,7 @@ The gate deliberately does NOT check Vietnamese quality (pronoun choices,
 semantic correctness) — that is the responsibility of Phases 4–6.  It checks
 structural integrity only.
 """
+
 from __future__ import annotations
 
 import re
@@ -29,12 +30,12 @@ if TYPE_CHECKING:
 #   U+01A0/U+01A1: Ơ/ơ ("o horn") — uniquely Vietnamese, not in French/Spanish
 #   U+01AF/U+01B0: Ư/ư ("u horn") — uniquely Vietnamese, not in French/Spanish
 # French/Spanish use only U+00C0–U+00FF (e.g. é, à, ü) which do NOT overlap.
-VN_DIACRITIC_RE = re.compile(r'[Ḁ-ỿƠơƯư]')
+VN_DIACRITIC_RE = re.compile(r"[Ḁ-ỿƠơƯư]")
 
 # Lines matching this pattern are "legitimately unchanged" — all punctuation,
 # digits, whitespace, or common musical/symbolic characters.  Excluded from
 # the Vietnamese diacritic ratio denominator (D-17).
-ALLOWLIST_RE = re.compile(r'^[\W\d\s♪♫…\.]+$')
+ALLOWLIST_RE = re.compile(r"^[\W\d\s♪♫…\.]+$")
 
 # Lines that consist entirely of sentinel placeholder tokens after tag extraction
 # have no natural-language content and must not count toward the VI diacritic ratio
@@ -42,10 +43,10 @@ ALLOWLIST_RE = re.compile(r'^[\W\d\s♪♫…\.]+$')
 # after sentinel extraction — SENTINEL_ONLY_RE matches that form.
 # Anchored (^ and $) and applied per-line to short strings; no catastrophic
 # backtracking path (T-09-03-C, ASVS L1 V5).
-SENTINEL_ONLY_RE = re.compile(r'^(<<T\d+>>\s*)*$')
+SENTINEL_ONLY_RE = re.compile(r"^(<<T\d+>>\s*)*$")
 
 # Backstop check for orphan sentinel tokens that were not reinserted (D-12/D-16 check 6)
-SENTINEL_RE = re.compile(r'<<T\d+>>')
+SENTINEL_RE = re.compile(r"<<T\d+>>")
 
 # Pass-4 review-prompt scaffolding signature. build_review_prompt emits each line
 # as "[N] (source: <orig>) <vi>"; a weak model sometimes echoes that back as its
@@ -53,7 +54,7 @@ SENTINEL_RE = re.compile(r'<<T\d+>>')
 # spaced echo ("(Source:", "( source:") is still caught. Shared by the engine's
 # Pass-4 splice guard and gate Check 8 so the two defense layers never drift.
 # (A *translated* scaffold token, e.g. "(nguồn:", is residual risk — not matched.)
-REVIEW_SCAFFOLD_RE = re.compile(r'\(\s*source\s*:', re.IGNORECASE)
+REVIEW_SCAFFOLD_RE = re.compile(r"\(\s*source\s*:", re.IGNORECASE)
 
 # Pass-3 attribution-hint scaffolding signature. build_translate_prompt injects the
 # per-line pronoun hint as a LEADING parenthetical: "[N] (speaker says: <self>; addresses
@@ -64,7 +65,18 @@ REVIEW_SCAFFOLD_RE = re.compile(r'\(\s*source\s*:', re.IGNORECASE)
 # the defense-in-depth backstop: a leaked hint quarantines, never ships. Anchored on "(" +
 # the English label, whitespace/case-tolerant — mirrors REVIEW_SCAFFOLD_RE. (A
 # *translated*-label echo, e.g. "(người nói:", is residual risk — not matched, same stance.)
-HINT_SCAFFOLD_RE = re.compile(r'\(\s*speaker\s+says\s*:', re.IGNORECASE)
+HINT_SCAFFOLD_RE = re.compile(r"\(\s*speaker\s+says\s*:", re.IGNORECASE)
+
+# IMP-02b gate-repair directive signature. _repair_failing_cues injects a
+# "[CORRECTION REQUIRED] <directive>" instruction into the RULES block of the repair prompt.
+# Proven by the codec guardian (2026-06-08): deepseek echoes context-line instructions
+# into output cues, and "[CORRECTION REQUIRED]..." passes all 12 existing checks
+# (no VI diacritic, not in source tokens, not a known scaffold pattern). This regex
+# adds it to Check 8 as a fail-closed backstop — "[CORRECTION REQUIRED]" cannot appear
+# in genuine Vietnamese dialogue, so quarantining is safe and has zero false positives.
+# Justification mirrors HINT_SCAFFOLD_RE: same leak class (English internal machinery →
+# on-screen sidecar), same defense tier (gate backstop after the parse-layer strip).
+CORRECTION_DIRECTIVE_RE = re.compile(r"\[\s*CORRECTION\s+REQUIRED\s*\]", re.IGNORECASE)
 
 # ── Per-cue leak detectors (audit B2/H4/H5/M3) ──────────────────────────────────
 # The per-FILE diacritic average (Check 3) cannot see a single bad cue — ~40 short
@@ -77,13 +89,13 @@ HINT_SCAFFOLD_RE = re.compile(r'\(\s*speaker\s+says\s*:', re.IGNORECASE)
 # search — no backtracking path (ASVS L1 V5).
 CJK_LEAK_RE = re.compile(
     "["
-    "一-鿿"   # CJK Unified Ideographs           U+4E00–U+9FFF
-    "㐀-䶿"   # CJK Extension A                  U+3400–U+4DBF
-    "豈-﫿"   # CJK Compatibility Ideographs     U+F900–U+FAFF
-    "＀-￯"   # Halfwidth and Fullwidth Forms    U+FF00–U+FFEF
-    "가-힣"   # Hangul Syllables                 U+AC00–U+D7A3
-    "ᄀ-ᇿ"   # Hangul Jamo                      U+1100–U+11FF
-    "぀-ヿ"   # Hiragana + Katakana              U+3040–U+30FF
+    "一-鿿"  # CJK Unified Ideographs           U+4E00–U+9FFF
+    "㐀-䶿"  # CJK Extension A                  U+3400–U+4DBF
+    "豈-﫿"  # CJK Compatibility Ideographs     U+F900–U+FAFF
+    "＀-￯"  # Halfwidth and Fullwidth Forms    U+FF00–U+FFEF
+    "가-힣"  # Hangul Syllables                 U+AC00–U+D7A3
+    "ᄀ-ᇿ"  # Hangul Jamo                      U+1100–U+11FF
+    "぀-ヿ"  # Hiragana + Katakana              U+3040–U+30FF
     "]"
 )
 
@@ -91,7 +103,7 @@ CJK_LEAK_RE = re.compile(
 # whether a no-diacritic cue is a verbatim source pass-through (every token also present
 # in the corresponding source cue). One-letter runs are ignored so a stray ASCII letter
 # inside a Vietnamese word (e.g. the 'L' in 'Là') never counts as a token.
-ASCII_WORD_RE = re.compile(r'[A-Za-z]{2,}')
+ASCII_WORD_RE = re.compile(r"[A-Za-z]{2,}")
 
 # MEDIUM-3 fix (Check 10 false-positive guard): laughter / onomatopoeia / interjections are
 # legitimately untranslated and identical to source ("Ha ha ha", "Hmm", "Uh oh"). They are
@@ -102,21 +114,66 @@ ASCII_WORD_RE = re.compile(r'[A-Za-z]{2,}')
 # imperatives escape — "Go go", "No no", "Run run", "Stop stop" are repeated tokens but ARE
 # untranslated content that Check 10 must still catch. Laughter ("Ha ha ha", "Ho ho ho") is
 # covered because its syllables are listed here, not because it repeats.
-_INTERJECTION_TOKENS: frozenset[str] = frozenset({
-    "ha", "haha", "hahaha", "hah", "heh", "hehe", "hmm", "hm", "mmm", "mm",
-    "uh", "uhh", "ah", "ahh", "oh", "ohh", "eh", "ehh", "oho", "huh", "hum",
-    "wow", "ooh", "aha", "hey", "yay", "ow", "ugh", "phew", "psst", "shh",
-    # laughter / non-lexical onomatopoeia syllables (closed set, never real English words):
-    "ho", "hoho", "hohoho", "hee", "heehee", "haw", "har", "tee", "teehee",
-    "woo", "yoo", "boo", "grr", "brr", "argh", "aah", "hah",
-})
+_INTERJECTION_TOKENS: frozenset[str] = frozenset(
+    {
+        "ha",
+        "haha",
+        "hahaha",
+        "hah",
+        "heh",
+        "hehe",
+        "hmm",
+        "hm",
+        "mmm",
+        "mm",
+        "uh",
+        "uhh",
+        "ah",
+        "ahh",
+        "oh",
+        "ohh",
+        "eh",
+        "ehh",
+        "oho",
+        "huh",
+        "hum",
+        "wow",
+        "ooh",
+        "aha",
+        "hey",
+        "yay",
+        "ow",
+        "ugh",
+        "phew",
+        "psst",
+        "shh",
+        # laughter / non-lexical onomatopoeia syllables (closed set, never real English words):
+        "ho",
+        "hoho",
+        "hohoho",
+        "hee",
+        "heehee",
+        "haw",
+        "har",
+        "tee",
+        "teehee",
+        "woo",
+        "yoo",
+        "boo",
+        "grr",
+        "brr",
+        "argh",
+        "aah",
+        "hah",
+    }
+)
 
 # B2/H5 fix (Check 11): an English honorific immediately followed by a capitalized name
 # ("Mr. Han", "Elder Zhou", "Miss Mei", "Brother Han") is an untranslated address form
 # leaking through. Vietnamese renders these as kinship/honorific words (huynh / trưởng
 # lão / cô nương / …), never "Elder Name", so the bigram itself is a reliable defect.
 HONORIFIC_CAPNAME_RE = re.compile(
-    r'\b(?:Mr|Mrs|Ms|Miss|Sir|Elder|Brother|Sister|Master|Lord|Lady)\b\.?\s+[A-Z][a-z]+'
+    r"\b(?:Mr|Mrs|Ms|Miss|Sir|Elder|Brother|Sister|Master|Lord|Lady)\b\.?\s+[A-Z][a-z]+"
 )
 
 # H4 fix (Check 12 support): broad Latin-diacritic detector. DELIBERATELY WIDER than
@@ -125,7 +182,7 @@ HONORIFIC_CAPNAME_RE = re.compile(
 # recognize that a parenthetical carries Vietnamese (any accented Latin) so a legitimate
 # Vietnamese parenthetical is never flagged as an English gloss. (Check 3 still uses the
 # NARROW VN_DIACRITIC_RE for its file-wide ratio — these two are intentionally distinct.)
-LATIN_DIACRITIC_RE = re.compile(r'[À-ɏḀ-ỿ̀-ͯ]')
+LATIN_DIACRITIC_RE = re.compile(r"[À-ɏḀ-ỿ̀-ͯ]")
 
 # H4 fix (Check 12): a parenthetical whose inner text has ASCII letters but no Latin
 # diacritic and is long enough to be an English gloss. Captures the inner text so the
@@ -133,7 +190,8 @@ LATIN_DIACRITIC_RE = re.compile(r'[À-ɏḀ-ỿ̀-ͯ]')
 # "(Miss Mei's brother)" / "(X's brother)" but not "(!)"/"(?)"/"(A)" nor a Vietnamese
 # parenthetical (which carries diacritics). [^()] inner class is non-recursive — no
 # catastrophic backtracking (ASVS L1 V5).
-GLOSS_PAREN_RE = re.compile(r'\(([^()]*[A-Za-z][^()]*)\)')
+GLOSS_PAREN_RE = re.compile(r"\(([^()]*[A-Za-z][^()]*)\)")
+
 
 @dataclass
 class GateFailure:
@@ -144,6 +202,7 @@ class GateFailure:
         reason:          Human-readable failure description.
         failing_indices: Optional list of SubLine indices involved in the failure.
     """
+
     check: int
     reason: str
     failing_indices: list[int] | None = field(default=None)
@@ -200,13 +259,19 @@ def _check_untranslated(
 
     ratio = vi_count / len(translatable_indices)
     if ratio < settings.translate_vi_diacritic_ratio:
-        failing = [i for i in translatable_indices if not VN_DIACRITIC_RE.search(translated.lines[i].text.strip())]
-        raise GateError(GateFailure(
-            3,
-            f"Vietnamese diacritic ratio {ratio:.2f} < threshold {settings.translate_vi_diacritic_ratio:.2f} "
-            f"({vi_count}/{len(translatable_indices)} translatable lines have VI diacritics)",
-            failing_indices=failing,
-        ))
+        failing = [
+            i
+            for i in translatable_indices
+            if not VN_DIACRITIC_RE.search(translated.lines[i].text.strip())
+        ]
+        raise GateError(
+            GateFailure(
+                3,
+                f"Vietnamese diacritic ratio {ratio:.2f} < threshold {settings.translate_vi_diacritic_ratio:.2f} "
+                f"({vi_count}/{len(translatable_indices)} translatable lines have VI diacritics)",
+                failing_indices=failing,
+            )
+        )
 
 
 def _check_timing_preserved(translated: SubDoc, source: SubDoc) -> None:
@@ -244,13 +309,15 @@ def _check_timing_preserved(translated: SubDoc, source: SubDoc) -> None:
         src_end = _tc_to_ms(src_sl.end_tc)
 
         if trn_start != src_start or trn_end != src_end:
-            raise GateError(GateFailure(
-                5,
-                f"Cue {i} timing altered by translation: "
-                f"source=({src_start}ms, {src_end}ms) "
-                f"translated=({trn_start}ms, {trn_end}ms)",
-                failing_indices=[i],
-            ))
+            raise GateError(
+                GateFailure(
+                    5,
+                    f"Cue {i} timing altered by translation: "
+                    f"source=({src_start}ms, {src_end}ms) "
+                    f"translated=({trn_start}ms, {trn_end}ms)",
+                    failing_indices=[i],
+                )
+            )
 
 
 def validate_subdoc(
@@ -270,7 +337,7 @@ def validate_subdoc(
       5. Monotonic, non-overlapping timestamps
       6. No orphan sentinel tokens (<<TN>>)
       7. All cue texts encode as valid UTF-8
-      8. No Pass-4 review-prompt scaffolding ("(source: …)") leaked into output
+      8. No prompt scaffolding leaked into output ("(source: …)", "(speaker says: …)", "[CORRECTION REQUIRED]")
       9. (B2/M3) No CJK / Hangul / Kana codepoint in any translated cue (raw source leak)
      10. (B2/H5) No source-passthrough leak: a no-diacritic cue whose ASCII word tokens all
          appear verbatim in the corresponding source cue and are not all Bible proper nouns
@@ -298,11 +365,13 @@ def validate_subdoc(
     """
     # Check 1: cue count equals source
     if len(translated.lines) != len(source.lines):
-        raise GateError(GateFailure(
-            1,
-            f"Cue count mismatch: translated has {len(translated.lines)} lines, "
-            f"source has {len(source.lines)} lines",
-        ))
+        raise GateError(
+            GateFailure(
+                1,
+                f"Cue count mismatch: translated has {len(translated.lines)} lines, "
+                f"source has {len(source.lines)} lines",
+            )
+        )
 
     # Check 2: no empty/whitespace-only translated lines
     for i, sl in enumerate(translated.lines):
@@ -313,11 +382,13 @@ def validate_subdoc(
         if sl.raw is not None:
             continue
         if not sl.text.strip():
-            raise GateError(GateFailure(
-                2,
-                f"Empty translated cue at index {i}",
-                failing_indices=[i],
-            ))
+            raise GateError(
+                GateFailure(
+                    2,
+                    f"Empty translated cue at index {i}",
+                    failing_indices=[i],
+                )
+            )
 
     # Check 3: untranslated-line detection (two-tier: per-line allowlist + VI ratio)
     _check_untranslated(translated, source, settings)
@@ -325,13 +396,15 @@ def validate_subdoc(
     # Check 4: timecodes/indices byte-identical to source
     for i, (src, trn) in enumerate(zip(source.lines, translated.lines)):
         if src.index != trn.index or src.start_tc != trn.start_tc or src.end_tc != trn.end_tc:
-            raise GateError(GateFailure(
-                4,
-                f"Timecode/index mutation at cue {i}: "
-                f"source=({src.index!r}, {src.start_tc!r}, {src.end_tc!r}) "
-                f"translated=({trn.index!r}, {trn.start_tc!r}, {trn.end_tc!r})",
-                failing_indices=[i],
-            ))
+            raise GateError(
+                GateFailure(
+                    4,
+                    f"Timecode/index mutation at cue {i}: "
+                    f"source=({src.index!r}, {src.start_tc!r}, {src.end_tc!r}) "
+                    f"translated=({trn.index!r}, {trn.start_tc!r}, {trn.end_tc!r})",
+                    failing_indices=[i],
+                )
+            )
 
     # Check 5: timing preserved from source (codec-fidelity invariant — D-08/D-09).
     # Overlapping cues that exist in the SOURCE legitimately pass; only translation-
@@ -342,38 +415,53 @@ def validate_subdoc(
     # Check 6: no orphan sentinel tokens
     for i, sl in enumerate(translated.lines):
         if SENTINEL_RE.search(sl.text):
-            raise GateError(GateFailure(
-                6,
-                f"Orphan sentinel token found in cue {i}: {sl.text!r}",
-                failing_indices=[i],
-            ))
+            raise GateError(
+                GateFailure(
+                    6,
+                    f"Orphan sentinel token found in cue {i}: {sl.text!r}",
+                    failing_indices=[i],
+                )
+            )
 
     # Check 7: all cue texts encode as valid UTF-8
     for i, sl in enumerate(translated.lines):
         try:
-            sl.text.encode('utf-8')
+            sl.text.encode("utf-8")
         except UnicodeEncodeError as exc:
-            raise GateError(GateFailure(
-                7,
-                f"UTF-8 encode error at cue {i}: {exc}",
-                failing_indices=[i],
-            )) from exc
+            raise GateError(
+                GateFailure(
+                    7,
+                    f"UTF-8 encode error at cue {i}: {exc}",
+                    failing_indices=[i],
+                )
+            ) from exc
 
-    # Check 8: no prompt scaffolding leaked into output. Two signatures, same
+    # Check 8: no prompt scaffolding leaked into output. Three signatures, same
     # defense-in-depth class — a sidecar containing internal prompt machinery must
     # NEVER ship even if an upstream guard is bypassed (the blind-trust bar):
-    #   - REVIEW_SCAFFOLD_RE  → Pass-4 "(source: …)" review echo (260604-gza/hp2).
-    #   - HINT_SCAFFOLD_RE     → Pass-3 "(speaker says: …; addresses as: …)" pronoun-hint
+    #   - REVIEW_SCAFFOLD_RE      → Pass-4 "(source: …)" review echo (260604-gza/hp2).
+    #   - HINT_SCAFFOLD_RE         → Pass-3 "(speaker says: …; addresses as: …)" pronoun-hint
     #     echo (260607 trezarr-quality HIGH; the H4 paren-preserve rule raises this risk,
     #     and the per-cue Check 10/12 below provably do NOT catch a diacritic-bearing hint).
-    # Both are English prompt scaffolding, not Vietnamese dialogue, so quarantining is safe.
+    #   - CORRECTION_DIRECTIVE_RE  → IMP-02b "[CORRECTION REQUIRED] …" gate-repair directive
+    #     echo (2026-06-08 codec guardian BLOCKER). The directive is an English internal-machinery
+    #     string that passes all other checks (no VI diacritic, not in source tokens) — this
+    #     backstop closes the proven echo path. "[CORRECTION REQUIRED]" cannot appear in genuine
+    #     Vietnamese dialogue, so quarantining is safe with zero false positives.
+    # All three are English prompt scaffolding, not Vietnamese dialogue, so quarantining is safe.
     for i, sl in enumerate(translated.lines):
-        if REVIEW_SCAFFOLD_RE.search(sl.text) or HINT_SCAFFOLD_RE.search(sl.text):
-            raise GateError(GateFailure(
-                8,
-                f"Prompt scaffolding leaked into cue {i}: {sl.text!r}",
-                failing_indices=[i],
-            ))
+        if (
+            REVIEW_SCAFFOLD_RE.search(sl.text)
+            or HINT_SCAFFOLD_RE.search(sl.text)
+            or CORRECTION_DIRECTIVE_RE.search(sl.text)
+        ):
+            raise GateError(
+                GateFailure(
+                    8,
+                    f"Prompt scaffolding leaked into cue {i}: {sl.text!r}",
+                    failing_indices=[i],
+                )
+            )
 
     # ── Per-cue leak checks 9-12 (audit B2/H4/H5/M3) ──────────────────────────────
     # The per-FILE ratio of Check 3 cannot separate a legitimately-short Vietnamese
@@ -392,11 +480,13 @@ def validate_subdoc(
 
         # Check 9 (B2/M3): CJK / Hangul / Kana codepoint = untranslated source leak.
         if CJK_LEAK_RE.search(text):
-            raise GateError(GateFailure(
-                9,
-                f"CJK/Hangul/Kana script leaked into cue {i}: {text!r}",
-                failing_indices=[i],
-            ))
+            raise GateError(
+                GateFailure(
+                    9,
+                    f"CJK/Hangul/Kana script leaked into cue {i}: {text!r}",
+                    failing_indices=[i],
+                )
+            )
 
         # Check 12 (H4): English-gloss parenthetical. A parenthetical with ASCII
         # letters, no Latin diacritic, long enough to be a gloss (inner len>=3 AND a
@@ -415,19 +505,23 @@ def validate_subdoc(
             # actual audit leak pattern ("(Miss Mei's brother)", "(X's brother)") and cannot
             # appear in normal Vietnamese dialogue.
             if ("'s" in inner) or ("’s" in inner) or HONORIFIC_CAPNAME_RE.search(inner):
-                raise GateError(GateFailure(
-                    12,
-                    f"Gloss/parenthetical leaked into cue {i}: {text!r}",
-                    failing_indices=[i],
-                ))
+                raise GateError(
+                    GateFailure(
+                        12,
+                        f"Gloss/parenthetical leaked into cue {i}: {text!r}",
+                        failing_indices=[i],
+                    )
+                )
 
         # Check 11 (B2/H5): English honorific + Capitalized name bigram.
         if HONORIFIC_CAPNAME_RE.search(text):
-            raise GateError(GateFailure(
-                11,
-                f"English honorific + name leaked into cue {i}: {text!r}",
-                failing_indices=[i],
-            ))
+            raise GateError(
+                GateFailure(
+                    11,
+                    f"English honorific + name leaked into cue {i}: {text!r}",
+                    failing_indices=[i],
+                )
+            )
 
         # Check 10 (B2/H5): source-passthrough leak. Only consider a cue that has NO
         # Vietnamese diacritic (narrow VN range) and is not allowlist/sentinel-only.
@@ -447,16 +541,17 @@ def validate_subdoc(
             continue
         src_lower = (src_sl.text or "").lower()
         all_in_source = all(
-            re.search(r'\b' + re.escape(tok.lower()) + r'\b', src_lower)
-            for tok in tokens
+            re.search(r"\b" + re.escape(tok.lower()) + r"\b", src_lower) for tok in tokens
         )
         if not all_in_source:
             continue  # not a verbatim echo of the source cue
         if all(tok.lower() in allowlist for tok in tokens):
             continue  # every token is a Bible-pinned proper noun — legitimate passthrough
-        raise GateError(GateFailure(
-            10,
-            f"Source-language passthrough leak in cue {i}: {text!r} "
-            f"(all ASCII tokens appear verbatim in source)",
-            failing_indices=[i],
-        ))
+        raise GateError(
+            GateFailure(
+                10,
+                f"Source-language passthrough leak in cue {i}: {text!r} "
+                f"(all ASCII tokens appear verbatim in source)",
+                failing_indices=[i],
+            )
+        )

@@ -289,6 +289,8 @@ async def test_budget_exhausted(tmp_path: Path) -> None:
         resolved_map: dict,
         bible: object,
         model: object,
+        flat_attributions: object = None,
+        name_to_char_id: object = None,
     ) -> list | None:
         nonlocal repair_call_count
         repair_call_count += 1
@@ -392,6 +394,8 @@ async def test_moat_regression(tmp_path: Path) -> None:
         resolved_map: dict,
         bible: object,
         model: object,
+        flat_attributions: object = None,
+        name_to_char_id: object = None,
     ) -> list | None:
         nonlocal captured_failing_line
         captured["glossary_lines"] = glossary_lines
@@ -617,15 +621,22 @@ def test_validate_check8_trips_on_correction_required() -> None:
     backstop — an echoed directive that survives the parse-layer strip (e.g. mid-cue or
     partial marker) must never ship.
 
+    Uses a 5-cue doc: 4 good VI cues (diacritic ratio 4/5 = 0.80 ≥ 0.70 → Check 3 passes),
+    1 directive-echo cue. Only Check 8 should fire.
+
     RED: before CORRECTION_DIRECTIVE_RE is added, validate_subdoc passes a cue containing
     '[CORRECTION REQUIRED]'. After the fix, it raises GateError(check=8).
     """
     from trezarr.translate.validate import validate_subdoc, GateError
 
-    src_line = _make_line(1, text="Hello world")
-    trn_line = _make_line(1, text="[CORRECTION REQUIRED] Translate fully into Vietnamese.")
-    src_doc = _make_doc([src_line])
-    trn_doc = _make_doc([trn_line])
+    # 5-cue doc: 4 good VI cues + 1 directive-echo cue.
+    # Ratio = 4/5 = 0.80 ≥ 0.70 → Check-3 passes; Check-8 must fire on cue 5.
+    src_lines = [_make_line(i + 1, text=_ALL_SRC_CUES[i]) for i in range(5)]
+    trn_lines = [_make_line(i + 1, text=_GOOD_VI_CUES[i]) for i in range(4)] + [
+        _make_line(5, text="[CORRECTION REQUIRED] Translate fully into Vietnamese.")
+    ]
+    src_doc = _make_doc(src_lines)
+    trn_doc = _make_doc(trn_lines)
     settings = _settings()
 
     try:
@@ -790,7 +801,14 @@ async def test_repair_receives_directed_pronoun_hint(tmp_path: Path) -> None:
     captured_repair_hints: list = []
 
     async def _spy_translate_batch(
-        batch, llm_client, settings, pronoun_hints=None, model=None, glossary=None, register=None
+        batch,
+        llm_client,
+        settings,
+        pronoun_hints=None,
+        model=None,
+        glossary=None,
+        register=None,
+        correction_directive=None,
     ):
         captured_repair_hints.append(pronoun_hints)
         return [_REPAIRED_CUE]
