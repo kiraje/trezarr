@@ -15,7 +15,6 @@ re-exports them from tests/db/conftest.py.
 
 from __future__ import annotations
 
-import pytest
 
 
 # ---------------------------------------------------------------------------

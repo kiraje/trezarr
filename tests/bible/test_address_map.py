@@ -150,3 +150,97 @@ async def test_locked_pair_not_overwritten(session_factory):
     assert locked_field_events == [], (
         f"Expected no events for locked field 'self_term', got {locked_field_events}"
     )
+
+
+async def test_pass1_create_or_affirm_existing_pair(session_factory):
+    """Pass-1 create-or-affirm: calling upsert with self_term=None/address_term=None on an
+    EXISTING UNLOCKED pair leaves the established terms UNCHANGED (scy — Vector 1 fix).
+
+    This simulates the post-fix analyze.py behavior for an existing pair: instead of passing
+    the fresh LLM-inferred terms, Pass-1 passes None/None so store.py's
+    `if new_val is None: continue` guard preserves the established self_term/address_term.
+    """
+    from trezarr.bible.store import upsert_address_pair
+
+    series_id = await _create_series(session_factory, arr_series_id=2)
+    speaker_id, addressee_id = await _create_characters(session_factory, series_id)
+
+    # Create the initial row with established terms ("anh", "em")
+    dto1, _ = await upsert_address_pair(
+        session_factory,
+        series_id=series_id,
+        speaker_character_id=speaker_id,
+        addressee_character_id=addressee_id,
+        self_term="anh",
+        address_term="em",
+        valid_from_episode="S01E01",
+        episode_key="S01E01",
+        source="inference",
+    )
+    assert dto1.self_term == "anh"
+    assert dto1.address_term == "em"
+
+    # Simulate Pass-1 create-or-affirm call: self_term=None, address_term=None
+    # This is what analyze.py now passes for an existing pair (scy fix).
+    dto2, events2 = await upsert_address_pair(
+        session_factory,
+        series_id=series_id,
+        speaker_character_id=speaker_id,
+        addressee_character_id=addressee_id,
+        self_term=None,
+        address_term=None,
+        valid_from_episode="S01E02",
+        episode_key="S01E02",
+        source="inference",
+    )
+
+    # Terms must be UNCHANGED — the None-guard in store.py skips the setattr
+    assert dto2.self_term == "anh", (
+        f"Expected self_term='anh' to be preserved (None-guard), got {dto2.self_term!r}"
+    )
+    assert dto2.address_term == "em", (
+        f"Expected address_term='em' to be preserved (None-guard), got {dto2.address_term!r}"
+    )
+
+    # No events for the term fields (since new_val was None → skipped before old==new check)
+    term_events = [e for e in events2 if e.field in ("self_term", "address_term")]
+    assert term_events == [], (
+        f"Expected no events for term fields when new_val is None, got {term_events}"
+    )
+
+
+async def test_pass1_creates_brand_new_pair(session_factory):
+    """Pass-1 brand-new pair: no prior row → upsert creates it with the supplied terms (scy).
+
+    Verifies the non-existing-pair branch of the create-or-affirm fix: when the pair key
+    is NOT in existing_pair_keys, analyze.py passes the inferred terms and upsert_address_pair
+    creates the row normally.
+    """
+    from trezarr.bible.store import upsert_address_pair
+
+    series_id = await _create_series(session_factory, arr_series_id=3)
+    speaker_id, addressee_id = await _create_characters(session_factory, series_id)
+
+    # No prior row exists — brand-new dyad
+    dto, events = await upsert_address_pair(
+        session_factory,
+        series_id=series_id,
+        speaker_character_id=speaker_id,
+        addressee_character_id=addressee_id,
+        self_term="tôi",
+        address_term="bạn",
+        valid_from_episode="S01E01",
+        episode_key="S01E01",
+        source="inference",
+    )
+
+    assert dto.self_term == "tôi", (
+        f"Brand-new pair must be created with supplied self_term='tôi', got {dto.self_term!r}"
+    )
+    assert dto.address_term == "bạn", (
+        f"Brand-new pair must be created with supplied address_term='bạn', got {dto.address_term!r}"
+    )
+    # Events should be emitted for the new non-None fields
+    event_fields = {e.field for e in events}
+    assert "self_term" in event_fields
+    assert "address_term" in event_fields

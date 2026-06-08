@@ -1782,6 +1782,7 @@ async def translate_file(
                 spk_id = _resolve_char_id(name_to_char_id, attr.speaker)
                 addr_id = _resolve_char_id(name_to_char_id, attr.addressee)
                 if spk_id is not None and addr_id is not None:
+                    # resolved_map includes carried Bible pairs (scy); hint fires for any fully-attributed line.
                     hint = resolved_map.get((spk_id, addr_id))
                     if hint is not None:
                         batch_hints[local_i] = hint
