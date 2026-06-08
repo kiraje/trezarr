@@ -55,33 +55,67 @@ KINSHIP_RECIPROCAL: dict[tuple[str, str], tuple[str, str]] = {
 
 # D-90: Additive fill of KINSHIP_RECIPROCAL gaps (bác/cháu, chú/cháu, cô/cháu, thầy/em, tao/mày)
 # Missing pairs verified C4 in harness review. Forward AND reverse keys added so round-trips work.
-KINSHIP_RECIPROCAL.update({
-    ("bác", "cháu"): ("cháu", "bác"),   # uncle/aunt (older-than-parent) ↔ niece/nephew
-    ("cháu", "bác"): ("bác", "cháu"),
-    ("chú", "cháu"): ("cháu", "chú"),   # uncle (younger-than-parent) ↔ niece/nephew
-    ("cháu", "chú"): ("chú", "cháu"),
-    ("cô", "cháu"):  ("cháu", "cô"),    # aunt (father's sister) ↔ niece/nephew
-    ("cháu", "cô"):  ("cô", "cháu"),
-    ("thầy", "em"):  ("em", "thầy"),    # teacher ↔ student
-    ("em", "thầy"):  ("thầy", "em"),
-    ("tao", "mày"):  ("mày", "tao"),    # intimate/rude peer
-    ("mày", "tao"):  ("tao", "mày"),
-})
+KINSHIP_RECIPROCAL.update(
+    {
+        ("bác", "cháu"): ("cháu", "bác"),  # uncle/aunt (older-than-parent) ↔ niece/nephew
+        ("cháu", "bác"): ("bác", "cháu"),
+        ("chú", "cháu"): ("cháu", "chú"),  # uncle (younger-than-parent) ↔ niece/nephew
+        ("cháu", "chú"): ("chú", "cháu"),
+        ("cô", "cháu"): ("cháu", "cô"),  # aunt (father's sister) ↔ niece/nephew
+        ("cháu", "cô"): ("cô", "cháu"),
+        ("thầy", "em"): ("em", "thầy"),  # teacher ↔ student
+        ("em", "thầy"): ("thầy", "em"),
+        ("tao", "mày"): ("mày", "tao"),  # intimate/rude peer
+        ("mày", "tao"): ("tao", "mày"),
+    }
+)
 
 # KNOWN_PRONOUN_TERMS — shared vocabulary for the Bible editor combo (D-86).
 # Single source of truth: exposed via /api/pronouns; never duplicated in the frontend.
 # Split into self_terms and address_terms for gender-aware picker hints.
 KNOWN_PRONOUN_TERMS_SELF: list[str] = [
-    "tôi", "con", "em", "anh", "chị", "cháu", "mày", "tao", "bạn",
+    "tôi",
+    "con",
+    "em",
+    "anh",
+    "chị",
+    "cháu",
+    "mày",
+    "tao",
+    "bạn",
     # WR-06: parental/elder self-terms that appear as speaker-side terms in KINSHIP_RECIPROCAL
     # (bố/mẹ/cha address "con"; ông/bà address "cháu"/"con"; bác/chú/cô/thầy address "cháu"/"em").
     # Absent from the dropdown forces the user to the "custom…" escape hatch, bypassing the D-86
     # typo guard for the most common parental pronouns.
-    "bố", "mẹ", "cha", "ông", "bà", "bác", "chú", "cô", "thầy",
+    "bố",
+    "mẹ",
+    "cha",
+    "ông",
+    "bà",
+    "bác",
+    "chú",
+    "cô",
+    "thầy",
 ]
 KNOWN_PRONOUN_TERMS_ADDRESS: list[str] = [
-    "bạn", "anh", "chị", "em", "con", "cháu", "ông", "bà", "bố", "mẹ",
-    "cha", "mày", "thầy", "dì", "cậu", "bác", "chú", "cô",
+    "bạn",
+    "anh",
+    "chị",
+    "em",
+    "con",
+    "cháu",
+    "ông",
+    "bà",
+    "bố",
+    "mẹ",
+    "cha",
+    "mày",
+    "thầy",
+    "dì",
+    "cậu",
+    "bác",
+    "chú",
+    "cô",
 ]
 
 # ---------------------------------------------------------------------------
@@ -108,11 +142,26 @@ SAFE_DEFAULT_ADDRESS_CLASSICAL_NEUTRAL = "các hạ"
 
 # Register tokens (substring match, lowercased) that select the CLASSICAL ladder.
 # Covers English genre labels and Vietnamese genre names a Pass-1 register inference may emit.
-_CLASSICAL_REGISTER_TOKENS: frozenset[str] = frozenset({
-    "classical", "historical", "wuxia", "xianxia", "cultivation", "period",
-    "ancient", "martial", "imperial", "dynasty",
-    "cổ trang", "co trang", "tiên hiệp", "kiếm hiệp", "tu tiên", "võ hiệp",
-})
+_CLASSICAL_REGISTER_TOKENS: frozenset[str] = frozenset(
+    {
+        "classical",
+        "historical",
+        "wuxia",
+        "xianxia",
+        "cultivation",
+        "period",
+        "ancient",
+        "martial",
+        "imperial",
+        "dynasty",
+        "cổ trang",
+        "co trang",
+        "tiên hiệp",
+        "kiếm hiệp",
+        "tu tiên",
+        "võ hiệp",
+    }
+)
 
 
 def _is_classical_register(register: str | None) -> bool:
@@ -222,8 +271,9 @@ def _find_transition_for_pair(
     for event in relationship_events:
         if event.episode_marker != episode_key:
             continue  # Pitfall 6: only current episode's event authorizes a change
-        if (event.character_a_id == spk_id and event.character_b_id == addr_id) or \
-           (event.character_a_id == addr_id and event.character_b_id == spk_id):
+        if (event.character_a_id == spk_id and event.character_b_id == addr_id) or (
+            event.character_a_id == addr_id and event.character_b_id == spk_id
+        ):
             return event
     return None
 
@@ -385,11 +435,18 @@ async def reconcile_attributions(
         if getattr(settings, "enable_relationship_events", True):
             transition = _find_transition_for_pair(
                 getattr(bible, "relationship_events", []),
-                spk_id, addr_id, episode_key,
+                spk_id,
+                addr_id,
+                episode_key,
             )
             if transition is not None:
                 new_self, new_addr = _derive_transition_terms(
-                    transition, survivors, existing, addr_id, id_to_gender, settings,
+                    transition,
+                    survivors,
+                    existing,
+                    addr_id,
+                    id_to_gender,
+                    settings,
                     register=register,
                 )
                 resolved_map[pair] = (new_self, new_addr)
@@ -406,7 +463,11 @@ async def reconcile_attributions(
                 )
                 logger.debug(
                     "reconcile: transition-authorized change for %d→%d: (%s/%s) at %s",
-                    spk_id, addr_id, new_self, new_addr, episode_key,
+                    spk_id,
+                    addr_id,
+                    new_self,
+                    new_addr,
+                    episode_key,
                 )
                 continue  # transition handled — skip confidence gate
 
@@ -448,10 +509,39 @@ async def reconcile_attributions(
             # resolved_map for EVERY line attributed to it, so low-confidence lines of a dyad
             # already get the dyad's single resolved pair — there is no per-line re-guessing to
             # override here (Success #3: no mid-episode flip is structurally guaranteed).
-            # Unlocked prior-episode Address Map entry — SKIP it, fall through to safe default.
-            # Success #4 invariant preserved: a dyad with only an UNLOCKED prior-episode entry
-            # and no same-episode confident witness still safe-defaults (we deliberately do NOT
-            # consult existing_map here).
+            #
+            # CARRY-FORWARD (scy — moat-core fix for cross-episode pronoun drift):
+            # Precedence ladder: human lock > genuine evolution (transition) > carried Bible pair
+            # > current-episode safe-default (truly-new dyad only).
+            # Lock and transition branches already `continue`d above, so any pair reaching here
+            # is either unlocked-with-prior-entry or has no prior entry at all.
+            # If a prior unlocked entry exists with non-None terms, CARRY it forward into
+            # resolved_map — do NOT drop an established (anh/em) to a fresh safe-default
+            # with no narrative cause. Only truly-new dyads (no prior entry, or prior entry with
+            # None terms) fall through to get_safe_default.
+            # NOTE: carry-forward does NOT call upsert_address_pair — the resolved_map entry is
+            # sufficient for Pass-3 hints (engine.py 1785); valid_from_episode stays as-is in the
+            # DB (lower-risk minimal fix; the survivors-branch upsert already handles the update
+            # when there IS a confident witness this episode).
+            if (
+                existing is not None
+                and existing.self_term is not None
+                and existing.address_term is not None
+            ):
+                resolved_map[pair] = (existing.self_term, existing.address_term)
+                logger.debug(
+                    "reconcile: carried prior pair for %d→%d: (%s/%s) at %s",
+                    spk_id,
+                    addr_id,
+                    existing.self_term,
+                    existing.address_term,
+                    episode_key,
+                )
+                continue
+
+            # Truly-new dyad (no prior entry, or prior entry has None terms) → safe default.
+            # Success #4 invariant: we never invent an intimate pronoun from thin air on a
+            # genuinely-new or term-less relationship.
             # H3/B4: register-aware safe default (classical ladder on a xianxia/historical series).
             addr_gender = id_to_gender.get(addr_id)
             st, at = get_safe_default(addr_gender, settings, register=register)

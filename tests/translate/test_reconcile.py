@@ -399,20 +399,22 @@ async def test_reciprocal_coherence(session_factory):
     assert recip == ("em", "anh"), f"Expected reciprocal ('em', 'anh'), got {recip!r}"
 
 
-async def test_below_threshold_ignores_address_map(session_factory):
-    """Below-threshold confidence → safe pair regardless of Address Map content (Success #4).
+async def test_below_threshold_established_pair_carries_forward(session_factory):
+    """Below-threshold confidence on an ESTABLISHED pair → carry forward (moat-core contract, scy).
 
-    Threshold is "high". Attribution confidence is MEDIUM (below threshold).
+    Threshold is "high". Attribution confidence is MEDIUM (below threshold → no survivors).
     An UNLOCKED Address Map entry exists for the pair with ("anh", "em").
-    Expected: resolved_map returns safe default — NOT the Address Map pair.
-    """
-    from trezarr.translate.reconcile import (
-        reconcile_attributions,
-        get_safe_default,
-        SAFE_DEFAULT_SELF,
-    )
+    Expected: resolved_map CARRIES FORWARD ("anh", "em") — NOT the safe default.
 
-    # Threshold is "high", attribution confidence is "medium" → below threshold
+    Rationale: a below-threshold witness is "no high-confidence witness this episode" but
+    it is not "no evidence ever". The established Bible pair was earned in a prior episode
+    under the same threshold gate. Dropping it to a safe default mid-series asserts two
+    established characters are polite strangers with no narrative cause — a moat-breaking flip.
+    Carry-forward wins over safe-default for any unlocked pair with non-None prior terms.
+    """
+    from trezarr.translate.reconcile import reconcile_attributions
+
+    # Threshold is "high", attribution confidence is "medium" → below threshold → no survivors
     settings = _make_settings(threshold="high")
 
     series_id = await _create_series(session_factory, arr_series_id=204)
@@ -425,10 +427,10 @@ async def test_below_threshold_ignores_address_map(session_factory):
         addr_gender=None,
     )
 
-    # MEDIUM confidence attribution — below "high" threshold
+    # MEDIUM confidence attribution — below "high" threshold → no survivors
     attributions = [_make_attribution("SpeakerX", "AddresseeY", "medium")]
 
-    # Existing UNLOCKED address map entry with intimate pair ("anh", "em")
+    # Existing UNLOCKED address map entry with established pair ("anh", "em")
     bible = _make_bible(
         series_id=series_id,
         characters=[
@@ -459,20 +461,12 @@ async def test_below_threshold_ignores_address_map(session_factory):
 
     pair_result = resolved.get((spk_id, addr_id))
     assert pair_result is not None, "Expected resolved entry for pair"
-    self_t, addr_t = pair_result
 
-    # CRITICAL: must NOT return ("anh", "em") from the address map — threshold not met
-    assert pair_result != ("anh", "em"), (
-        "Below-threshold attribution must NOT use Address Map pair ('anh', 'em'); "
-        f"got {pair_result!r}"
+    # below-threshold on established pair must carry forward
+    assert pair_result == ("anh", "em"), (
+        "Below-threshold attribution on an ESTABLISHED pair must CARRY FORWARD ('anh', 'em'), "
+        f"not safe-default; got {pair_result!r}"
     )
-
-    # Must return safe default
-    expected = get_safe_default(None, settings)
-    assert pair_result == expected, (
-        f"Expected safe default {expected!r} for below-threshold pair, got {pair_result!r}"
-    )
-    assert self_t == SAFE_DEFAULT_SELF, f"Expected self_term '{SAFE_DEFAULT_SELF}', got '{self_t}'"
 
 
 # ---------------------------------------------------------------------------
@@ -1174,9 +1168,9 @@ async def test_reconcile_within_episode_dyad_lock_no_flip(session_factory):
 
     A dyad with one HIGH-confidence witness and several LOW lines of the same (speaker,
     addressee) resolves to a single (self_term, address_term); the low lines do NOT
-    independently safe-default it to a different pair. Also asserts Success-#4: a dyad with
-    only an UNLOCKED prior-episode entry and no same-episode high-confidence witness
-    safe-defaults.
+    independently safe-default it to a different pair. Also asserts carry-forward (scy):
+    a dyad with only an UNLOCKED prior-episode entry and no same-episode high-confidence
+    witness must carry forward the established pair (not safe-default).
     """
     from trezarr.translate.reconcile import reconcile_attributions  # noqa: PLC0415
 
@@ -1215,7 +1209,8 @@ async def test_reconcile_within_episode_dyad_lock_no_flip(session_factory):
         f"HIGH witness must win for the whole dyad (no mid-episode flip), got {resolved[(spk_id, addr_id)]!r}"
     )
 
-    # Success-#4: an UNLOCKED prior-episode entry + no same-episode HIGH witness → safe default.
+    # Carry-forward: an UNLOCKED prior-episode entry + no same-episode HIGH witness →
+    # must carry forward the established pair (moat-core contract, scy).
     series_id2 = await _create_series(session_factory, arr_series_id=262)
     spk2, addr2 = await _create_characters(
         session_factory, series_id2,
@@ -1230,8 +1225,9 @@ async def test_reconcile_within_episode_dyad_lock_no_flip(session_factory):
         flat_attributions=[_make_attribution("P2", "Q2", "low")], bible=bible2,
         session_factory=session_factory, series_id=series_id2, episode_key="S01E02", settings=settings,
     )
-    assert resolved2[(spk2, addr2)] == ("tôi", "bạn"), (
-        f"Unlocked prior entry + no HIGH witness must safe-default, got {resolved2[(spk2, addr2)]!r}"
+    assert resolved2[(spk2, addr2)] == ("anh", "em"), (
+        "Unlocked prior entry + no HIGH witness must carry forward established pair, "
+        f"got {resolved2[(spk2, addr2)]!r}"
     )
 
 
@@ -1264,4 +1260,217 @@ async def test_reconcile_resolves_honorific_prefixed_names(session_factory):
     )
     assert (zhou_id, han_id) in resolved, (
         "Honorific-prefixed attribution must resolve to the seeded character ids (no Address-Map starvation)"
+    )
+
+
+# ---------------------------------------------------------------------------
+# scy — carry-forward regression tests (moat-core cross-episode pronoun drift)
+# ---------------------------------------------------------------------------
+
+
+async def test_carry_forward_established_unlocked_pair(session_factory):
+    """Zero-witness carry: established unlocked (anh/em) + zero attributions → carry forward.
+
+    The pure zero-witness case: the dyad is in the Bible (from a prior episode) but has
+    NO attributions at all in the current episode. resolved_map must carry (anh, em).
+    """
+    from trezarr.translate.reconcile import reconcile_attributions
+
+    settings = _make_settings(threshold="medium")
+
+    series_id = await _create_series(session_factory, arr_series_id=301)
+    spk_id, addr_id = await _create_characters(
+        session_factory, series_id, spk_name="Tuan", spk_gender="male", addr_name="Hoa", addr_gender="female",
+    )
+
+    # No attributions at all this episode
+    attributions: list = []
+
+    bible = _make_bible(
+        series_id=series_id,
+        characters=[_make_character(spk_id, "Tuan", "male"), _make_character(addr_id, "Hoa", "female")],
+        address_map=[
+            _make_address_map_entry(1, series_id, spk_id, addr_id, "anh", "em", locked_fields=[]),
+        ],
+    )
+
+    resolved = await reconcile_attributions(
+        flat_attributions=attributions, bible=bible,
+        session_factory=session_factory, series_id=series_id, episode_key="S01E03", settings=settings,
+    )
+
+    assert resolved.get((spk_id, addr_id)) == ("anh", "em"), (
+        f"Zero-witness carry: established unlocked pair must carry forward, got {resolved.get((spk_id, addr_id))!r}"
+    )
+
+
+async def test_truly_new_dyad_no_prior_safe_defaults(session_factory):
+    """Truly-new dyad: no prior address_map row + LOW attribution → safe default (guard intact).
+
+    Ensures carry-forward is gated on `existing is not None` — a brand-new dyad
+    with no Bible entry must still fall to get_safe_default. The guard must not
+    carry forward when there is no prior evidence.
+    """
+    from trezarr.translate.reconcile import reconcile_attributions, get_safe_default
+
+    settings = _make_settings(threshold="medium")
+
+    series_id = await _create_series(session_factory, arr_series_id=302)
+    spk_id, addr_id = await _create_characters(
+        session_factory, series_id, spk_name="NewA", spk_gender=None, addr_name="NewB", addr_gender=None,
+    )
+
+    # LOW confidence attribution — below "medium" threshold → no survivors
+    attributions = [_make_attribution("NewA", "NewB", "low")]
+
+    # No prior address_map row — brand-new dyad
+    bible = _make_bible(
+        series_id=series_id,
+        characters=[_make_character(spk_id, "NewA", None), _make_character(addr_id, "NewB", None)],
+        address_map=[],
+    )
+
+    resolved = await reconcile_attributions(
+        flat_attributions=attributions, bible=bible,
+        session_factory=session_factory, series_id=series_id, episode_key="S01E01", settings=settings,
+    )
+
+    expected = get_safe_default(None, settings)
+    result = resolved.get((spk_id, addr_id))
+    assert result == expected, (
+        f"Truly-new dyad (no prior entry) must safe-default to {expected!r}, got {result!r}"
+    )
+
+
+async def test_relationship_event_still_evolves_carried_pair(session_factory):
+    """Genuine evolution overrides carry-forward: relationship_event + LOW witness → transition terms.
+
+    An established (anh/em) pair with a current-episode relationship_event must be
+    evolved via the transition branch. The transition branch runs before and `continue`s,
+    so the else/carry-forward branch is never reached for a pair with a current event.
+    """
+    from trezarr.translate.reconcile import reconcile_attributions
+
+    settings = _make_settings(threshold="medium")
+
+    series_id = await _create_series(session_factory, arr_series_id=303)
+    spk_id, addr_id = await _create_characters(
+        session_factory, series_id, spk_name="EvA", spk_gender="male", addr_name="EvB", addr_gender="female",
+    )
+
+    # LOW confidence attribution — below threshold → no survivors; but relationship_event fires
+    attributions = [_make_attribution("EvA", "EvB", "low")]
+
+    # Current-episode relationship_event with LLM-suggested transition terms
+    rel_event = _make_relationship_event(
+        id=1, series_id=series_id, char_a_id=spk_id, char_b_id=addr_id,
+        episode_marker="S01E05",
+        suggested_self_term="tôi",
+        suggested_address_term="cô",
+    )
+
+    bible = _make_bible(
+        series_id=series_id,
+        characters=[_make_character(spk_id, "EvA", "male"), _make_character(addr_id, "EvB", "female")],
+        address_map=[
+            _make_address_map_entry(1, series_id, spk_id, addr_id, "anh", "em", locked_fields=[]),
+        ],
+        relationship_events=[rel_event],
+    )
+
+    resolved = await reconcile_attributions(
+        flat_attributions=attributions, bible=bible,
+        session_factory=session_factory, series_id=series_id, episode_key="S01E05", settings=settings,
+    )
+
+    result = resolved.get((spk_id, addr_id))
+    # Transition (LLM-suggested) terms must win over the carried pair
+    assert result == ("tôi", "cô"), (
+        f"Relationship_event (genuine evolution) must override carry-forward; expected ('tôi','cô'), got {result!r}"
+    )
+    assert result != ("anh", "em"), (
+        "Carry-forward must NOT override a current-episode relationship_event"
+    )
+
+
+async def test_lock_still_wins_carry_forward(session_factory):
+    """Lock precedence: LOCKED (chị/em) pair + LOW attributions → locked terms, not carry-forward.
+
+    The lock branch `continue`s before the else-branch, so a locked pair never reaches
+    carry-forward logic. This confirms the precedence ladder: lock > carry-forward.
+    """
+    from trezarr.translate.reconcile import reconcile_attributions
+
+    settings = _make_settings(threshold="medium")
+
+    series_id = await _create_series(session_factory, arr_series_id=304)
+    spk_id, addr_id = await _create_characters(
+        session_factory, series_id, spk_name="LkA", spk_gender="female", addr_name="LkB", addr_gender="female",
+    )
+
+    # LOW confidence attribution — below threshold → no survivors
+    attributions = [_make_attribution("LkA", "LkB", "low")]
+
+    bible = _make_bible(
+        series_id=series_id,
+        characters=[_make_character(spk_id, "LkA", "female"), _make_character(addr_id, "LkB", "female")],
+        address_map=[
+            _make_address_map_entry(
+                1, series_id, spk_id, addr_id, "chị", "em",
+                locked_fields=["self_term", "address_term"],  # LOCKED
+            ),
+        ],
+    )
+
+    resolved = await reconcile_attributions(
+        flat_attributions=attributions, bible=bible,
+        session_factory=session_factory, series_id=series_id, episode_key="S01E04", settings=settings,
+    )
+
+    result = resolved.get((spk_id, addr_id))
+    assert result == ("chị", "em"), (
+        f"LOCK must win over carry-forward; expected ('chị','em'), got {result!r}"
+    )
+
+
+async def test_reciprocal_coherence_carry_forward(session_factory):
+    """Reciprocal coherence: both S→A (anh/em) and A→S (em/anh) carried from their own Bible rows.
+
+    Setup: S→A = (anh/em) and A→S = (em/anh) both exist in existing_map. Zero attributions.
+    Both must be carried from their own rows with no divergence or re-inference from each other.
+    """
+    from trezarr.translate.reconcile import reconcile_attributions
+
+    settings = _make_settings(threshold="medium")
+
+    series_id = await _create_series(session_factory, arr_series_id=305)
+    spk_id, addr_id = await _create_characters(
+        session_factory, series_id, spk_name="RcA", spk_gender="male", addr_name="RcB", addr_gender="female",
+    )
+
+    # Zero attributions — both directions carried from their own Bible rows
+    attributions: list = []
+
+    bible = _make_bible(
+        series_id=series_id,
+        characters=[_make_character(spk_id, "RcA", "male"), _make_character(addr_id, "RcB", "female")],
+        address_map=[
+            # S→A row
+            _make_address_map_entry(1, series_id, spk_id, addr_id, "anh", "em", locked_fields=[]),
+            # A→S row
+            _make_address_map_entry(2, series_id, addr_id, spk_id, "em", "anh", locked_fields=[]),
+        ],
+    )
+
+    resolved = await reconcile_attributions(
+        flat_attributions=attributions, bible=bible,
+        session_factory=session_factory, series_id=series_id, episode_key="S01E06", settings=settings,
+    )
+
+    # Both directions carried from their own rows — no divergence
+    assert resolved.get((spk_id, addr_id)) == ("anh", "em"), (
+        f"S→A must carry forward (anh,em); got {resolved.get((spk_id, addr_id))!r}"
+    )
+    assert resolved.get((addr_id, spk_id)) == ("em", "anh"), (
+        f"A→S must carry forward (em,anh); got {resolved.get((addr_id, spk_id))!r}"
     )
