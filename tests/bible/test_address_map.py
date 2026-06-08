@@ -11,17 +11,19 @@ Threat mitigation coverage:
   T-05-02-01  test_locked_pair_not_overwritten verifies locked_fields prevents overwrites (D-34)
   T-05-02-02  All writes use SQLAlchemy ORM parameterized queries (store.py internals)
 """
-from __future__ import annotations
 
+from __future__ import annotations
 
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 async def _create_series(session_factory, arr_series_id: int = 1) -> int:
     """Create a minimal Series row and return its id."""
     from trezarr.bible.store import get_or_create_series
+
     dto = await get_or_create_series(
         session_factory,
         arr_kind="sonarr",
@@ -35,6 +37,7 @@ async def _create_series(session_factory, arr_series_id: int = 1) -> int:
 async def _create_characters(session_factory, series_id: int) -> tuple[int, int]:
     """Create two minimal Character rows and return their ids (speaker, addressee)."""
     from trezarr.bible.store import upsert_character
+
     speaker_dto, _ = await upsert_character(
         session_factory,
         series_id=series_id,
@@ -55,6 +58,7 @@ async def _create_characters(session_factory, series_id: int) -> tuple[int, int]
 # ---------------------------------------------------------------------------
 # Tests
 # ---------------------------------------------------------------------------
+
 
 async def test_upsert_address_pair(session_factory):
     """Address Map is populated with directed character pairs after Pass 1 (BIBLE-03).
@@ -135,7 +139,7 @@ async def test_locked_pair_not_overwritten(session_factory):
         series_id=series_id,
         speaker_character_id=speaker_id,
         addressee_character_id=addressee_id,
-        self_term="chị",   # different value — should be rejected
+        self_term="chị",  # different value — should be rejected
         address_term="em",
         episode_key="S01E02",
         source="inference",
@@ -230,7 +234,12 @@ async def test_affirm_existing_pair_does_not_bump_valid_from_episode(session_fac
     - A BRAND-NEW pair first seen in "S01E05" gets valid_from_episode == "S01E05".
     """
     from sqlalchemy import select
-    from trezarr.bible.analyze import BibleAnalysis, AddressMapInference, CharacterInference, merge_bible_analysis
+    from trezarr.bible.analyze import (
+        BibleAnalysis,
+        AddressMapInference,
+        CharacterInference,
+        merge_bible_analysis,
+    )
     from trezarr.bible.models import AddressMap, BibleEvent
     from trezarr.bible.store import upsert_address_pair, upsert_character
 
@@ -298,27 +307,35 @@ async def test_affirm_existing_pair_does_not_bump_valid_from_episode(session_fac
 
     # --- Assert: marker must stay at "S01E01" (not bumped to "S01E05") ---
     async with session_factory() as session:
-        row = (await session.execute(
-            select(AddressMap).where(AddressMap.id == dto1.id)
-        )).scalar_one()
+        row = (
+            await session.execute(select(AddressMap).where(AddressMap.id == dto1.id))
+        ).scalar_one()
 
     assert row.valid_from_episode == "S01E01", (
         f"Expected valid_from_episode='S01E01' (preserved), got {row.valid_from_episode!r}. "
         "Harness LOW fix (260608-scy): D-53 marker must not advance on a bare affirm."
     )
     assert row.self_term == "anh", f"Expected self_term='anh' unchanged, got {row.self_term!r}"
-    assert row.address_term == "em", f"Expected address_term='em' unchanged, got {row.address_term!r}"
+    assert row.address_term == "em", (
+        f"Expected address_term='em' unchanged, got {row.address_term!r}"
+    )
 
     # No spurious BibleEvent for valid_from_episode
     async with session_factory() as session:
-        pair_post_events = (await session.execute(
-            select(BibleEvent).where(
-                BibleEvent.entity_type == "address_map",
-                BibleEvent.entity_id == dto1.id,
-                BibleEvent.field == "valid_from_episode",
-                BibleEvent.episode_key == "S01E05",
+        pair_post_events = (
+            (
+                await session.execute(
+                    select(BibleEvent).where(
+                        BibleEvent.entity_type == "address_map",
+                        BibleEvent.entity_id == dto1.id,
+                        BibleEvent.field == "valid_from_episode",
+                        BibleEvent.episode_key == "S01E05",
+                    )
+                )
             )
-        )).scalars().all()
+            .scalars()
+            .all()
+        )
     assert pair_post_events == [], (
         f"Expected no valid_from_episode event emitted in S01E05 (spurious audit), got {pair_post_events}"
     )
@@ -354,13 +371,15 @@ async def test_affirm_existing_pair_does_not_bump_valid_from_episode(session_fac
         episode_key="S01E05",
     )
     async with session_factory() as session:
-        new_row = (await session.execute(
-            select(AddressMap).where(
-                AddressMap.series_id == series_id,
-                AddressMap.speaker_character_id == spk.id,
-                AddressMap.addressee_character_id == new_char.id,
+        new_row = (
+            await session.execute(
+                select(AddressMap).where(
+                    AddressMap.series_id == series_id,
+                    AddressMap.speaker_character_id == spk.id,
+                    AddressMap.addressee_character_id == new_char.id,
+                )
             )
-        )).scalar_one()
+        ).scalar_one()
     assert new_row.valid_from_episode == "S01E05", (
         f"Brand-new pair (Minh→TinhNew) must have valid_from_episode='S01E05', got {new_row.valid_from_episode!r}"
     )

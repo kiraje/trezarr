@@ -778,7 +778,11 @@ async def merge_bible_analysis(
                 addressee_character_id=addr_id,
                 self_term=None if pair_already_exists else pair.self_term,
                 address_term=None if pair_already_exists else pair.address_term,
-                valid_from_episode=episode_key,
+                # FIX (260608-scy harness LOW): for an EXISTING pair, pass None so
+                # store.py's None-guard leaves the original valid_from_episode intact.
+                # A brand-new pair correctly carries the current episode_key as its
+                # first-seen marker (symmetric with the None/term guards above).
+                valid_from_episode=None if pair_already_exists else episode_key,
                 episode_key=episode_key,
                 source="inference",
             )
