@@ -113,6 +113,13 @@ class TrezarrSettings(BaseSettings):
     # cues (fail-fast gate surfaces one failing cue at a time in many check variants).
     gate_repair_max_attempts: int = 3
 
+    # ── Phase 2: Deterministic envelope preservation (pbz) ──────────────────────
+    # When True, _preserve_source_envelopes() re-wraps translated cues whose source
+    # was fully enclosed in a single ( ) or [ ] bracket pair but whose translation
+    # is missing the wrapper. Pure structural post-processing — no LLM calls.
+    # Set False to reproduce exact pre-pbz behavior.
+    enable_envelope_preservation: bool = True
+
     # ── Phase 2: Validation gate (D-17) ──────────────────────────────────────────────────
     translate_vi_diacritic_ratio: float = 0.70
 
