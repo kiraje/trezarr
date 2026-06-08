@@ -4,8 +4,11 @@ Tests cover:
   1. test_honorific_repair_success       — Check-11 defect repaired; status="done"
   2. test_structural_not_repaired        — Check-1 (structural) → quarantine, no repair call
   3. test_budget_exhausted               — repair LLM always fails; quarantine after N attempts
-  4. test_moat_regression                — resolved_map hint + glossary forwarded; SubLine fields copied
+  4. test_repair_preserves_subline_byte_identity — glossary forwarded; index/start_tc/end_tc copied
   5. test_gate_repair_disabled           — enable_gate_repair=False → quarantine on first GateError
+
+Plus the harness-fix tests (directive-echo gate closure, parse-strip recovery, APIError
+propagation, and the directed-pronoun moat test test_repair_receives_directed_pronoun_hint).
 
 Uses asyncio_mode=auto (pyproject.toml); no @pytest.mark.asyncio needed.
 
@@ -349,11 +352,16 @@ async def test_budget_exhausted(tmp_path: Path) -> None:
     )
 
 
-# ── Test 4: moat regression ───────────────────────────────────────────────────
+# ── Test 4: repaired SubLine byte-identity (Bible-unaware path) ────────────────
+# NOTE: this is NOT the directed-pronoun moat test — it runs enable_attribution=False,
+# so resolved_map is empty and no directed hint is exercised. The real moat coverage
+# (directed pair survives a repair) is test_repair_receives_directed_pronoun_hint below.
+# This test guards the codec invariant: a repaired cue keeps index/start_tc/end_tc
+# byte-identical and only .text changes.
 
 
-async def test_moat_regression(tmp_path: Path) -> None:
-    """resolved_map hint + glossary forwarded to repair; repaired SubLine fields are byte-identical.
+async def test_repair_preserves_subline_byte_identity(tmp_path: Path) -> None:
+    """Repaired SubLine fields are byte-identical; glossary is forwarded to the repair.
 
     Asserts:
       (a) The repair is successful (result.status == 'done').
