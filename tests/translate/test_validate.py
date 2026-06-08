@@ -1025,3 +1025,100 @@ def test_gate_check9_credit_cjk_boundary():
         f"Expected GateError.failure.check == 9 (9 CJK chars exceeds threshold 8 — 260608-t53 boundary), "
         f"got check={exc_info.value.failure.check}. Count=9 must quarantine even with credit keyword."
     )
+
+
+# ---------------------------------------------------------------------------
+# Check 9 codec-fidelity-guardian — CJK source-marker self-exempt class
+# (260608-t53 final round: CJK markers must be matched source-side ONLY)
+# ---------------------------------------------------------------------------
+
+
+def test_gate_check9_cjk_marker_leak_fanyi_in_translation_still_quarantines():
+    """Check 9 (260608-t53 final): CJK source-marker '翻译' leaked into translated text must NOT exempt.
+
+    Root hole: CREDIT_FANSUB_RE previously matched both src_text AND trn_text. A cue whose
+    source has NO credit keyword but whose translated output leaks the Chinese marker '翻译'
+    (because the model copied the source-language word verbatim) would self-exempt — the leaked
+    token satisfies the keyword condition and also satisfies the ≤8 CJK threshold.
+
+    After the split fix (CREDIT_SRC_RE / CREDIT_TRN_RE): CJK markers are matched source-side
+    only. trn_text is matched only against Vietnamese markers. So '翻译' in the translated
+    output is correctly treated as a CJK leak, not a credit keyword, and GateError(9) fires.
+
+    Source: plain English dialogue (no credit keyword).
+    Translated: Vietnamese text with leaked '翻译' (2 CJK chars ≤ threshold — self-exempt risk).
+    Expected: GateError(check=9). (260608-t53)
+    """
+    validate_mod = pytest.importorskip("trezarr.translate.validate")
+    GateError = validate_mod.GateError
+    validate_subdoc = validate_mod.validate_subdoc
+
+    # Source is plain dialogue — no credit keyword in Chinese or English
+    src = _src_for_bad_cue("I read something")
+    # Translated leaks the Chinese marker '翻译' (exactly 2 CJK chars — within ≤8 threshold)
+    trn = _doc_with_bad_cue("Tôi đọc 翻译 rồi")
+
+    with pytest.raises(GateError) as exc_info:
+        validate_subdoc(trn, src, _settings())
+    assert exc_info.value.failure.check == 9, (
+        f"Expected GateError.failure.check == 9 (leaked '翻译' in translated text must not self-exempt "
+        f"— 260608-t53 CJK source-marker split), got check={exc_info.value.failure.check}. "
+        f"Source 'I read something' has NO credit keyword; '翻译' in translated output is the leak "
+        f"itself — CJK markers must be matched source-side only."
+    )
+
+
+def test_gate_check9_cjk_marker_leak_jiaodui_in_translation_still_quarantines():
+    """Check 9 (260608-t53 final): CJK source-marker '校对' leaked into translated text must NOT exempt.
+
+    Analogous to the '翻译' case above — covers a second kept CJK marker ('校对', meaning
+    'proofreading/QC') to confirm the fix is not marker-specific.
+
+    Source: plain English dialogue (no credit keyword).
+    Translated: Vietnamese text with leaked '校对' (2 CJK chars ≤ threshold — self-exempt risk).
+    Expected: GateError(check=9). (260608-t53)
+    """
+    validate_mod = pytest.importorskip("trezarr.translate.validate")
+    GateError = validate_mod.GateError
+    validate_subdoc = validate_mod.validate_subdoc
+
+    # Source is plain dialogue — no credit keyword
+    src = _src_for_bad_cue("He checked the work carefully")
+    # Translated leaks '校对' (2 CJK chars — within ≤8 threshold, self-exempt risk)
+    trn = _doc_with_bad_cue("Anh ấy 校对 rất cẩn thận")
+
+    with pytest.raises(GateError) as exc_info:
+        validate_subdoc(trn, src, _settings())
+    assert exc_info.value.failure.check == 9, (
+        f"Expected GateError.failure.check == 9 (leaked '校对' in translated text must not self-exempt "
+        f"— 260608-t53 CJK source-marker split), got check={exc_info.value.failure.check}. "
+        f"Source 'He checked the work carefully' has NO credit keyword; '校对' in translated output "
+        f"is the leak itself — CJK markers must be matched source-side only."
+    )
+
+
+def test_gate_check9_cjk_source_marker_in_source_still_exempts():
+    """Check 9 (260608-t53 positive guard): Chinese credit marker in SOURCE text still exempts correctly.
+
+    After the split: CREDIT_SRC_RE matches CJK markers against src_text. A source cue whose
+    text contains '字幕组制作' (a Chinese fansub credit marker) plus a short CJK handle in
+    the translated output must still be EXEMPT — the source-side match is the correct path.
+
+    This is the positive guard confirming the split does not break the source-side path.
+
+    Source: '字幕组制作' (Chinese fansub group credit, contains source-marker '字幕组').
+    Translated: 'Phụ đề bởi: 虫二' (Vietnamese with 2-char CJK handle).
+    Expected: None (exempt). (260608-t53)
+    """
+    validate_mod = pytest.importorskip("trezarr.translate.validate")
+    validate_subdoc = validate_mod.validate_subdoc
+
+    src = _src_for_bad_cue("字幕组制作")
+    trn = _doc_with_bad_cue("Phụ đề bởi: 虫二")
+
+    result = validate_subdoc(trn, src, _settings())
+    assert result is None, (
+        f"Expected None (Chinese credit marker in source + short CJK handle must be exempt — "
+        f"260608-t53 positive guard), got {result!r}. CREDIT_SRC_RE must still match '字幕组' "
+        f"in src_text and grant the exemption for a ≤8 CJK translated handle."
+    )
