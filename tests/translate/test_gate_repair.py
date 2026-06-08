@@ -522,3 +522,317 @@ async def test_gate_repair_disabled(tmp_path: Path) -> None:
         f"_repair_failing_cues must NOT be called when enable_gate_repair=False; "
         f"got call_count={mock_repair.call_count}"
     )
+
+
+# ── Test 6 (RED): directive-echo quarantined by Check 8 (gate backstop) ──────
+
+
+async def test_directive_echo_quarantined(tmp_path: Path) -> None:
+    """Repair LLM echoes '[CORRECTION REQUIRED] ...' back as the cue text → quarantined.
+
+    FIX 1(c) BACKSTOP: the Check-8 gate must catch a directive-echo and quarantine it,
+    never ship it to the sidecar.
+
+    RED: before CORRECTION_DIRECTIVE_RE is added to validate.py Check 8, the echoed
+    directive passes all 12 checks (proven empirically by the codec guardian) and this
+    test would assert status='done' (wrong). After the fix, Check 8 fires → quarantined.
+    """
+    from unittest.mock import patch
+    from trezarr.translate.engine import translate_file
+
+    src = tmp_path / "Show.S01E01.en.srt"
+    _build_5cue_srt(src)
+
+    quarantine_dir = tmp_path / "quarantine"
+    settings = _settings(
+        translate_quarantine_dir=str(quarantine_dir),
+        translate_batch_retry_attempts=0,  # no correction-loop retries
+        enable_gate_repair=True,
+        gate_repair_max_attempts=1,
+        enable_pass1_analysis=False,
+        enable_attribution=False,
+        enable_self_review=False,
+    )
+
+    ledger = FakeLedger()
+    _pass3_done = False
+
+    async def _fake_llm_call(messages: list, response_model: Any = None, model: Any = None) -> str:
+        nonlocal _pass3_done
+        if not _pass3_done:
+            _pass3_done = True
+            # Pass-3: cue 5 has the Check-11 defect (triggers repair)
+            return _pass3_response_for_5cues(_DEFECTIVE_CUE)
+        # Repair call: the LLM echoes the directive verbatim — the exact BLOCKER scenario
+        return "[1] [CORRECTION REQUIRED] Translate fully into Vietnamese."
+
+    from trezarr.llm.client import LLMClient
+
+    client = LLMClient(settings)
+
+    with patch.object(client, "call", side_effect=_fake_llm_call):
+        result = await translate_file(src, settings, client, ledger)
+
+    assert result.status == "quarantined", (
+        f"Expected status='quarantined' when repair LLM echoes [CORRECTION REQUIRED], "
+        f"got {result.status!r}. "
+        f"FIX: add CORRECTION_DIRECTIVE_RE to validate.py Check 8."
+    )
+
+
+# ── Test 7 (RED): directive-echo stripped by parse_numbered_response ─────────
+
+
+def test_parse_strips_leading_directive_echo() -> None:
+    """parse_numbered_response strips a leading '[CORRECTION REQUIRED] ...' line (FIX 1b).
+
+    FIX 1(b) PARSE-LAYER STRIP: a leading echoed directive collapses the cue to empty →
+    BatchValidationError (correction loop retries), recovering like the HINT_SCAFFOLD strip.
+
+    RED: before the strip is added, parse_numbered_response returns the raw echo text
+    unchanged. After the fix, it strips the leading directive, leaving empty → raises.
+    """
+    from trezarr.translate.engine import parse_numbered_response, BatchValidationError
+
+    # Echoed directive as the only content — should strip to empty → raise BatchValidationError
+    response = "[1] [CORRECTION REQUIRED] Translate fully into Vietnamese."
+    try:
+        result = parse_numbered_response(response, expected_count=1)
+        # If no exception: the strip is not implemented — RED state
+        assert False, (
+            f"Expected BatchValidationError (stripped to empty) but got result={result!r}. "
+            f"FIX: add _LEAKED_DIRECTIVE_RE strip to parse_numbered_response."
+        )
+    except BatchValidationError:
+        pass  # GREEN: stripped to empty → BatchValidationError (desired)
+
+
+# ── Test 8 (RED): validate.py Check 8 trips on CORRECTION REQUIRED cue ───────
+
+
+def test_validate_check8_trips_on_correction_required() -> None:
+    """validate_subdoc Check 8 quarantines a cue containing '[CORRECTION REQUIRED]' (FIX 1c).
+
+    FIX 1(c) GATE BACKSTOP: CORRECTION_DIRECTIVE_RE in validate.py Check 8 is a fail-closed
+    backstop — an echoed directive that survives the parse-layer strip (e.g. mid-cue or
+    partial marker) must never ship.
+
+    RED: before CORRECTION_DIRECTIVE_RE is added, validate_subdoc passes a cue containing
+    '[CORRECTION REQUIRED]'. After the fix, it raises GateError(check=8).
+    """
+    from trezarr.translate.validate import validate_subdoc, GateError
+
+    src_line = _make_line(1, text="Hello world")
+    trn_line = _make_line(1, text="[CORRECTION REQUIRED] Translate fully into Vietnamese.")
+    src_doc = _make_doc([src_line])
+    trn_doc = _make_doc([trn_line])
+    settings = _settings()
+
+    try:
+        validate_subdoc(trn_doc, src_doc, settings)
+        assert False, (
+            "Expected GateError(check=8) for a cue containing [CORRECTION REQUIRED], "
+            "but validate_subdoc passed. "
+            "FIX: add CORRECTION_DIRECTIVE_RE to validate.py Check 8."
+        )
+    except GateError as exc:
+        assert exc.failure.check == 8, (
+            f"Expected check=8 (scaffold-leak backstop), got check={exc.failure.check}"
+        )
+
+
+# ── Test 9 (RED): APIError in repair propagates, does not quarantine ──────────
+
+
+async def test_repair_api_error_propagates(tmp_path: Path) -> None:
+    """openai.APIError during repair propagates out of translate_file (FIX 2).
+
+    FIX 2: narrow the except clause to BatchValidationError only; let APIError propagate
+    so the file is NOT permanently quarantined on a transient endpoint error.
+
+    RED: before the fix, the broad except Exception swallows APIError → quarantine.
+    After the fix, translate_file raises the APIError.
+    """
+    import openai
+    from unittest.mock import patch
+    from trezarr.translate.engine import translate_file
+
+    src = tmp_path / "Show.S01E01.en.srt"
+    _build_5cue_srt(src)
+
+    quarantine_dir = tmp_path / "quarantine"
+    settings = _settings(
+        translate_quarantine_dir=str(quarantine_dir),
+        translate_batch_retry_attempts=0,
+        enable_gate_repair=True,
+        gate_repair_max_attempts=1,
+        enable_pass1_analysis=False,
+        enable_attribution=False,
+        enable_self_review=False,
+    )
+
+    ledger = FakeLedger()
+    _pass3_done = False
+
+    # Build a minimal openai.APIError (requires request= and body=)
+    _api_error = openai.APIError(
+        message="503 Service Unavailable (simulated)",
+        request=None,  # type: ignore[arg-type]
+        body=None,
+    )
+
+    async def _fake_llm_call(messages: list, response_model: Any = None, model: Any = None) -> str:
+        nonlocal _pass3_done
+        if not _pass3_done:
+            _pass3_done = True
+            # Pass-3: cue 5 has the defect (triggers repair)
+            return _pass3_response_for_5cues(_DEFECTIVE_CUE)
+        # Repair call: simulate a transient transport error
+        raise _api_error
+
+    from trezarr.llm.client import LLMClient
+
+    client = LLMClient(settings)
+
+    raised = False
+    try:
+        with patch.object(client, "call", side_effect=_fake_llm_call):
+            await translate_file(src, settings, client, ledger)
+    except openai.APIError:
+        raised = True
+
+    assert raised, (
+        "Expected translate_file to RAISE openai.APIError when the repair LLM call fails "
+        "with a transport error (D-47 / Pitfall B). "
+        "Got no exception — the error was swallowed and the file was probably quarantined. "
+        "FIX: narrow `except Exception` to `except BatchValidationError` in _repair_failing_cues."
+    )
+    # Also assert that no quarantine record was written (the file should be left in_progress)
+    entry = ledger._entries.get(str(src))
+    assert entry is None or entry.status != "quarantined", (
+        f"A transport error during repair must NOT create a quarantine record. "
+        f"Got entry.status={getattr(entry, 'status', None)!r}. "
+        f"FIX: let APIError propagate instead of returning None."
+    )
+
+
+# ── Test 10 (RED-strengthen): repair gets directed pronoun hint ───────────────
+
+
+async def test_repair_receives_directed_pronoun_hint(tmp_path: Path) -> None:
+    """Repair call receives the directed pronoun hint for the failing cue (FIX 3).
+
+    FIX 3: thread flat_attributions + name_to_char_id into _repair_failing_cues so the
+    repaired cue's _translate_batch call gets a pronoun_hints entry with the directed pair
+    for that cue's relationship — NOT None/empty.
+
+    Calls _repair_failing_cues directly with a seeded resolved_map, flat_attributions, and
+    name_to_char_id, and spies on _translate_batch to assert it received a non-empty
+    pronoun_hints dict containing the directed pair for the failing cue (local index 1).
+
+    RED: before FIX 3, _repair_failing_cues ignores flat_attributions/name_to_char_id
+    (they are not in the current signature) and always passes pronoun_hints=None.
+    After the fix, the directed pair flows through for cues with known attribution.
+    """
+    from unittest.mock import patch, MagicMock
+    from trezarr.translate.engine import _repair_failing_cues
+    from trezarr.translate.attribute import LineAttribution
+    from trezarr.llm.client import LLMClient
+
+    # Seed resolved_map: character IDs 1 (speaker) → 2 (addressee) → ("huynh", "muội")
+    _SPEAKER_ID = 1
+    _ADDRESSEE_ID = 2
+    _DIRECTED_PAIR = ("huynh", "muội")
+    _resolved_map = {(_SPEAKER_ID, _ADDRESSEE_ID): _DIRECTED_PAIR}
+
+    # Fake Bible with two characters
+    _char_speaker = MagicMock()
+    _char_speaker.id = _SPEAKER_ID
+    _char_speaker.original_latin_name = "Han"
+
+    _char_addressee = MagicMock()
+    _char_addressee.id = _ADDRESSEE_ID
+    _char_addressee.original_latin_name = "Mei"
+
+    _bible = MagicMock()
+    _bible.characters = [_char_speaker, _char_addressee]
+    _bible.terms = []
+    _bible.register_value = None
+
+    # Build source_doc and translated_doc matching the 5-cue fixture
+    _src_lines = [_make_line(i + 1, text=_ALL_SRC_CUES[i]) for i in range(5)]
+    _trn_lines = [
+        _make_line(i + 1, text=_GOOD_VI_CUES[i] if i < 4 else _DEFECTIVE_CUE) for i in range(5)
+    ]
+    _src_doc = _make_doc(_src_lines)
+    _trn_doc = _make_doc(_trn_lines)
+
+    # flat_attributions: 5 cues — only cue 5 (doc-global index 4) has attribution
+    _flat_attrs = [
+        LineAttribution(line_index=1, speaker=None, addressee=None),
+        LineAttribution(line_index=2, speaker=None, addressee=None),
+        LineAttribution(line_index=3, speaker=None, addressee=None),
+        LineAttribution(line_index=4, speaker=None, addressee=None),
+        LineAttribution(line_index=5, speaker="Han", addressee="Mei"),  # failing cue
+    ]
+    _name_to_char_id = {"han": _SPEAKER_ID, "mei": _ADDRESSEE_ID}
+
+    client_settings = _settings(
+        enable_gate_repair=True,
+        gate_repair_max_attempts=3,
+        enable_pass1_analysis=False,
+        enable_attribution=False,
+        enable_self_review=False,
+    )
+    client = LLMClient(client_settings)
+
+    # Spy on _translate_batch to capture the pronoun_hints argument
+    captured_repair_hints: list = []
+
+    async def _spy_translate_batch(
+        batch, llm_client, settings, pronoun_hints=None, model=None, glossary=None, register=None
+    ):
+        captured_repair_hints.append(pronoun_hints)
+        return [_REPAIRED_CUE]
+
+    with patch("trezarr.translate.engine._translate_batch", side_effect=_spy_translate_batch):
+        try:
+            await _repair_failing_cues(
+                failing_indices=[4],  # 0-based doc index of the defective cue
+                source_doc=_src_doc,
+                translated_doc=_trn_doc,
+                check_number=11,
+                llm_client=client,
+                settings=client_settings,
+                glossary_lines=None,
+                register_value=None,
+                resolved_map=_resolved_map,
+                bible=_bible,
+                model=None,
+                # FIX 3 new params — absent in current signature, triggers TypeError (RED):
+                flat_attributions=_flat_attrs,
+                name_to_char_id=_name_to_char_id,
+            )
+        except TypeError as exc:
+            # Current code does not have flat_attributions/name_to_char_id params → RED
+            assert False, (
+                f"_repair_failing_cues does not accept flat_attributions/name_to_char_id yet. "
+                f"TypeError: {exc}. "
+                f"FIX: add these params and thread them into repair_pronoun_hints."
+            )
+
+    assert len(captured_repair_hints) == 1, (
+        f"Expected _translate_batch called once for the repair, got {len(captured_repair_hints)} calls"
+    )
+    repair_hints = captured_repair_hints[0]
+    assert repair_hints is not None and len(repair_hints) > 0, (
+        f"Expected repair _translate_batch to receive a non-empty pronoun_hints dict "
+        f"containing the directed pair {_DIRECTED_PAIR!r} for the failing cue (local index 1). "
+        f"Got pronoun_hints={repair_hints!r}. "
+        f"FIX: build repair_pronoun_hints from flat_attributions[failing_index] → resolved_map."
+    )
+    # The repair batch has 1 cue (the failing one) → local index 1 → should carry the directed pair
+    assert repair_hints.get(1) == _DIRECTED_PAIR, (
+        f"Expected repair pronoun_hints[1] == {_DIRECTED_PAIR!r} (the directed pair for Han→Mei), "
+        f"got {repair_hints.get(1)!r}."
+    )
