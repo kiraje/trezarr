@@ -192,6 +192,50 @@ LATIN_DIACRITIC_RE = re.compile(r"[À-ɏḀ-ỿ̀-ͯ]")
 # catastrophic backtracking (ASVS L1 V5).
 GLOSS_PAREN_RE = re.compile(r"\(([^()]*[A-Za-z][^()]*)\)")
 
+# ── Credit / fansub attribution detector (Check 9 narrow exemption) ──────────
+# A fansub credit/attribution cue whose only untranslatable content is a short
+# CJK proper-name handle (e.g. "虫二") must not quarantine the entire file.
+# The exemption fires ONLY when BOTH conditions hold:
+#   1. A credit/attribution keyword appears in the source OR translated cue text.
+#   2. The total CJK/Hangul/Kana codepoint count in the TRANSLATED text is ≤ the
+#      threshold — a fully-untranslated dialogue body has many CJK chars and exceeds
+#      this threshold, so it still quarantines.
+# Conservative-by-design: a credit line left fully untranslated (many CJK chars) still
+# quarantines — that signals a real translation failure, not a short proper-name handle.
+#
+# Keyword set covers Vietnamese credit prefixes, English attribution phrases, and
+# Chinese source markers commonly found in fansub credit cues.
+# Anchorless alternation of literal strings — no backtracking path (ASVS L1 V5).
+CREDIT_FANSUB_RE = re.compile(
+    r"translated by|translation by|subtitles|subtitle|subbed by|sub by|synced by"
+    r"|encoded by|ripped by|timing"
+    r"|dịch bởi|phụ đề|biên dịch|người dịch|hiệu đính|vietsub|dịch thuật"
+    r"|字幕組|字幕组|字幕|翻譯|翻译|校對|校对|時間軸|时间轴|壓制|压制|后期",
+    re.IGNORECASE,
+)
+
+# Maximum number of CJK/Hangul/Kana codepoints allowed in the translated text for the
+# credit exemption to fire.  A 2-char fansub handle like "虫二" passes (count=2 ≤ 8).
+# A fully-untranslated body like "字幕翻译制作团队制作感谢" (12 chars) exceeds this
+# and still quarantines, which is the desired conservative-by-design behaviour.
+CJK_CREDIT_EXEMPT_MAX_CJK: int = 8
+
+
+def is_credit_fansub_cue(src_text: str, trn_text: str) -> bool:
+    """Return True iff this cue is a narrowly-detected fansub credit/attribution line.
+
+    Both conditions must hold:
+    1. CREDIT_FANSUB_RE matches src_text OR trn_text (keyword signal present).
+    2. The total CJK/Hangul/Kana codepoint count in trn_text is ≤ CJK_CREDIT_EXEMPT_MAX_CJK
+       (short proper-name handle, not a fully-untranslated body).
+
+    Uses CJK_LEAK_RE.findall to reuse the existing character-class definition without
+    duplicating the Unicode range. Anchorless match; no backtracking path (ASVS L1 V5).
+    """
+    if not CREDIT_FANSUB_RE.search(src_text) and not CREDIT_FANSUB_RE.search(trn_text):
+        return False
+    return len(CJK_LEAK_RE.findall(trn_text)) <= CJK_CREDIT_EXEMPT_MAX_CJK
+
 
 @dataclass
 class GateFailure:
@@ -480,6 +524,8 @@ def validate_subdoc(
 
         # Check 9 (B2/M3): CJK / Hangul / Kana codepoint = untranslated source leak.
         if CJK_LEAK_RE.search(text):
+            if is_credit_fansub_cue(src_sl.text, text):
+                continue
             raise GateError(
                 GateFailure(
                     9,
