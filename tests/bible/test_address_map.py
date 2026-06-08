@@ -209,6 +209,163 @@ async def test_pass1_create_or_affirm_existing_pair(session_factory):
     )
 
 
+async def test_affirm_existing_pair_does_not_bump_valid_from_episode(session_factory):
+    """Harness LOW fix (260608-scy): merge_bible_analysis must NOT bump valid_from_episode
+    when it re-encounters an EXISTING pair in a later episode (bare Pass-1 inference,
+    no relationship_event).
+
+    RED/GREEN contract: before the fix, analyze.py's Step 4 passes
+    `valid_from_episode=episode_key` unconditionally, so the DB marker advances from
+    "S01E01" to "S01E05" every time the pair re-appears — this test's assertion that
+    the marker stays "S01E01" FAILS (RED). After the fix
+    (`valid_from_episode=None if pair_already_exists else episode_key`), analyze.py
+    passes None for existing pairs, store.py's None-guard skips the write, and
+    "S01E01" is preserved (GREEN).
+
+    Asserts:
+    - An established pair (valid_from_episode="S01E01") seen again via merge_bible_analysis
+      in "S01E05" with no relationship_event keeps valid_from_episode == "S01E01".
+    - No BibleEvent is emitted for valid_from_episode on the affirm (no spurious audit trail).
+    - Terms remain unchanged (anh/em preserved).
+    - A BRAND-NEW pair first seen in "S01E05" gets valid_from_episode == "S01E05".
+    """
+    from sqlalchemy import select
+    from trezarr.bible.analyze import BibleAnalysis, AddressMapInference, CharacterInference, merge_bible_analysis
+    from trezarr.bible.models import AddressMap, BibleEvent
+    from trezarr.bible.store import upsert_address_pair, upsert_character
+
+    series_id = await _create_series(session_factory, arr_series_id=4)
+
+    # Create characters Minh and Lan (the existing pair established in S01E01)
+    spk, _ = await upsert_character(
+        session_factory,
+        series_id=series_id,
+        original_latin_name="Minh",
+        gender="male",
+        episode_key="S01E01",
+        source="inference",
+    )
+    addr, _ = await upsert_character(
+        session_factory,
+        series_id=series_id,
+        original_latin_name="Lan",
+        gender="female",
+        episode_key="S01E01",
+        source="inference",
+    )
+
+    # --- Establish Minh→Lan with valid_from_episode="S01E01" ---
+    dto1, _ = await upsert_address_pair(
+        session_factory,
+        series_id=series_id,
+        speaker_character_id=spk.id,
+        addressee_character_id=addr.id,
+        self_term="anh",
+        address_term="em",
+        valid_from_episode="S01E01",
+        episode_key="S01E01",
+        source="inference",
+    )
+    assert dto1.valid_from_episode == "S01E01"
+
+    # (no pre-event counting needed — we check post-merge for spurious events below)
+
+    # --- Call merge_bible_analysis in S01E05 with the SAME pair (Minh→Lan, anh/em) ---
+    # This simulates what happens every episode when Pass-1 re-infers the pair.
+    # Before the fix: analyze.py passes valid_from_episode="S01E05" → marker bumped.
+    # After the fix: analyze.py passes valid_from_episode=None → marker preserved.
+    analysis = BibleAnalysis(
+        characters=[
+            CharacterInference(original_latin_name="Minh", gender="male"),
+            CharacterInference(original_latin_name="Lan", gender="female"),
+        ],
+        address_map=[
+            AddressMapInference(
+                speaker_name="Minh",
+                addressee_name="Lan",
+                self_term="anh",
+                address_term="em",
+                confidence=0.9,
+            )
+        ],
+    )
+    await merge_bible_analysis(
+        session_factory,
+        series_id=series_id,
+        analysis=analysis,
+        episode_key="S01E05",
+    )
+
+    # --- Assert: marker must stay at "S01E01" (not bumped to "S01E05") ---
+    async with session_factory() as session:
+        row = (await session.execute(
+            select(AddressMap).where(AddressMap.id == dto1.id)
+        )).scalar_one()
+
+    assert row.valid_from_episode == "S01E01", (
+        f"Expected valid_from_episode='S01E01' (preserved), got {row.valid_from_episode!r}. "
+        "Harness LOW fix (260608-scy): D-53 marker must not advance on a bare affirm."
+    )
+    assert row.self_term == "anh", f"Expected self_term='anh' unchanged, got {row.self_term!r}"
+    assert row.address_term == "em", f"Expected address_term='em' unchanged, got {row.address_term!r}"
+
+    # No spurious BibleEvent for valid_from_episode
+    async with session_factory() as session:
+        pair_post_events = (await session.execute(
+            select(BibleEvent).where(
+                BibleEvent.entity_type == "address_map",
+                BibleEvent.entity_id == dto1.id,
+                BibleEvent.field == "valid_from_episode",
+                BibleEvent.episode_key == "S01E05",
+            )
+        )).scalars().all()
+    assert pair_post_events == [], (
+        f"Expected no valid_from_episode event emitted in S01E05 (spurious audit), got {pair_post_events}"
+    )
+
+    # --- Brand-new pair: Minh→TinhNew, first seen in S01E05 ---
+    new_char, _ = await upsert_character(
+        session_factory,
+        series_id=series_id,
+        original_latin_name="TinhNew",
+        gender="female",
+        episode_key="S01E05",
+        source="inference",
+    )
+    analysis2 = BibleAnalysis(
+        characters=[
+            CharacterInference(original_latin_name="Minh", gender="male"),
+            CharacterInference(original_latin_name="TinhNew", gender="female"),
+        ],
+        address_map=[
+            AddressMapInference(
+                speaker_name="Minh",
+                addressee_name="TinhNew",
+                self_term="tôi",
+                address_term="bạn",
+                confidence=0.8,
+            )
+        ],
+    )
+    await merge_bible_analysis(
+        session_factory,
+        series_id=series_id,
+        analysis=analysis2,
+        episode_key="S01E05",
+    )
+    async with session_factory() as session:
+        new_row = (await session.execute(
+            select(AddressMap).where(
+                AddressMap.series_id == series_id,
+                AddressMap.speaker_character_id == spk.id,
+                AddressMap.addressee_character_id == new_char.id,
+            )
+        )).scalar_one()
+    assert new_row.valid_from_episode == "S01E05", (
+        f"Brand-new pair (Minh→TinhNew) must have valid_from_episode='S01E05', got {new_row.valid_from_episode!r}"
+    )
+
+
 async def test_pass1_creates_brand_new_pair(session_factory):
     """Pass-1 brand-new pair: no prior row → upsert creates it with the supplied terms (scy).
 
