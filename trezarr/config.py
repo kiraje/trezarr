@@ -101,6 +101,17 @@ class TrezarrSettings(BaseSettings):
     # ── Phase 2: Retry + quarantine (D-18) ───────────────────────────────────────────────
     translate_batch_retry_attempts: int = 2
 
+    # ── Phase 2: Gate-level cue repair (IMP-02b) ──────────────────────────────────
+    # When True, translate_file() attempts to re-translate only the failing cue(s)
+    # on a repairable GateError check ({3, 9, 10, 11, 12}) before quarantining.
+    # Set False to reproduce exact pre-IMP-02b quarantine-on-first-GateError behavior.
+    enable_gate_repair: bool = True
+    # Maximum repair attempts per file. Each attempt is one small LLM call translating
+    # only the failing source cues. Budget is decremented on each attempt; if exhausted
+    # the file quarantines via the standard path. Default 3 covers ~3 distinct straggler
+    # cues (fail-fast gate surfaces one failing cue at a time in many check variants).
+    gate_repair_max_attempts: int = 3
+
     # ── Phase 2: Validation gate (D-17) ──────────────────────────────────────────────────
     translate_vi_diacritic_ratio: float = 0.70
 
