@@ -205,12 +205,25 @@ GLOSS_PAREN_RE = re.compile(r"\(([^()]*[A-Za-z][^()]*)\)")
 #
 # Keyword set covers Vietnamese credit prefixes, English attribution phrases, and
 # Chinese source markers commonly found in fansub credit cues.
-# Anchorless alternation of literal strings — no backtracking path (ASVS L1 V5).
+#
+# English signals REQUIRE the attribution form "... by" with word boundaries so bare
+# dialogue words (e.g. "subtitle", "subtitles", "timing") cannot trigger a false exemption.
+# Bare "subtitle"/"subtitles" and "timing" are intentionally excluded — they collide with
+# ordinary dialogue and produced false exemptions on cues like "I read the subtitle aloud"
+# or "The timing is wrong" (codec-guardian HIGH finding, 260608-t53).
+# Word boundaries (\b) add no backtracking (ASVS L1 V5) — they are zero-width assertions.
+#
+# Chinese markers: bare 字幕 (meaning "subtitle") is intentionally excluded because it also
+# appears as the CJK leak itself in dialogue cues like "Tôi đọc 字幕 to lên", which would
+# cause a false exemption via the trn_text check (codec-guardian HIGH finding, 260608-t53).
+# Fansub-group compound forms 字幕組/字幕组 are kept (always credit-specific context).
+# Source cues containing 字幕翻译 are still matched via 翻譯/翻译.
+#
+# Vietnamese prefixes are kept as-is (language-specific; no dialogue collision risk).
 CREDIT_FANSUB_RE = re.compile(
-    r"translated by|translation by|subtitles|subtitle|subbed by|sub by|synced by"
-    r"|encoded by|ripped by|timing"
+    r"\b(?:translated|translation|subtitled|subtitles|subbed|sub|synced|encoded|ripped) by\b"
     r"|dịch bởi|phụ đề|biên dịch|người dịch|hiệu đính|vietsub|dịch thuật"
-    r"|字幕組|字幕组|字幕|翻譯|翻译|校對|校对|時間軸|时间轴|壓制|压制|后期",
+    r"|字幕組|字幕组|翻譯|翻译|校對|校对|時間軸|时间轴|壓制|压制|后期",
     re.IGNORECASE,
 )
 
