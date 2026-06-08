@@ -11,6 +11,8 @@ Tests cover:
   8. test_gate_compatibility                 — re-wrapped VI title card passes real validate_subdoc
   9. test_flag_off_noop                      — enable_envelope_preservation=False → no-op
   10. test_two_parens_not_full_wrapper        — "(a) and (b)" → depth hits 0 at index 2 → skipped
+  11. test_envelope_survives_gate_repair_loop — harness finding: repaired cue gets envelope
+      re-applied after _repair_failing_cues splices a new translated_doc (Step-9 loop gap)
 
 Uses asyncio_mode=auto (pyproject.toml); no @pytest.mark.asyncio needed.
 
@@ -23,6 +25,7 @@ Detection algorithm (3 steps):
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 
@@ -332,3 +335,205 @@ def test_two_parens_not_full_wrapper() -> None:
     assert not result.lines[0].text.startswith("(("), (
         "Must NOT prepend extra opener to two-group source"
     )
+
+
+# ── Test 11: envelope survives the Step-9 gate-repair loop (harness finding) ────
+
+
+async def test_envelope_survives_gate_repair_loop(tmp_path: Path) -> None:
+    """Harness finding: a repaired cue must ship WITH its source envelope.
+
+    Scenario:
+      - 5-cue SRT where cue 1 source is "(Tập 142)" (paren-wrapped title card).
+      - Pass-3 translation for cue 1 returns "Tập 142" (no parens) — missing envelope.
+      - Step 8.6 re-applies _preserve_source_envelopes → cue 1 becomes "(Tập 142)".
+      - Cue 5 is still defective (HONORIFIC_CAPNAME_RE), so the gate fires, and
+        _repair_failing_cues is called.  The repair returns a clean diacritic-bearing
+        text for cue 5 — still WITHOUT parens on cue 1 (repair only touches cue 5).
+      - The splice rebuilds translated_doc with the repaired lines.
+      - WITHOUT the harness fix, _preserve_source_envelopes is NOT re-applied after the
+        splice → the next validate_subdoc iteration sees cue 1 without parens, and if
+        the gate later passes, the shipped cue 1 is unwrapped.
+      - WITH the fix, _preserve_source_envelopes is re-applied immediately after the
+        splice → the idempotency guard no-ops on all cues that already have envelopes,
+        and cue 1 (which the repair left unwrapped) is re-wrapped.
+
+    The test drives translate_file() with:
+      - _repair_failing_cues patched to return a doc where cue 1 has LOST its envelope
+        (simulating the splice gap) and cue 5 is now correctly repaired.
+      - validate_subdoc patched to: first call raises GateError on cue 5 (triggering
+        repair), second call passes (repair succeeded) — so the shipped doc is whatever
+        comes out of the splice + optional re-application.
+
+    Asserts: result.status == "done" AND the shipped .vi.srt cue 1 text starts with "("
+    (envelope was re-applied after repair).
+
+    Note: We drive translate_file() end-to-end because the fix is inside the repair loop
+    in translate_file(), not in _preserve_source_envelopes itself. Patching the two
+    internal collaborators (_repair_failing_cues and the LLM pass) is the lightest way to
+    exercise the exact loop body without requiring a live LLM.
+    """
+    from unittest.mock import patch
+    from trezarr.translate.engine import translate_file
+    from trezarr.subtitles.model import SubLine
+
+    # ── Build a 5-cue source SRT ──────────────────────────────────────────────
+    # Cue 1: paren-wrapped title card.  Cues 2-5: plain English.
+    src = tmp_path / "Show.S01E01.en.srt"
+    src_cues = [
+        "(Episode Title)",
+        "Hello.",
+        "World.",
+        "Hello.",
+        "Goodbye.",
+    ]
+    blocks = []
+    for i, text in enumerate(src_cues, 1):
+        start_ms = (i - 1) * 3000 + 1000
+        end_ms = start_ms + 2000
+        h, rem = divmod(start_ms, 3_600_000)
+        m, rem = divmod(rem, 60_000)
+        s, ms = divmod(rem, 1000)
+        hs, rem2 = divmod(end_ms, 3_600_000)
+        me, rem2 = divmod(rem2, 60_000)
+        se, mse = divmod(rem2, 1000)
+        blocks.append(
+            f"{i}\n{h:02d}:{m:02d}:{s:02d},{ms:03d} --> "
+            f"{hs:02d}:{me:02d}:{se:02d},{mse:03d}\n{text}"
+        )
+    src.write_text("\n\n".join(blocks) + "\n", encoding="utf-8")
+
+    quarantine_dir = tmp_path / "quarantine"
+    settings = _settings(
+        translate_quarantine_dir=str(quarantine_dir),
+        translate_batch_retry_attempts=1,
+        enable_gate_repair=True,
+        gate_repair_max_attempts=3,
+        enable_pass1_analysis=False,
+        enable_attribution=False,
+        enable_self_review=False,
+        enable_envelope_preservation=True,
+    )
+
+    # ── Fake LLM: Pass-3 returns cue 1 WITHOUT parens (LLM drops it) ────────
+    # (Pass-3 is the only LLM call when pass1/attribution/self_review are off)
+    # Cue 1 also carries the HONORIFIC_CAPNAME_RE defect so the gate fires on it,
+    # making it land in failing_indices — the exact scenario the harness found.
+    _good_vi = ["Được rồi.", "Thế giới.", "Được rồi.", "Thế giới."]
+    # Cue 1: missing parens AND has honorific defect → Step 8.6 re-wraps it,
+    # but then the gate fires on the honorific and _repair_failing_cues re-translates
+    # cue 1 — returning a CLEAN diacritic-bearing text still WITHOUT parens.
+    _defective_title = "Miss Episode Title"  # HONORIFIC_CAPNAME_RE: "Miss" + CapName
+
+    async def _fake_llm_call(messages: list, response_model=None, model=None) -> str:
+        return (
+            f"[1] {_defective_title}\n"
+            f"[2] {_good_vi[0]}\n"
+            f"[3] {_good_vi[1]}\n"
+            f"[4] {_good_vi[2]}\n"
+            f"[5] {_good_vi[3]}"
+        )
+
+    from trezarr.llm.client import LLMClient
+
+    client = LLMClient(settings)
+
+    # ── Fake _repair_failing_cues: re-translates cue 1 WITHOUT parens ────────
+    # This is the crux of the bug: the repair returns a clean Vietnamese text
+    # for cue 1 (the honorific defect fixed) but the LLM again drops the parens.
+    # The splice builds a new translated_doc — WITHOUT calling _preserve_source_envelopes.
+    # Without the fix, the shipped cue 1 is "Tiêu đề tập" (no envelope).
+    _repair_called = False
+
+    async def _fake_repair(
+        failing_indices,
+        source_doc,
+        translated_doc,
+        check_number,
+        llm_client,
+        settings,
+        glossary_lines,
+        register_value,
+        resolved_map,
+        bible,
+        model,
+        flat_attributions=None,
+        name_to_char_id=None,
+    ):
+        nonlocal _repair_called
+        _repair_called = True
+        repaired = []
+        for i, line in enumerate(translated_doc.lines):
+            if i in failing_indices:
+                # Repair returns a clean diacritic-bearing translation — WITHOUT parens.
+                # This is the exact gap: the LLM re-translates and drops the envelope again.
+                repaired.append(
+                    SubLine(
+                        index=line.index,
+                        start_tc=line.start_tc,
+                        end_tc=line.end_tc,
+                        text="Tiêu đề tập",  # valid VI (ê/ề = U+1EBF), no honorific, NO parens
+                        raw=None,
+                    )
+                )
+            else:
+                repaired.append(
+                    SubLine(
+                        index=line.index,
+                        start_tc=line.start_tc,
+                        end_tc=line.end_tc,
+                        text=line.text,
+                        raw=line.raw,
+                    )
+                )
+        return repaired
+
+    with patch("trezarr.translate.engine._repair_failing_cues", side_effect=_fake_repair):
+        with patch.object(client, "call", side_effect=_fake_llm_call):
+            result = await translate_file(src, settings, client, FakeLedger())
+
+    assert result.status == "done", (
+        f"Expected status='done' after repair, got {result.status!r}\n"
+        f"(repair_called={_repair_called})"
+    )
+
+    # Read the shipped .vi.srt and check cue 1 has the envelope restored.
+    vi_path = src.parent / "Show.S01E01.vi.srt"
+    assert vi_path.exists(), f"Expected .vi.srt to be written at {vi_path}"
+    content = vi_path.read_text(encoding="utf-8")
+    # The first subtitle block's text should start with "(" — envelope re-applied.
+    # SRT block: index line, timecode line, then text line(s).
+    # Find the text line of cue 1 (third non-empty line in first block).
+    first_block = content.split("\n\n")[0]
+    text_lines = first_block.strip().split("\n")[2:]  # skip index + timecode
+    cue1_text = "\n".join(text_lines)
+    assert cue1_text.startswith("("), (
+        f"Cue 1 must be paren-wrapped after gate-repair re-application. "
+        f"Got: {cue1_text!r}\n"
+        f"(Without the harness fix, the repaired splice drops the envelope.)"
+    )
+    assert cue1_text.endswith(")"), (
+        f"Cue 1 must end with ')' after gate-repair re-application. Got: {cue1_text!r}"
+    )
+
+
+class FakeLedger:
+    """In-memory ledger stub for envelope-preservation tests."""
+
+    def __init__(self) -> None:
+        self._entries: dict = {}
+
+    @staticmethod
+    def content_hash(data: bytes) -> str:
+        import hashlib
+
+        return hashlib.sha256(data).hexdigest()
+
+    async def check(self, source_path: str):
+        return self._entries.get(source_path)
+
+    async def check_by_output_path(self, output_path: str):
+        return None
+
+    async def record(self, entry) -> None:
+        self._entries[entry.source_path] = entry

@@ -2146,6 +2146,11 @@ async def translate_file(
                 trailer=translated_doc.trailer,
                 envelope=translated_doc.envelope,
             )
+            # Harness finding (pbz): re-apply envelope preservation after each repair splice.
+            # _repair_failing_cues re-translates via the LLM, which can drop the source
+            # bracket envelope again. Step C idempotency no-ops already-wrapped cues;
+            # enable_envelope_preservation=False short-circuits the whole call.
+            translated_doc = _preserve_source_envelopes(translated_doc, source_doc, settings)
 
     # Step 10: Atomic UTF-8 write (D-19)
     output_path = write_vi_sidecar(translated_doc, path)
