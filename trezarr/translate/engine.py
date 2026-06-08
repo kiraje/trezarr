@@ -1188,6 +1188,118 @@ def _splice_review_corrections(
     return result
 
 
+# ── pbz: Deterministic envelope preservation ──────────────────────────────────
+
+_OPENER_MAP: dict[str, str] = {"(": ")", "[": "]"}
+
+
+def _preserve_source_envelopes(
+    translated_doc: "SubDoc",
+    source_doc: "SubDoc",
+    settings: "TrezarrSettings",
+) -> "SubDoc":
+    """Re-wrap translated cues whose source was fully enclosed in a single outer bracket pair.
+
+    Pure sync function — no LLM, no DB, no async. Returns a new SubDoc carrying all
+    metadata (encoding/line_ending/separators/leading/trailer/envelope) forward from
+    translated_doc (D-92 pattern). Never mutates the input SubLines (Pitfall 8).
+
+    Full-enclosure detection — THREE steps that ALL must pass:
+
+    Step A: stripped source text starts with an opener ('(' or '[') and ends with
+            its matching closer. If not, the cue is not a bracket envelope → skip.
+
+    Step B: bracket-depth scan over stripped source, counting ONLY the Step-A bracket
+            type. Depth increments on opener, decrements on closer.
+            - If depth reaches 0 BEFORE the final character: the two groups share the
+              same bracket type but are NOT one spanning envelope (e.g. "(a) and (b)")
+              → NOT enclosed → skip.
+            - After the full scan, depth == 0 with no premature close → fully enclosed.
+
+    Step C: idempotency guard. If the stripped translated text already starts with the
+            opener AND ends with the closer → the wrapper is already present → no-op.
+
+    Re-wrap: prepend opener and append closer to the ORIGINAL (un-stripped) translated
+    text, preserving any internal leading/trailing whitespace the LLM may have left.
+    Construct a new SubLine with index/start_tc/end_tc copied verbatim from the source
+    line (D-ENV-06: byte identity) and raw=None (well-formed translated cue).
+
+    enable_envelope_preservation=False bypasses this function (complete no-op, D-ENV-08).
+    """
+    if not settings.enable_envelope_preservation:
+        return translated_doc
+
+    new_lines: list[SubLine] = []
+    for src_line, trn_line in zip(source_doc.lines, translated_doc.lines):
+        # D-ENV-05: raw/opaque cues (karaoke/drawing) are skipped verbatim.
+        if trn_line.raw is not None:
+            new_lines.append(trn_line)
+            continue
+
+        # Step A: check that stripped source is opened and closed by a matching bracket pair.
+        stripped_src = src_line.text.strip()
+        if len(stripped_src) < 2:
+            new_lines.append(trn_line)
+            continue
+        first_char = stripped_src[0]
+        if first_char not in _OPENER_MAP:
+            new_lines.append(trn_line)
+            continue
+        opener = first_char
+        closer = _OPENER_MAP[opener]
+        if stripped_src[-1] != closer:
+            new_lines.append(trn_line)
+            continue
+
+        # Step B: bracket-depth scan — only the Step-A bracket type participates.
+        # A premature return to depth 0 (before the final index) means two separate
+        # groups, not a single spanning envelope.
+        depth = 0
+        not_enclosed = False
+        final_idx = len(stripped_src) - 1
+        for i, ch in enumerate(stripped_src):
+            if ch == opener:
+                depth += 1
+            elif ch == closer:
+                depth -= 1
+            if depth == 0 and i < final_idx:
+                # Bracket closed before the end of the string — two-group form → skip.
+                not_enclosed = True
+                break
+        if not_enclosed or depth != 0:
+            new_lines.append(trn_line)
+            continue
+
+        # Step C: idempotency — if the translation is already wrapped, do nothing.
+        stripped_trn = trn_line.text.strip()
+        if stripped_trn.startswith(opener) and stripped_trn.endswith(closer):
+            new_lines.append(trn_line)
+            continue
+
+        # Re-wrap: prepend/append to the ORIGINAL text (not the stripped form) so
+        # any internal whitespace retained by the LLM is preserved.
+        new_text = opener + trn_line.text + closer
+        new_lines.append(
+            SubLine(
+                index=src_line.index,
+                start_tc=src_line.start_tc,
+                end_tc=src_line.end_tc,
+                text=new_text,
+                raw=None,
+            )
+        )
+
+    return SubDoc(
+        lines=new_lines,
+        encoding=translated_doc.encoding,
+        line_ending=translated_doc.line_ending,
+        separators=translated_doc.separators,
+        leading=translated_doc.leading,
+        trailer=translated_doc.trailer,
+        envelope=translated_doc.envelope,
+    )
+
+
 # ── IMP-02b: Gate-level cue repair helper ─────────────────────────────────────
 
 
@@ -1921,6 +2033,14 @@ async def translate_file(
             trailer=translated_doc.trailer,
             envelope=translated_doc.envelope,  # carry forward for write codec (D-92)
         )
+
+    # Step 8.6: Deterministic envelope preservation (pbz).
+    # For cues whose SOURCE is fully enclosed in a single outer ( ) or [ ] bracket pair
+    # and whose translated output is missing that wrapper, re-wrap deterministically.
+    # Pure structural pass — no LLM, no gate. Runs pre-gate so validate_subdoc validates
+    # the final wrapped text. enable_envelope_preservation=False → exact pre-pbz behavior.
+    if settings.enable_envelope_preservation:
+        translated_doc = _preserve_source_envelopes(translated_doc, source_doc, settings)
 
     # Step 9: Document-level validation gate (D-16, D-17) with IMP-02b bounded repair loop.
     #

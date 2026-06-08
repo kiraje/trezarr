@@ -233,9 +233,7 @@ def test_raw_cue_skipped() -> None:
         f"Raw cue must be returned verbatim. Got raw={out.raw!r}"
     )
     # text should not have parens prepended
-    assert not out.text.startswith("("), (
-        f"Raw cue must not be re-wrapped. Got text={out.text!r}"
-    )
+    assert not out.text.startswith("("), f"Raw cue must not be re-wrapped. Got text={out.text!r}"
 
 
 # ── Test 8: gate compatibility — real validate_subdoc must not raise ──────────
@@ -264,13 +262,16 @@ def test_gate_compatibility() -> None:
         _make_line(4, text="Then they left."),
         _make_line(5, text="The end."),
     ]
-    # Translated doc: wrapped Vietnamese title card + 4 good VI cues
+    # Translated doc: wrapped Vietnamese title card + 4 good VI cues.
+    # "Được rồi." and "Thế giới." contain U+1EC3 (ề) / U+1EDD (ờ) / U+1EE3 (ợ) which are
+    # confirmed Vietnamese diacritics (VN_DIACRITIC_RE range U+1E00–U+1EFF). This gives
+    # a diacritic ratio of 5/5 = 1.0 ≥ 0.70 → Check 3 passes.
     trn_lines = [
         _make_line(1, text="(Phàm Nhân Tu Tiên Truyện)"),
-        _make_line(2, text="Xin chào."),
-        _make_line(3, text="Xin chào."),
-        _make_line(4, text="Xin chào."),
-        _make_line(5, text="Xin chào."),
+        _make_line(2, text="Được rồi."),
+        _make_line(3, text="Thế giới."),
+        _make_line(4, text="Được rồi."),
+        _make_line(5, text="Thế giới."),
     ]
     src_doc = _make_doc(src_lines)
     trn_doc = _make_doc(trn_lines)
@@ -301,7 +302,7 @@ def test_flag_off_noop() -> None:
     trn_line = _make_line(1, text="Tập 142")
 
     settings = _settings(enable_envelope_preservation=False)
-    result = _preserve_source_envelopes(trn_doc=_make_doc([trn_line]), source_doc=_make_doc([src_line]), settings=settings)
+    result = _preserve_source_envelopes(_make_doc([trn_line]), _make_doc([src_line]), settings)
 
     assert result.lines[0].text == "Tập 142", (
         f"With flag off, output must be unchanged. Got {result.lines[0].text!r}"
@@ -328,4 +329,6 @@ def test_two_parens_not_full_wrapper() -> None:
     assert result.lines[0].text == expected, (
         f"Two-group source must be left untouched. Got {result.lines[0].text!r}"
     )
-    assert not result.lines[0].text.startswith("(("), "Must NOT prepend extra opener to two-group source"
+    assert not result.lines[0].text.startswith("(("), (
+        "Must NOT prepend extra opener to two-group source"
+    )
