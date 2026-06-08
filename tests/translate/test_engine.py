@@ -772,6 +772,97 @@ def test_parse_preserves_existing_validation_after_b1():
         parse_numbered_response("[1]   \n[2] Chào", 2)
 
 
+# ── 260608-e8r: leading echoed Pass-3 hint strip in parse_numbered_response ──
+#
+# The job-9 incident: a model echoed "(speaker says: muội; addresses as: huynh)" at the
+# START of a cue's translated text.  _LEAKED_HINT_RE strips that leading parenthetical
+# before the empty-check so genuine dialogue is recovered.  Hint-only cues (no dialogue
+# after the parens) strip to empty and raise BatchValidationError → IMP-02 correction loop.
+# Source-present title-card parens like "(Phàm Nhân Tu Tiên Ký)" are NOT matched because
+# they do not contain "speaker says:" — guards the 260607-iab paren-preservation win.
+
+
+def test_parse_strips_leading_hint_echo_job9():
+    """Job-9 exact: cue with leading hint + dialogue → stripped to dialogue only.
+
+    Also verifies that the stripped text passes validate_subdoc without a Check-8 GateError
+    (the hint was removed before the gate sees it — no quarantine).
+    """
+    from trezarr.translate.engine import (  # noqa: PLC0415
+        parse_numbered_response,
+    )
+
+    result = parse_numbered_response(
+        "[1] (speaker says: muội; addresses as: huynh) Chư vị tu sĩ...",
+        1,
+    )
+    assert result == ["Chư vị tu sĩ..."], (
+        f"Expected hint stripped to leave only the dialogue, got {result!r}"
+    )
+
+    # The stripped text must pass validate_subdoc Check 8 — no GateError raised.
+    validate_mod = pytest.importorskip("trezarr.translate.validate")
+    from trezarr.subtitles.model import SubLine, SubDoc  # noqa: PLC0415
+    from trezarr.config import TrezarrSettings  # noqa: PLC0415
+
+    def _mk_line(text: str) -> SubLine:
+        return SubLine(index="1", start_tc="00:00:01,000", end_tc="00:00:03,000", text=text)
+
+    def _mk_doc(text: str) -> SubDoc:
+        ln = _mk_line(text)
+        return SubDoc(lines=[ln], encoding="utf-8", line_ending="\n", separators=[], leading="", trailer="\n")
+
+    src = _mk_doc("In the hall of cultivators...")
+    trn = _mk_doc(result[0])
+    settings = TrezarrSettings(llm_base_url="http://localhost:1234/v1", llm_api_key="key", llm_model="m")
+    # Must not raise GateError
+    validate_mod.validate_subdoc(trn, src, settings)
+
+
+def test_parse_strips_leading_hint_echo_modern():
+    """Modern variant: 'anh/em' hint echo stripped, dialogue preserved."""
+    from trezarr.translate.engine import parse_numbered_response  # noqa: PLC0415
+
+    result = parse_numbered_response(
+        "[1] (speaker says: anh; addresses as: em) Em đừng đi.",
+        1,
+    )
+    assert result == ["Em đừng đi."], (
+        f"Expected hint stripped to leave 'Em đừng đi.', got {result!r}"
+    )
+
+
+def test_parse_hint_only_raises_empty_error():
+    """Hint-only echo (no dialogue after the parens) → BatchValidationError('Empty/whitespace-only').
+
+    Stripped-to-empty hands control to IMP-02 correction loop.
+    """
+    from trezarr.translate.engine import (  # noqa: PLC0415
+        parse_numbered_response,
+        BatchValidationError,
+    )
+
+    with pytest.raises(BatchValidationError, match="Empty/whitespace-only"):
+        parse_numbered_response(
+            "[1] (speaker says: ta; addresses as: ngươi)",
+            1,
+        )
+
+
+def test_parse_preserves_source_paren_title_card():
+    """Source-present title card '(Phàm Nhân Tu Tiên Ký)' is NOT stripped.
+
+    Guards the 260607-iab paren-preservation win: the regex is anchored to the
+    "speaker says:" phrase so legitimate Vietnamese source parens are never removed.
+    """
+    from trezarr.translate.engine import parse_numbered_response  # noqa: PLC0415
+
+    result = parse_numbered_response("[1] (Phàm Nhân Tu Tiên Ký)", 1)
+    assert result == ["(Phàm Nhân Tu Tiên Ký)"], (
+        f"Source-present paren title card must be preserved, got {result!r}"
+    )
+
+
 # ── C6 aliases: _normalize_name strips honorifics ────────────────────────────
 
 
