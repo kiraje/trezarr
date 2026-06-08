@@ -10,6 +10,7 @@ Priority order (highest to lowest):
 Security: llm_api_key is a SecretStr.  Its literal value NEVER appears in str(), repr(), or
 model_dump() output (T-01-03-01, D-11).  Call .get_secret_value() ONLY inside LLMClient.__init__.
 """
+
 import os
 import threading
 from typing import Any, Tuple, Type
@@ -51,11 +52,11 @@ class TrezarrSettings(BaseSettings):
     llm_model: str = "gpt-4o"
 
     # ── Retry + reliability (D-07) ─────────────────────────────────────────────
-    llm_max_retries: int = 4         # SDK default is 2; D-07 requires 4 explicitly
+    llm_max_retries: int = 4  # SDK default is 2; D-07 requires 4 explicitly
     llm_request_timeout: float = 120.0
 
     # ── Concurrency cap (D-06) ─────────────────────────────────────────────────
-    llm_max_concurrency: int = 4    # asyncio.Semaphore cap (default 4)
+    llm_max_concurrency: int = 4  # asyncio.Semaphore cap (default 4)
 
     # ── Structured-output tier (D-04) ──────────────────────────────────────────
     llm_structured_output_mode: str = "auto"  # auto | json_schema | json_object | text
@@ -163,16 +164,16 @@ class TrezarrSettings(BaseSettings):
 
     # ── Phase 5: Three-Pass Pronoun Engine (D-40…D-50) ──────────────────────────
     # Pass 1 — Bible analysis
-    enable_pass1_analysis: bool = True         # D-50: toggle for staged rollout/tests
-    pass1_max_cues_per_chunk: int = 400        # D-50: cues per Pass-1 chunk (0 = no chunk)
+    enable_pass1_analysis: bool = True  # D-50: toggle for staged rollout/tests
+    pass1_max_cues_per_chunk: int = 400  # D-50: cues per Pass-1 chunk (0 = no chunk)
 
     # Pass 2 — Attribution
-    enable_attribution: bool = True            # D-50: toggle; False → all lines get safe default
-    attribute_context_lines_k: int = 8         # D-50: wider context than translate (default 3)
-    attribute_max_cues_per_batch: int = 30     # D-50: attribution batches may be smaller
+    enable_attribution: bool = True  # D-50: toggle; False → all lines get safe default
+    attribute_context_lines_k: int = 8  # D-50: wider context than translate (default 3)
+    attribute_max_cues_per_batch: int = 30  # D-50: attribution batches may be smaller
 
     # Pass 3 — Pronoun application
-    pronoun_confidence_threshold: str = "medium"    # D-45/D-50: "high"|"medium"|"low"
+    pronoun_confidence_threshold: str = "medium"  # D-45/D-50: "high"|"medium"|"low"
     # None → use built-in kinship-table defaults (D-45); tuple → user override
     # NOTE: tuple[str,str]|None — pydantic-settings handles JSON array env var (A4 from RESEARCH.md)
     # Use Field(default=None) explicitly to avoid default_factory/mutable default issues
@@ -180,31 +181,31 @@ class TrezarrSettings(BaseSettings):
 
     # ── Phase 6: Relationship Evolution + Self-Review (D-51…D-60) ──────────────────
     # Capability A — Relationship Evolution (BIBLE-07)
-    enable_relationship_events: bool = True         # D-60: toggle for staged rollout/tests
+    enable_relationship_events: bool = True  # D-60: toggle for staged rollout/tests
     relationship_event_min_confidence: float = 0.0  # min confidence to emit (0.0 = all)
 
     # Capability B — Self-Review Pass (ENG-05)
-    enable_self_review: bool = True                 # D-60: toggle for staged rollout/tests
-    self_review_context_lines_k: int = 3            # context K for review batches (translate default)
-    self_review_max_cues_per_batch: int = 20        # smaller batches → fewer tokens per review call
+    enable_self_review: bool = True  # D-60: toggle for staged rollout/tests
+    self_review_context_lines_k: int = 3  # context K for review batches (translate default)
+    self_review_max_cues_per_batch: int = 20  # smaller batches → fewer tokens per review call
 
     # ── Phase 7: Service runtime (D-76, D-77) ──────────────────────────────────
     web_host: str = "0.0.0.0"
     web_port: int = 6868
-    poll_interval_seconds: int = 900                # D-76: 15-minute default poll interval
-    enable_webhooks: bool = True                    # D-77: toggle webhook receiver
-    enable_watchfiles: bool = False                 # D-65: default-off; deferred within phase
-    worker_max_concurrent_series: int = 2           # D-68: distinct series in parallel
+    poll_interval_seconds: int = 900  # D-76: 15-minute default poll interval
+    enable_webhooks: bool = True  # D-77: toggle webhook receiver
+    enable_watchfiles: bool = False  # D-65: default-off; deferred within phase
+    worker_max_concurrent_series: int = 2  # D-68: distinct series in parallel
 
     # ── Phase 7: Bazarr connection (D-76) ──────────────────────────────────────
     # Connection + webhook ONLY. Inventory reads are Phase 10 (INTG-02).
     bazarr_host: str = ""
     bazarr_port: int = 6767
-    bazarr_api_key: SecretStr = SecretStr("")       # NEVER logged; SecretStr masks in repr/str
+    bazarr_api_key: SecretStr = SecretStr("")  # NEVER logged; SecretStr masks in repr/str
     bazarr_enabled: bool = False
     # Phase 10: Bazarr inventory use (D-104)
-    bazarr_use_inventory: bool = True   # When True: query Bazarr for subtitle inventory.
-                                        # When False: degrade to filesystem glob (find_source_sub).
+    bazarr_use_inventory: bool = True  # When True: query Bazarr for subtitle inventory.
+    # When False: degrade to filesystem glob (find_source_sub).
 
     # ── Library browser / manual translate safety gate ────────────────────────
     auto_translate_enabled: bool = False
@@ -252,8 +253,8 @@ class TrezarrSettings(BaseSettings):
         """
         yaml_file = getattr(_tl, "yaml_file", None) or CONFIG_PATH
         return (
-            init_settings,        # highest priority: programmatic overrides
-            env_settings,         # TREZARR_* environment variables
+            init_settings,  # highest priority: programmatic overrides
+            env_settings,  # TREZARR_* environment variables
             YamlConfigSettingsSource(settings_cls, yaml_file=yaml_file),
             file_secret_settings,
         )

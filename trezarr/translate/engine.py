@@ -29,6 +29,7 @@ Critical constraints:
   - Pass 4 self-review: _review_batch returns list[str] | None — NEVER raises (D-59).
   - No quarantine path in Pass 4 — validate_subdoc remains the sole arbiter (D-55/D-59).
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -67,10 +68,24 @@ logger = logging.getLogger(__name__)
 # Backward compatible: a name with no honorific normalizes to itself (lowercased + stripped,
 # identical to the prior `.strip().lower()` everywhere). Address-Map starvation on a cold
 # Bible was partly the LLM referencing "Elder Zhou" while the character row was "Zhou".
-_HONORIFIC_PREFIXES: frozenset[str] = frozenset({
-    "mr", "mrs", "ms", "miss", "sir", "madam", "master", "elder", "senior",
-    "brother", "sister", "lord", "lady", "young",
-})
+_HONORIFIC_PREFIXES: frozenset[str] = frozenset(
+    {
+        "mr",
+        "mrs",
+        "ms",
+        "miss",
+        "sir",
+        "madam",
+        "master",
+        "elder",
+        "senior",
+        "brother",
+        "sister",
+        "lord",
+        "lady",
+        "young",
+    }
+)
 
 
 def _normalize_name(name: str) -> str:
@@ -111,6 +126,7 @@ def _resolve_char_id(name_to_char_id: "dict[str, int]", name: "str | None") -> "
 
 # ── Episode key derivation ─────────────────────────────────────────────────────
 
+
 def derive_episode_key(media_item: object, source_sub_path: "str | Path | None" = None) -> str:
     """Derive a stable episode identifier from a MediaItem and subtitle path (D-49, Pitfall F).
 
@@ -133,7 +149,7 @@ def derive_episode_key(media_item: object, source_sub_path: "str | Path | None" 
         # Parse SxxExx from subtitle filename stem (Pitfall F: no episode_number field)
         if source_sub_path is not None:
             stem = Path(source_sub_path).stem
-            m = re.search(r'S(\d{2,})E(\d{2,})', stem, re.IGNORECASE)
+            m = re.search(r"S(\d{2,})E(\d{2,})", stem, re.IGNORECASE)
             if m:
                 return f"S{m.group(1).upper()}E{m.group(2).upper()}"
         # Fallback: use season_number if parse fails
@@ -144,11 +160,12 @@ def derive_episode_key(media_item: object, source_sub_path: "str | Path | None" 
         title = getattr(media_item, "title", None) or "movie"
         slug = title.lower()[:20].replace(" ", "-")
         # Remove characters unsafe for a filesystem key
-        slug = re.sub(r'[^a-z0-9\-]', '', slug)
+        slug = re.sub(r"[^a-z0-9\-]", "", slug)
         return f"movie-{slug}"
 
 
 # ── Exception hierarchy ────────────────────────────────────────────────────────
+
 
 class BatchValidationError(Exception):
     """Raised when a translated batch fails batch-level gate checks.
@@ -171,6 +188,7 @@ class TranslationError(Exception):
 
 # ── Result dataclass ───────────────────────────────────────────────────────────
 
+
 @dataclass
 class TranslationResult:
     """Result returned by translate_file().
@@ -181,6 +199,7 @@ class TranslationResult:
         quarantine_path: Path to the quarantine JSON artifact (status="quarantined" only).
         reason:          Human-readable description of the failure (status="quarantined" only).
     """
+
     status: str  # "done" | "skipped" | "quarantined"
     output_path: Path | None = None
     quarantine_path: Path | None = None
@@ -188,6 +207,7 @@ class TranslationResult:
 
 
 # ── Prompt construction ────────────────────────────────────────────────────────
+
 
 def build_glossary_lines(bible: object) -> list[str]:
     """Build "source → canonical rendering" glossary lines from the Series Bible.
@@ -319,12 +339,12 @@ def build_translate_prompt(
     # the hint and marks it a PRIVATE instruction to strip. validate.py Check 8
     # (HINT_SCAFFOLD_RE) is the gate-layer backstop. [linguist: refine wording]
     parts.append(
-        f"{rule_n}. If the source cue contains parentheses \"( )\" or square brackets \"[ ]\", "
-        "TRANSLATE the text inside them and PRESERVE the surrounding \"(\" \")\" / \"[\" \"]\" "
+        f'{rule_n}. If the source cue contains parentheses "( )" or square brackets "[ ]", '
+        'TRANSLATE the text inside them and PRESERVE the surrounding "(" ")" / "[" "]" '
         "envelope in the output — do NOT strip the delimiters. Do NOT add new glosses, "
         "translator notes, or explanatory parentheticals that are NOT already present in the "
-        "source cue. EXCEPTION: a leading note in the form \"(speaker says: …; addresses as: "
-        "…)\" is a PRIVATE pronoun instruction, NOT subtitle text — use it only to choose "
+        'source cue. EXCEPTION: a leading note in the form "(speaker says: …; addresses as: '
+        '…)" is a PRIVATE pronoun instruction, NOT subtitle text — use it only to choose '
         "pronouns, then NEVER translate, echo, or keep it or its parentheses in your output."
     )
     rule_n += 1
@@ -362,6 +382,7 @@ def build_translate_prompt(
     # This mirrors reconcile.get_safe_default's policy so the unhinted fallback can never drift
     # from it. Function-local import matches the existing engine<->reconcile cycle-avoidance pattern.
     from trezarr.translate.reconcile import _is_classical_register
+
     if _is_classical_register(register):
         _pronoun_examples = "các hạ (respectful, non-gendered) — never a proper name"
     else:
@@ -422,6 +443,7 @@ def build_translate_prompt(
 
 # ── Pass-4 self-review prompt construction ─────────────────────────────────────
 
+
 def build_review_prompt(
     source_texts: list[str],
     translated_texts: list[str],
@@ -466,15 +488,14 @@ def build_review_prompt(
     if dominant_pair is not None and dominant_pair in resolved_map:
         self_t, addr_t = resolved_map[dominant_pair]
         parts.append(
-            f"  - Pronoun pair (speaker→addressee): speaker says \"{self_t}\", "
-            f"addresses as \"{addr_t}\""
+            f'  - Pronoun pair (speaker→addressee): speaker says "{self_t}", '
+            f'addresses as "{addr_t}"'
         )
 
     # Filter term dictionary to relevant terms (those appearing in source texts)
     source_combined = " ".join(source_texts).lower()
     relevant_terms = [
-        t for t in getattr(bible, "terms", [])
-        if (t.source_term or "").lower() in source_combined
+        t for t in getattr(bible, "terms", []) if (t.source_term or "").lower() in source_combined
     ]
     for term in relevant_terms[:10]:  # cap at 10 to control token count
         parts.append(f"  - Term: {term.source_term} → {term.vietnamese_rendering}")
@@ -488,29 +509,31 @@ def build_review_prompt(
         if nm:
             parts.append(f"  - Name (render identically everywhere): {nm}")
 
-    parts.extend([
-        "",
-        "RULES:",
-        "1. Output ONLY numbered lines [1], [2], ... [N] in order.",
-        "2. Keep <<T0>>, <<T1>>, ... tokens EXACTLY as-is.",
-        # B1 fix: the same <<BR>> line-break sentinel contract as Pass-3 so multi-line
-        # cues round-trip through the reviewer instead of being flattened.
-        "3. Keep every <<BR>> marker EXACTLY where it is — it stands for a line break "
-        "inside the subtitle cue; never delete, add, translate, reorder, or split on them.",
-        "4. Return each line VERBATIM unless it has a SPECIFIC Bible violation:",
-        "   - Wrong pronoun: uses different first-person or second-person term than the Bible pair above.",
-        "   - Wrong term: a proper noun/title/place from the Bible is not rendered as specified above.",
-        "   - Wrong register: significantly more formal or informal than the series register.",
-        # B4 fix: flag a gendered plural address used for a mixed-gender group (cue addressing
-        # multiple people) — the review-pass analogue of the Pass-3 mixed-gender rule.
-        "   - Wrong plural address (B4): a line addressing MORE THAN ONE person uses a gendered "
-        "plural ('các cô' / 'các cậu' / 'các anh' / 'các chị') for a mixed-gender group — replace "
-        "with a non-gendered plural ('chư vị' / 'các vị' / 'các ngươi' for classical; 'các bạn' / "
-        "'mọi người' for modern); if any addressee is male, never use a female-gendered term.",
-        "5. Do NOT rephrase, 'improve', or paraphrase lines that already comply.",
-        "",
-        "[LINES TO REVIEW]",
-    ])
+    parts.extend(
+        [
+            "",
+            "RULES:",
+            "1. Output ONLY numbered lines [1], [2], ... [N] in order.",
+            "2. Keep <<T0>>, <<T1>>, ... tokens EXACTLY as-is.",
+            # B1 fix: the same <<BR>> line-break sentinel contract as Pass-3 so multi-line
+            # cues round-trip through the reviewer instead of being flattened.
+            "3. Keep every <<BR>> marker EXACTLY where it is — it stands for a line break "
+            "inside the subtitle cue; never delete, add, translate, reorder, or split on them.",
+            "4. Return each line VERBATIM unless it has a SPECIFIC Bible violation:",
+            "   - Wrong pronoun: uses different first-person or second-person term than the Bible pair above.",
+            "   - Wrong term: a proper noun/title/place from the Bible is not rendered as specified above.",
+            "   - Wrong register: significantly more formal or informal than the series register.",
+            # B4 fix: flag a gendered plural address used for a mixed-gender group (cue addressing
+            # multiple people) — the review-pass analogue of the Pass-3 mixed-gender rule.
+            "   - Wrong plural address (B4): a line addressing MORE THAN ONE person uses a gendered "
+            "plural ('các cô' / 'các cậu' / 'các anh' / 'các chị') for a mixed-gender group — replace "
+            "with a non-gendered plural ('chư vị' / 'các vị' / 'các ngươi' for classical; 'các bạn' / "
+            "'mọi người' for modern); if any addressee is male, never use a female-gendered term.",
+            "5. Do NOT rephrase, 'improve', or paraphrase lines that already comply.",
+            "",
+            "[LINES TO REVIEW]",
+        ]
+    )
 
     for i, (src, vi) in enumerate(zip(source_texts, translated_texts), 1):
         # B1 fix: encode internal newlines as <<BR>> on both the source echo and the
@@ -543,6 +566,7 @@ def _reject_scaffolded_correction(corrected: str, fallback: str) -> str:
 
 # ── Pass-4 self-review batch handler ──────────────────────────────────────────
 # No asyncio.Semaphore here. LLMClient._semaphore is the sole gate (D-06, Pitfall 1).
+
 
 async def _review_batch(
     review_batch: "Batch",
@@ -633,11 +657,11 @@ async def _review_batch(
 # ── Numbered-line response parser ──────────────────────────────────────────────
 
 # Forgiving regex per A7 in RESEARCH.md: handles "[1] text", "[1]. text", "[1]) text"
-_NUMBERED_LINE_RE = re.compile(r'\[(\d+)\][.\)]?\s*(.*)')
+_NUMBERED_LINE_RE = re.compile(r"\[(\d+)\][.\)]?\s*(.*)")
 
 # B1 fix: tolerant marker for the internal-line-break sentinel placed by build_translate_prompt
 # / build_review_prompt. Tolerant of stray whitespace a weak model may insert ("<< BR >>").
-_BR_RE = re.compile(r'<<\s*BR\s*>>')
+_BR_RE = re.compile(r"<<\s*BR\s*>>")
 
 # 260608-e8r: strip a LEADING echoed Pass-3 pronoun hint from translated cue text.
 # build_translate_prompt injects "(speaker says: <self>; addresses as: <addr>)" as a
@@ -655,7 +679,7 @@ _BR_RE = re.compile(r'<<\s*BR\s*>>')
 # dialogue pronouns are untouched. validate.py Check 8 / HINT_SCAFFOLD_RE remains the
 # defense-in-depth backstop for any leaked hint that this strip does not catch.
 _LEAKED_HINT_RE = re.compile(
-    r'^\s*\(\s*speaker\s+says\s*:[^)]*\)\s*',
+    r"^\s*\(\s*speaker\s+says\s*:[^)]*\)\s*",
     re.IGNORECASE,
 )
 
@@ -707,9 +731,7 @@ def parse_numbered_response(
             line_num = int(m.group(1))
             text = m.group(2).strip()
             if line_num in parsed:
-                raise BatchValidationError(
-                    f"Duplicate line number [{line_num}] in LLM response"
-                )
+                raise BatchValidationError(f"Duplicate line number [{line_num}] in LLM response")
             parsed[line_num] = text
             current = line_num
         elif (
@@ -721,9 +743,7 @@ def parse_numbered_response(
             # instead of <<BR>>). Leading text before the first [1] marker is ignored.
             # MEDIUM-4 guard: only merge onto cues whose source was multi-line, so trailing
             # prose after a single-line cue is dropped (old behaviour) rather than spliced in.
-            parsed[current] = (
-                f"{parsed[current]}\n{stripped}" if parsed[current] else stripped
-            )
+            parsed[current] = f"{parsed[current]}\n{stripped}" if parsed[current] else stripped
 
     # Reject any line numbers outside the expected range (hallucinated extra lines).
     # An over-count response is a strong batch-misalignment signal that should retry.
@@ -743,9 +763,9 @@ def parse_numbered_response(
         text = parsed[n]
         # Collapse a <<BR>> emitted together with a real newline at the same break so
         # the cue does not gain a doubled blank line (B1 fix).
-        text = re.sub(r'<<\s*BR\s*>>[ \t]*\n', '\n', text)
-        text = re.sub(r'\n[ \t]*<<\s*BR\s*>>', '\n', text)
-        text = _BR_RE.sub('\n', text)
+        text = re.sub(r"<<\s*BR\s*>>[ \t]*\n", "\n", text)
+        text = re.sub(r"\n[ \t]*<<\s*BR\s*>>", "\n", text)
+        text = _BR_RE.sub("\n", text)
         # Strip a LEADING echoed Pass-3 pronoun hint (job-9 incident, 260608-e8r).
         # "(speaker says: X; addresses as: Y)" is an English instruction phrase that
         # CANNOT appear in genuine Vietnamese dialogue. Stripping only the leading prefix
@@ -757,22 +777,54 @@ def parse_numbered_response(
         # MOAT INVARIANT: this strip touches ONLY the echoed instruction text, not the
         # translated dialogue pronouns. validate.py Check 8 / HINT_SCAFFOLD_RE remains
         # the defense-in-depth backstop for any leak this strip does not catch.
-        text = _LEAKED_HINT_RE.sub('', text)
+        text = _LEAKED_HINT_RE.sub("", text)
         parsed[n] = text
         if not parsed[n].strip():
-            raise BatchValidationError(
-                f"Empty/whitespace-only text for line [{n}] in LLM response"
-            )
+            raise BatchValidationError(f"Empty/whitespace-only text for line [{n}] in LLM response")
 
     if len(parsed) < expected_count:
-        raise BatchValidationError(
-            f"Parsed {len(parsed)} lines but expected {expected_count}"
-        )
+        raise BatchValidationError(f"Parsed {len(parsed)} lines but expected {expected_count}")
 
     return [parsed[n] for n in range(1, expected_count + 1)]
 
 
 # ── Batch translation with message-accumulating correction loop ────────────────
+
+# ── IMP-02b: gate-level cue repair constants ──────────────────────────────────
+
+# Checks whose failure is REPAIRABLE (i.e. only the translation content is wrong,
+# not a structural mismatch). Structural checks {1,2,4,5,6,7,8} fall straight to
+# quarantine — they indicate a pipeline/codec problem that re-translating cannot fix.
+_REPAIRABLE_CHECKS: frozenset[int] = frozenset({3, 9, 10, 11, 12})
+
+# Per-check correction directives forwarded to the repair LLM (IMP-02b).
+# The directive is placed as context_before so the numbered-line protocol is unaffected.
+_REPAIR_DIRECTIVE: dict[int, str] = {
+    3: (
+        "One or more lines lacked Vietnamese diacritics (possible source-language passthrough). "
+        "Translate EVERY line in full Vietnamese with proper diacritics."
+    ),
+    9: (
+        "One or more lines contained CJK/Hangul/Kana script (source leak). "
+        "Translate ALL script characters into Vietnamese — output NO CJK, Hangul, or Kana codepoints."
+    ),
+    10: (
+        "One or more lines appear to be source-language passthrough (no Vietnamese diacritics, "
+        "all tokens matching source). Translate fully into Vietnamese."
+    ),
+    11: (
+        "A prior attempt left an English honorific+name untranslated (e.g. 'Miss Mei', 'Mr. Han'). "
+        "Render EVERY name in its Vietnamese Hán-Việt form and EVERY honorific/title as a "
+        "kinship/address word (cô / cô nương / tiền bối / huynh / trưởng lão / …). "
+        "NEVER output an English honorific like 'Miss/Mr/Elder + Name'."
+    ),
+    12: (
+        "A prior attempt added an English-gloss parenthetical (e.g. '(Miss Mei's brother)'). "
+        "NEVER add parentheticals not in the source. "
+        "Remove any English-gloss parenthetical from the output."
+    ),
+}
+
 
 # Module-level correction-turn template (D-18, IMP-02).
 #
@@ -804,7 +856,9 @@ def _make_translate_batch_fn(settings: "TrezarrSettings"):
     correction loop now owns). openai.APIError propagates unmodified; the SDK handles
     transport-level retries (D-07, Pitfall 5).
     """
-    attempts = settings.translate_batch_retry_attempts + 1  # total LLM calls = 1 initial + N retries
+    attempts = (
+        settings.translate_batch_retry_attempts + 1
+    )  # total LLM calls = 1 initial + N retries
 
     async def _translate_batch_inner(
         batch: Batch,
@@ -862,7 +916,9 @@ def _make_translate_batch_fn(settings: "TrezarrSettings"):
         context_before_texts = [c.text for c in batch.context_before]
         context_after_texts = [c.text for c in batch.context_after]
         prompt = build_translate_prompt(
-            cleaned_texts, context_before_texts, context_after_texts,
+            cleaned_texts,
+            context_before_texts,
+            context_after_texts,
             pronoun_hints=pronoun_hints,
             glossary=glossary,
             register=register,  # H1 fix
@@ -877,7 +933,7 @@ def _make_translate_batch_fn(settings: "TrezarrSettings"):
         n = len(batch.cues)
 
         for attempt_num in range(attempts):
-            is_last_attempt = (attempt_num == attempts - 1)
+            is_last_attempt = attempt_num == attempts - 1
 
             # Step 4a: Call LLMClient — the sole concurrency gate is inside LLMClient._semaphore
             # D-113: forward per-call model override; None = use client's global model
@@ -926,7 +982,9 @@ def _make_translate_batch_fn(settings: "TrezarrSettings"):
                 # Continue to next loop iteration — LLM will see the full conversation context
 
         # Unreachable: loop always returns or raises inside. Guard for type checker.
-        raise BatchValidationError("Correction loop exhausted without returning")  # pragma: no cover
+        raise BatchValidationError(
+            "Correction loop exhausted without returning"
+        )  # pragma: no cover
 
     return _translate_batch_inner
 
@@ -966,6 +1024,7 @@ async def _translate_batch(
 
 # ── Quarantine artifact write ──────────────────────────────────────────────────
 
+
 def _write_quarantine(
     source_path: Path,
     reason: str,
@@ -1004,9 +1063,9 @@ def _write_quarantine(
     tmp_path: Path | None = None
     try:
         with tempfile.NamedTemporaryFile(
-            mode='w',
-            encoding='utf-8',
-            suffix='.tmp',
+            mode="w",
+            encoding="utf-8",
+            suffix=".tmp",
             dir=quarantine_dir,
             delete=False,
         ) as f:
@@ -1065,17 +1124,152 @@ def _splice_review_corrections(
             result.append(line)  # batch returned no correction — keep translated
         else:
             cue, new_text = corr
-            result.append(SubLine(
-                index=cue.index,
-                start_tc=cue.start_tc,
-                end_tc=cue.end_tc,
-                text=new_text,
-                raw=None,
-            ))
+            result.append(
+                SubLine(
+                    index=cue.index,
+                    start_tc=cue.start_tc,
+                    end_tc=cue.end_tc,
+                    text=new_text,
+                    raw=None,
+                )
+            )
     return result
 
 
+# ── IMP-02b: Gate-level cue repair helper ─────────────────────────────────────
+
+
+async def _repair_failing_cues(
+    failing_indices: list[int],
+    source_doc: SubDoc,
+    translated_doc: SubDoc,
+    check_number: int,
+    llm_client: LLMClient,
+    settings: "TrezarrSettings",
+    glossary_lines: "list[str] | None",
+    register_value: "str | None",
+    resolved_map: dict,
+    bible: object,
+    model: "str | None",
+) -> "list[SubLine] | None":
+    """Re-translate only the failing source cues and return a full repaired lines list.
+
+    Returns a NEW list of SubLine objects (same length as translated_doc.lines) with
+    only the failing indices replaced by fresh translations.  Returns None on any
+    LLM/parse failure so the caller can quarantine immediately.
+
+    MOAT INVARIANT: re-translates through the SAME _translate_batch machinery that
+    Pass-3 uses, forwarding the same glossary_lines, register_value, and resolved_map
+    pronoun hints for the failing cue indices — so Bible consistency is preserved and
+    the pronoun/relational moat is untouched (Pitfall 1: no new asyncio.Semaphore;
+    Pitfall 5: no tenacity around this call).
+
+    Args:
+        failing_indices:  0-based indices into translated_doc.lines that failed the gate.
+        source_doc:       The original source SubDoc.
+        translated_doc:   The translated SubDoc (with the failing cues).
+        check_number:     The gate check number that fired (must be in _REPAIRABLE_CHECKS).
+        llm_client:       LLMClient instance (its _semaphore is the sole concurrency gate).
+        settings:         TrezarrSettings.
+        glossary_lines:   Glossary lines from build_glossary_lines(bible), or None.
+        register_value:   Series register/tone from bible.register_value, or None.
+        resolved_map:     (speaker_id, addressee_id) → (self_term, address_term) from reconcile.
+        bible:            SeriesBibleDTO (or None for Bible-unaware mode).
+        model:            Per-call model override (D-113).
+
+    Returns:
+        Full repaired list[SubLine] on success; None on any failure.
+    """
+    try:
+        directive = _REPAIR_DIRECTIVE.get(check_number, "")
+
+        # Build a minimal Batch containing only the failing source cues.
+        failing_source_cues = [source_doc.lines[i] for i in failing_indices]
+        repair_batch = Batch(
+            cues=failing_source_cues,
+            context_before=[],
+            context_after=[],
+        )
+
+        # Pronoun hints for the repair batch are not available (we have no attribution
+        # data for the isolated failing cues). The unhinted-line guardrail in
+        # build_translate_prompt handles the fallback safely.
+        repair_pronoun_hints: dict[int, tuple[str, str]] | None = None
+
+        # The correction directive is injected via the Batch.context_before field so
+        # the numbered-line protocol for the failing cues is unaffected. The directive
+        # appears as a "[context] ..." read-only line that the model sees but does not
+        # output (RULE 3 in build_translate_prompt). We wrap it in a fake SubLine to
+        # satisfy the Batch.context_before: list[SubLine] type contract.
+        from trezarr.subtitles.model import SubLine as _SubLine  # local to avoid shadowing
+
+        if directive:
+            _directive_line = _SubLine(
+                index="0",
+                start_tc="00:00:00,000",
+                end_tc="00:00:00,000",
+                text=f"[CORRECTION REQUIRED] {directive}",
+            )
+            repair_batch = Batch(
+                cues=failing_source_cues,
+                context_before=[_directive_line],
+                context_after=[],
+            )
+
+        # Re-use _translate_batch (which goes through LLMClient._semaphore — no new Semaphore).
+        repair_translated_texts = await _translate_batch(
+            repair_batch,
+            llm_client,
+            settings,
+            pronoun_hints=repair_pronoun_hints,
+            model=model,
+            glossary=glossary_lines,
+            register=register_value,
+        )
+
+        # Build the full repaired SubLine list: walk translated_doc.lines, splice at
+        # failing indices.  Preserve index/start_tc/end_tc byte-identically from
+        # translated_doc; replace ONLY .text.  NEVER mutate source SubLines (Pitfall 8).
+        repair_text_iter = iter(repair_translated_texts)
+        repaired_lines: list[SubLine] = []
+        failing_set = set(failing_indices)
+        for i, line in enumerate(translated_doc.lines):
+            if i in failing_set:
+                new_text = next(repair_text_iter)
+                repaired_lines.append(
+                    SubLine(
+                        index=line.index,
+                        start_tc=line.start_tc,
+                        end_tc=line.end_tc,
+                        text=new_text,
+                        raw=None,
+                    )
+                )
+            else:
+                repaired_lines.append(
+                    SubLine(
+                        index=line.index,
+                        start_tc=line.start_tc,
+                        end_tc=line.end_tc,
+                        text=line.text,
+                        raw=line.raw,
+                    )
+                )
+
+        return repaired_lines
+
+    except Exception:
+        logger.warning(
+            "Gate repair LLM call failed for check=%d failing=%r — quarantining",
+            check_number,
+            failing_indices,
+            exc_info=True,
+        )
+        return None
+
+
 # ── Main entry point ───────────────────────────────────────────────────────────
+
 
 async def translate_file(
     path: str | Path,
@@ -1084,7 +1278,7 @@ async def translate_file(
     ledger: LedgerProtocol,
     eligible_item: "EligibleItem | None" = None,
     session_factory: "async_sessionmaker[AsyncSession] | None" = None,
-    model: str | None = None,   # D-113: per-call model override; threads to llm_client.call()
+    model: str | None = None,  # D-113: per-call model override; threads to llm_client.call()
 ) -> TranslationResult:
     """Translate a source subtitle file to Vietnamese and write a vi sidecar.
 
@@ -1163,7 +1357,8 @@ async def translate_file(
         # The current path is a richer source — proceed with the upgrade (D-110).
         logger.info(
             "richer source upgrade: re-translating %s (prior source: %s)",
-            path, prior_entry.source_path,
+            path,
+            prior_entry.source_path,
         )
 
     # Already done + dest exists + hash matches → idempotent skip
@@ -1176,12 +1371,14 @@ async def translate_file(
         return TranslationResult(status="skipped")
 
     # Step 4: Record in_progress (in case this run crashes mid-flight)
-    await ledger.record(LedgerEntry(
-        source_path=str(path),
-        output_path=str(dest),
-        status="in_progress",
-        content_hash=content_hash,
-    ))
+    await ledger.record(
+        LedgerEntry(
+            source_path=str(path),
+            output_path=str(dest),
+            status="in_progress",
+            content_hash=content_hash,
+        )
+    )
 
     # Steps 5-6: Read and batch the source.  Both can raise on poisoned source files
     # (PermissionError, decode errors, malformed SRT).  A raise here would leave the
@@ -1192,13 +1389,15 @@ async def translate_file(
     except Exception as exc:
         reason = f"read/batch failure: {exc}"
         quarantine_path = _write_quarantine(path, reason, [], settings)
-        await ledger.record(LedgerEntry(
-            source_path=str(path),
-            output_path=None,
-            status="quarantined",
-            content_hash=content_hash,
-            quarantine_path=str(quarantine_path),
-        ))
+        await ledger.record(
+            LedgerEntry(
+                source_path=str(path),
+                output_path=None,
+                status="quarantined",
+                content_hash=content_hash,
+                quarantine_path=str(quarantine_path),
+            )
+        )
         return TranslationResult(
             status="quarantined",
             quarantine_path=quarantine_path,
@@ -1239,8 +1438,21 @@ async def translate_file(
         episode_key = derive_episode_key(media_item, path)
 
         # Build metadata snapshot (safe subset only — T-05-06-01)
-        _SAFE_META_KEYS = ("title", "genres", "overview", "year", "network", "runtime", "tvdb_id", "tmdb_id")
-        arr_metadata: dict = {k: getattr(media_item, k, None) for k in _SAFE_META_KEYS if getattr(media_item, k, None) is not None}
+        _SAFE_META_KEYS = (
+            "title",
+            "genres",
+            "overview",
+            "year",
+            "network",
+            "runtime",
+            "tvdb_id",
+            "tmdb_id",
+        )
+        arr_metadata: dict = {
+            k: getattr(media_item, k, None)
+            for k in _SAFE_META_KEYS
+            if getattr(media_item, k, None) is not None
+        }
 
         series_dto = await get_or_create_series(
             session_factory,
@@ -1256,18 +1468,24 @@ async def translate_file(
         # PASS 1 BARRIER (D-40, ENG-04) — quarantine ONLY on BibleAnalysisError
         # (logic failure); openai.APIError must propagate (Pitfall B / T-05-06-02)
         try:
-            analysis = await analyze_file(source_doc, bible, arr_metadata, llm_client, settings, episode_key)
-            await merge_bible_analysis(session_factory, series_dto, analysis, episode_key, settings=settings)
+            analysis = await analyze_file(
+                source_doc, bible, arr_metadata, llm_client, settings, episode_key
+            )
+            await merge_bible_analysis(
+                session_factory, series_dto, analysis, episode_key, settings=settings
+            )
         except BibleAnalysisError as exc:
             reason = f"pass1 analysis failure: {exc}"
             quarantine_path = _write_quarantine(path, reason, [], settings)
-            await ledger.record(LedgerEntry(
-                source_path=str(path),
-                output_path=None,
-                status="quarantined",
-                content_hash=content_hash,
-                quarantine_path=str(quarantine_path),
-            ))
+            await ledger.record(
+                LedgerEntry(
+                    source_path=str(path),
+                    output_path=None,
+                    status="quarantined",
+                    content_hash=content_hash,
+                    quarantine_path=str(quarantine_path),
+                )
+            )
             return TranslationResult(
                 status="quarantined",
                 quarantine_path=quarantine_path,
@@ -1285,7 +1503,8 @@ async def translate_file(
         # so flat_attributions aligns 1:1 with the Pass-3 batches below.
         if settings.enable_attribution:
             attr_batches = batch_subdoc(
-                source_doc, settings,
+                source_doc,
+                settings,
                 context_lines_k=settings.attribute_context_lines_k,
                 max_cues_per_batch=settings.attribute_max_cues_per_batch,
             )
@@ -1317,8 +1536,7 @@ async def translate_file(
         # attribution name ("Elder Zhou") still resolves to the seeded row ("zhou") WITHOUT two
         # distinct characters that differ only by an honorific colliding onto one id.
         name_to_char_id: dict[str, int] = {
-            c.original_latin_name.strip().lower(): c.id
-            for c in bible.characters
+            c.original_latin_name.strip().lower(): c.id for c in bible.characters
         }
         # Build a doc-global index → attribution lookup from flat_attributions
         # flat_attributions are ordered: batch 0 line 1..N, batch 1 line 1..M, ...
@@ -1329,7 +1547,7 @@ async def translate_file(
             batch_hints: dict[int, tuple[str, str]] = {}
 
             # Slice the flat_attributions for this batch
-            batch_attrs = flat_attributions[doc_offset: doc_offset + batch_size]
+            batch_attrs = flat_attributions[doc_offset : doc_offset + batch_size]
 
             for local_i, attr in enumerate(batch_attrs, 1):
                 spk_id = _resolve_char_id(name_to_char_id, attr.speaker)
@@ -1370,38 +1588,55 @@ async def translate_file(
     proper_noun_allowlist: set[str] | None = None
     if bible is not None:
         proper_noun_allowlist = set()
-        for _g in (glossary_lines or []):
+        for _g in glossary_lines or []:
             # build_glossary_lines emits "source → rendering"; take the rendering side.
             _rhs = _g.split(" → ", 1)[-1]
             for _tok in re.findall(r"[^\W\d_]+", _rhs.lower(), re.UNICODE):
                 if _tok:
                     proper_noun_allowlist.add(_tok)
-        for _c in (getattr(bible, "characters", None) or []):
-            for _tok in re.findall(r"[^\W\d_]+", (getattr(_c, "original_latin_name", "") or "").lower(), re.UNICODE):
+        for _c in getattr(bible, "characters", None) or []:
+            for _tok in re.findall(
+                r"[^\W\d_]+", (getattr(_c, "original_latin_name", "") or "").lower(), re.UNICODE
+            ):
                 if _tok:
                     proper_noun_allowlist.add(_tok)
-        for _t in (getattr(bible, "terms", None) or []):
-            for _field in ((getattr(_t, "vietnamese_rendering", "") or ""), (getattr(_t, "source_term", "") or "")):
+        for _t in getattr(bible, "terms", None) or []:
+            for _field in (
+                (getattr(_t, "vietnamese_rendering", "") or ""),
+                (getattr(_t, "source_term", "") or ""),
+            ):
                 for _tok in re.findall(r"[^\W\d_]+", _field.lower(), re.UNICODE):
                     if _tok:
                         proper_noun_allowlist.add(_tok)
     try:
         async with asyncio.TaskGroup() as tg:
             translate_tasks = [
-                tg.create_task(_translate_batch(b, llm_client, settings, per_batch_hints[i], model, glossary_lines, register_value))
+                tg.create_task(
+                    _translate_batch(
+                        b,
+                        llm_client,
+                        settings,
+                        per_batch_hints[i],
+                        model,
+                        glossary_lines,
+                        register_value,
+                    )
+                )
                 for i, b in enumerate(batches)
             ]
         batch_results = [t.result() for t in translate_tasks]
     except* BatchValidationError as eg:
         _reason = str(eg.exceptions[0])
         _qpath = _write_quarantine(path, _reason, [], settings)
-        await ledger.record(LedgerEntry(
-            source_path=str(path),
-            output_path=None,
-            status="quarantined",
-            content_hash=content_hash,
-            quarantine_path=str(_qpath),
-        ))
+        await ledger.record(
+            LedgerEntry(
+                source_path=str(path),
+                output_path=None,
+                status="quarantined",
+                content_hash=content_hash,
+                quarantine_path=str(_qpath),
+            )
+        )
         _batch_quarantine = TranslationResult(
             status="quarantined",
             quarantine_path=_qpath,
@@ -1436,30 +1671,34 @@ async def translate_file(
         if src_line.raw is not None:
             # Opaque pass-through cue (karaoke/drawing) — preserve verbatim.
             # New SubLine to honour "never mutate source SubLines" (Pitfall 8).
-            translated_lines.append(SubLine(
-                index=src_line.index,
-                start_tc=src_line.start_tc,
-                end_tc=src_line.end_tc,
-                text=src_line.text,
-                raw=src_line.raw,
-            ))
+            translated_lines.append(
+                SubLine(
+                    index=src_line.index,
+                    start_tc=src_line.start_tc,
+                    end_tc=src_line.end_tc,
+                    text=src_line.text,
+                    raw=src_line.raw,
+                )
+            )
         else:
-            translated_lines.append(SubLine(
-                index=src_line.index,
-                start_tc=src_line.start_tc,
-                end_tc=src_line.end_tc,
-                text=next(_queue_iter),
-                raw=None,  # well-formed translated cue — raw not needed
-            ))
+            translated_lines.append(
+                SubLine(
+                    index=src_line.index,
+                    start_tc=src_line.start_tc,
+                    end_tc=src_line.end_tc,
+                    text=next(_queue_iter),
+                    raw=None,  # well-formed translated cue — raw not needed
+                )
+            )
 
     translated_doc = SubDoc(
         lines=translated_lines,
-        encoding='utf-8',
+        encoding="utf-8",
         line_ending=source_doc.line_ending,
         separators=source_doc.separators,
         leading=source_doc.leading,
         trailer=source_doc.trailer,
-        envelope=source_doc.envelope,   # carry AssDoc/VttDoc for write codec (D-92)
+        envelope=source_doc.envelope,  # carry AssDoc/VttDoc for write codec (D-92)
     )
 
     # Step 8.5 (Phase 6, D-55): Pass 4 Self-Review — best-effort Bible adherence correction.
@@ -1496,7 +1735,7 @@ async def translate_file(
             _rb_offset = 0
             for rb in review_batches:
                 _batch_size = len(rb.cues)
-                _rb_attrs = flat_attributions[_rb_offset: _rb_offset + _batch_size]
+                _rb_attrs = flat_attributions[_rb_offset : _rb_offset + _batch_size]
                 _pair_counts: dict[tuple[int, int], int] = {}
                 for _attr in _rb_attrs:
                     _spk_id = _resolve_char_id(_name_to_char_id_rev, _attr.speaker)
@@ -1505,7 +1744,9 @@ async def translate_file(
                         _p = (_spk_id, _addr_id)
                         if _p in resolved_map:  # only include pairs that were actually resolved
                             _pair_counts[_p] = _pair_counts.get(_p, 0) + 1
-                rb.dominant_pair = max(_pair_counts, key=lambda p: _pair_counts[p]) if _pair_counts else None
+                rb.dominant_pair = (
+                    max(_pair_counts, key=lambda p: _pair_counts[p]) if _pair_counts else None
+                )
                 _rb_offset += _batch_size
 
         # TaskGroup dispatch — mirrors Pass-2 attribution gather.
@@ -1517,15 +1758,17 @@ async def translate_file(
         try:
             async with asyncio.TaskGroup() as tg:
                 review_tasks = [
-                    tg.create_task(_review_batch(
-                        review_batch=rb,
-                        source_lines_by_index=source_lines_by_index,
-                        resolved_map=resolved_map,
-                        bible=bible,
-                        llm_client=llm_client,
-                        settings=settings,
-                        model=model,  # D-113: per-call model override
-                    ))
+                    tg.create_task(
+                        _review_batch(
+                            review_batch=rb,
+                            source_lines_by_index=source_lines_by_index,
+                            resolved_map=resolved_map,
+                            bible=bible,
+                            llm_client=llm_client,
+                            settings=settings,
+                            model=model,  # D-113: per-call model override
+                        )
+                    )
                     for rb in review_batches
                 ]
             review_results = [t.result() for t in review_tasks]
@@ -1534,7 +1777,8 @@ async def translate_file(
             logger.error(
                 "Pass 4 TaskGroup raised unexpectedly (%d exceptions) — "
                 "this violates the D-59 best-effort contract; keeping pre-review doc",
-                len(eg.exceptions), exc_info=True,
+                len(eg.exceptions),
+                exc_info=True,
             )
             _review_failed = True
 
@@ -1546,7 +1790,9 @@ async def translate_file(
         # slots are preserved verbatim and never misaligned. New SubLine objects,
         # never mutate (Pitfall 8). See _splice_review_corrections for the logic.
         corrected_lines = _splice_review_corrections(
-            translated_doc.lines, review_batches, review_results,
+            translated_doc.lines,
+            review_batches,
+            review_results,
         )
 
         translated_doc = SubDoc(
@@ -1556,31 +1802,103 @@ async def translate_file(
             separators=translated_doc.separators,
             leading=translated_doc.leading,
             trailer=translated_doc.trailer,
-            envelope=translated_doc.envelope,   # carry forward for write codec (D-92)
+            envelope=translated_doc.envelope,  # carry forward for write codec (D-92)
         )
 
-    # Step 9: Document-level validation gate (D-16, D-17)
-    try:
-        validate_subdoc(
-            translated_doc, source_doc, settings,
-            proper_noun_allowlist=proper_noun_allowlist,  # B2 fix: exempt Bible proper nouns from check 10
-        )
-    except GateError as exc:
-        reason = str(exc)
-        failing_indices = exc.failure.failing_indices or []
-        quarantine_path = _write_quarantine(path, reason, failing_indices, settings)
-        await ledger.record(LedgerEntry(
-            source_path=str(path),
-            output_path=None,
-            status="quarantined",
-            content_hash=content_hash,
-            quarantine_path=str(quarantine_path),
-        ))
-        return TranslationResult(
-            status="quarantined",
-            quarantine_path=quarantine_path,
-            reason=reason,
-        )
+    # Step 9: Document-level validation gate (D-16, D-17) with IMP-02b bounded repair loop.
+    #
+    # REPAIR LOOP LOGIC:
+    #   - If enable_gate_repair=False OR check not in _REPAIRABLE_CHECKS OR no failing_indices
+    #     OR budget exhausted: fall through to the unchanged quarantine path.
+    #   - Otherwise: decrement budget, call _repair_failing_cues, splice repaired lines
+    #     back as a new translated_doc, re-validate.
+    #   - If _repair_failing_cues returns None (LLM/parse failure): quarantine immediately.
+    #   - Gate remains the SOLE arbiter: nothing ships without a clean validate_subdoc pass.
+    _repair_budget = settings.gate_repair_max_attempts
+    while True:
+        try:
+            validate_subdoc(
+                translated_doc,
+                source_doc,
+                settings,
+                proper_noun_allowlist=proper_noun_allowlist,  # B2 fix: exempt Bible proper nouns from check 10
+            )
+            break  # gate passed — proceed to write
+        except GateError as exc:
+            check = exc.failure.check
+            failing = exc.failure.failing_indices or []
+            _can_repair = (
+                settings.enable_gate_repair
+                and check in _REPAIRABLE_CHECKS
+                and bool(failing)
+                and _repair_budget > 0
+            )
+            if not _can_repair:
+                # Standard quarantine path (unchanged from pre-IMP-02b)
+                reason = str(exc)
+                quarantine_path = _write_quarantine(path, reason, failing, settings)
+                await ledger.record(
+                    LedgerEntry(
+                        source_path=str(path),
+                        output_path=None,
+                        status="quarantined",
+                        content_hash=content_hash,
+                        quarantine_path=str(quarantine_path),
+                    )
+                )
+                return TranslationResult(
+                    status="quarantined",
+                    quarantine_path=quarantine_path,
+                    reason=reason,
+                )
+            _repair_budget -= 1
+            logger.info(
+                "Gate repair attempt (budget=%d remaining): check=%d failing=%r",
+                _repair_budget,
+                check,
+                failing,
+            )
+            repaired_lines = await _repair_failing_cues(
+                failing_indices=failing,
+                source_doc=source_doc,
+                translated_doc=translated_doc,
+                check_number=check,
+                llm_client=llm_client,
+                settings=settings,
+                glossary_lines=glossary_lines,
+                register_value=register_value,
+                resolved_map=resolved_map,
+                bible=bible,
+                model=model,
+            )
+            if repaired_lines is None:
+                # Repair LLM failed — treat as budget exhausted, quarantine now
+                reason = str(exc)
+                quarantine_path = _write_quarantine(path, reason, failing, settings)
+                await ledger.record(
+                    LedgerEntry(
+                        source_path=str(path),
+                        output_path=None,
+                        status="quarantined",
+                        content_hash=content_hash,
+                        quarantine_path=str(quarantine_path),
+                    )
+                )
+                return TranslationResult(
+                    status="quarantined",
+                    quarantine_path=quarantine_path,
+                    reason=reason,
+                )
+            # Splice repaired cues → new translated_doc → re-validate on next loop iteration
+            translated_doc = SubDoc(
+                lines=repaired_lines,
+                encoding=translated_doc.encoding,
+                line_ending=translated_doc.line_ending,
+                separators=translated_doc.separators,
+                leading=translated_doc.leading,
+                trailer=translated_doc.trailer,
+                envelope=translated_doc.envelope,
+            )
 
     # Step 10: Atomic UTF-8 write (D-19)
     output_path = write_vi_sidecar(translated_doc, path)
@@ -1589,14 +1907,16 @@ async def translate_file(
     _ledger_series_id: str | None = (
         str(arr_series_id) if eligible_item is not None and arr_series_id else None
     )
-    await ledger.record(LedgerEntry(
-        source_path=str(path),
-        output_path=str(output_path),
-        status="done",
-        content_hash=content_hash,
-        translated_at=datetime.now(timezone.utc).isoformat(),
-        series_id=_ledger_series_id,
-    ))
+    await ledger.record(
+        LedgerEntry(
+            source_path=str(path),
+            output_path=str(output_path),
+            status="done",
+            content_hash=content_hash,
+            translated_at=datetime.now(timezone.utc).isoformat(),
+            series_id=_ledger_series_id,
+        )
+    )
 
     # Step 12: Return success result
     return TranslationResult(status="done", output_path=output_path)
