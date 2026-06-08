@@ -639,6 +639,26 @@ _NUMBERED_LINE_RE = re.compile(r'\[(\d+)\][.\)]?\s*(.*)')
 # / build_review_prompt. Tolerant of stray whitespace a weak model may insert ("<< BR >>").
 _BR_RE = re.compile(r'<<\s*BR\s*>>')
 
+# 260608-e8r: strip a LEADING echoed Pass-3 pronoun hint from translated cue text.
+# build_translate_prompt injects "(speaker says: <self>; addresses as: <addr>)" as a
+# LEADING parenthetical hint on each numbered line. A weak model sometimes echoes that
+# instruction phrase verbatim into its output (job-9 incident: cue quarantined the whole
+# episode). This regex matches ONLY that specific English instruction phrase at the START
+# of the text, so:
+#   "(speaker says: muội; addresses as: huynh) Chư vị tu sĩ..." → "Chư vị tu sĩ..."
+#   "(speaker says: ta; addresses as: ngươi)" → "" → empty-check → BatchValidationError
+#   "(Phàm Nhân Tu Tiên Ký)" → NOT matched (no "speaker says:") → preserved unchanged
+# Anchored with ^ (applied on the assembled single-cue string after <<BR>> restoration).
+# [^)]* stops at the first ")" — no nested parens in the hint → no backtracking risk.
+# Case-insensitive + space-tolerant, mirroring HINT_SCAFFOLD_RE in validate.py.
+# MOAT INVARIANT: strips ONLY the echoed English instruction phrase; the actual translated
+# dialogue pronouns are untouched. validate.py Check 8 / HINT_SCAFFOLD_RE remains the
+# defense-in-depth backstop for any leaked hint that this strip does not catch.
+_LEAKED_HINT_RE = re.compile(
+    r'^\s*\(\s*speaker\s+says\s*:[^)]*\)\s*',
+    re.IGNORECASE,
+)
+
 
 def parse_numbered_response(
     response: str,
@@ -726,6 +746,18 @@ def parse_numbered_response(
         text = re.sub(r'<<\s*BR\s*>>[ \t]*\n', '\n', text)
         text = re.sub(r'\n[ \t]*<<\s*BR\s*>>', '\n', text)
         text = _BR_RE.sub('\n', text)
+        # Strip a LEADING echoed Pass-3 pronoun hint (job-9 incident, 260608-e8r).
+        # "(speaker says: X; addresses as: Y)" is an English instruction phrase that
+        # CANNOT appear in genuine Vietnamese dialogue. Stripping only the leading prefix
+        # leaves the actual translation intact. If the model echoed the hint with NO dialogue,
+        # the result is empty → the existing empty-check below raises BatchValidationError
+        # → IMP-02's correction loop retries the batch (desired).
+        # A source-present paren "(Phàm Nhân Tu Tiên Ký)" does NOT match "speaker says:"
+        # so it is preserved — guards the 260607-iab paren-preservation win.
+        # MOAT INVARIANT: this strip touches ONLY the echoed instruction text, not the
+        # translated dialogue pronouns. validate.py Check 8 / HINT_SCAFFOLD_RE remains
+        # the defense-in-depth backstop for any leak this strip does not catch.
+        text = _LEAKED_HINT_RE.sub('', text)
         parsed[n] = text
         if not parsed[n].strip():
             raise BatchValidationError(
