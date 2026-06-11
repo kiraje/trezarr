@@ -1234,3 +1234,44 @@ def test_r4_leak_unclosed_sentinel():
         "Before fix: SENTINEL_RE needs closing '>>' → passes Check 6; "
         "Check 10 skipped (T153 has only 1 ASCII letter)."
     )
+
+
+# ── FIX4: UNCLOSED_SENTINEL_RE comment accuracy (260611-ru6 LOW) ─────────────
+# Codec-fidelity-guardian finding: the comment on UNCLOSED_SENTINEL_RE at
+# validate.py:100-101 claims "(?!>>) prevents matching the closed form <<T153>>"
+# but this is factually wrong. The regex DOES match <<T153>> (at a shorter digit
+# offset due to backtracking: tries 153, lookahead fails, backtracks to 15 → matches
+# <<T15). The closed form is already caught by SENTINEL_RE, so the double-fire is
+# harmless (belt-and-suspenders), but the comment's claimed guarantee is false.
+#
+# TDD flow:
+#   RED: assert the comment's claim (closed form does NOT match → search returns None)
+#        → FAILS because the regex DOES match at the backtracked position.
+#   FIX: rewrite the comment to state the actual behaviour; flip test to GREEN form.
+#   GREEN: assert actual behaviour — closed form DOES match (backtracking occurs).
+
+
+def test_fix4_red_unclosed_sentinel_re_comment_claimed_closed_no_match():
+    """FIX4 RED: UNCLOSED_SENTINEL_RE comment claims '(?!>>) prevents matching <<T153>>'.
+
+    The comment is factually wrong. This test asserts what the comment CLAIMS
+    (search returns None for the closed form) and must FAIL — proving the defect.
+
+    Expected pre-fix result: search("<<T153>>") is NOT None (regex matches at <<T15).
+    This test will FAIL because the comment's claim is incorrect.
+    """
+    import re
+    # Import directly to test the pattern, not the full gate
+    validate_mod = pytest.importorskip("trezarr.translate.validate")
+    UNCLOSED_SENTINEL_RE = validate_mod.UNCLOSED_SENTINEL_RE
+
+    # What the CURRENT COMMENT claims: the lookahead prevents matching the closed form.
+    # This assertion SHOULD be True if the comment were correct — but it is False.
+    result = UNCLOSED_SENTINEL_RE.search("<<T153>>")
+    assert result is None, (
+        f"FIX4 RED: Comment claims UNCLOSED_SENTINEL_RE does NOT match the closed form "
+        f"'<<T153>>', but it does (match: {result!r} at span {result.span() if result else None}). "
+        "The '(?!>>) lookahead does not prevent matching because \\d+ backtracks from '153' "
+        "to '15', and then (?!>>) succeeds (next char is '3', not '>>'). "
+        "The comment must be corrected to state the actual behaviour."
+    )
