@@ -618,15 +618,23 @@ async def test_transition_adopts_attribution_confirmed_terms(session_factory):
     )
 
 
-async def test_transition_no_survivors_falls_to_safe_default(session_factory):
-    """CR-02 fallback: transition with no suggested terms + no survivors → safe default.
+async def test_transition_no_survivors_established_pair_carries_forward(session_factory):
+    """R1 fix (260611-ru6): transition with no suggested terms + no survivors → carry forward established pair.
+
+    This test was previously named 'test_transition_no_survivors_falls_to_safe_default' and
+    documented the pre-R1 (buggy) behavior where an ESTABLISHED pair was flattened to safe-default.
+    After the R1 fix, _derive_transition_terms Step 3 carries the established pair instead of
+    falling to get_safe_default. Safe-default only applies to truly-new dyads (existing=None).
+
+    D-01 precedence ladder: lock > genuine evolution (event WITH terms) > carried Bible pair
+                            > safe-default (truly-new dyad only).
 
     Arrange: a relationship_event with NO suggested terms + LOW-confidence attribution
-             (no survivors above threshold) + an existing address_map entry.
+             (no survivors above threshold) + an ESTABLISHED address_map entry (anh/em).
     Act: reconcile_attributions.
-    Assert: the pair falls back to safe default — D-54 step 3.
+    Assert: the pair CARRIES FORWARD (anh/em), NOT safe-default — D-01 Step 3 (R1 fix).
     """
-    from trezarr.translate.reconcile import reconcile_attributions, get_safe_default
+    from trezarr.translate.reconcile import reconcile_attributions
 
     # HIGH threshold — "low" attribution won't be a survivor
     settings = _make_settings(threshold="high")
@@ -641,7 +649,7 @@ async def test_transition_no_survivors_falls_to_safe_default(session_factory):
         addr_gender=None,
     )
 
-    # A relationship_event with NO suggested terms
+    # A relationship_event with NO suggested terms (term-less event)
     event_no_suggest = _make_relationship_event(
         id=21,
         series_id=series_id,
@@ -652,6 +660,7 @@ async def test_transition_no_survivors_falls_to_safe_default(session_factory):
         suggested_address_term=None,
     )
 
+    # ESTABLISHED address_map entry (anh/em) — this dyad already has earned terms
     bible = _make_bible(
         series_id=series_id,
         characters=[
@@ -677,11 +686,11 @@ async def test_transition_no_survivors_falls_to_safe_default(session_factory):
     )
 
     pair_result = resolved.get((spk_id, addr_id))
-    assert pair_result is not None, "Expected a resolved entry (safe default)"
-    expected = get_safe_default(None, settings)
-    assert pair_result == expected, (
-        f"Transition with no suggested terms + no survivors must fall back to safe default "
-        f"{expected!r}, got {pair_result!r}"
+    assert pair_result is not None, "Expected a resolved entry"
+    # R1 fix: established pair (anh/em) must CARRY FORWARD, not flatten to safe-default
+    assert pair_result == ("anh", "em"), (
+        f"R1 fix: established pair must carry forward on term-less event; "
+        f"expected ('anh','em'), got {pair_result!r}"
     )
 
 

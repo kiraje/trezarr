@@ -316,7 +316,16 @@ def _derive_transition_terms(
     # Step 2: This episode's confident attribution for the ordered pair
     if survivors and existing is not None and existing.self_term and existing.address_term:
         return (existing.self_term, existing.address_term)
-    # Step 3: Safe default (H3/B4: register-aware)
+    # Step 3: Carry forward the established pair (scy precedence: carried > safe-default).
+    # D-01: lock > genuine evolution (event WITH usable terms) > carried Bible pair > safe-default.
+    # A term-less event on an ESTABLISHED dyad must not flatten the existing pronoun pair
+    # to a stranger safe-default — only truly-new dyads (no prior entry) use get_safe_default.
+    # Audit 260611-ru6 R1: Leg B Steven→Khonshu (tôi/ông→tôi/anh) and Leg A Mei→Han
+    # (muội/huynh→tại hạ/các hạ) were both caused by this Step 3 fall-through.
+    if existing is not None and existing.self_term and existing.address_term:
+        return (existing.self_term, existing.address_term)
+    # Step 4: Truly-new dyad (no prior entry or entry with None terms) → safe default.
+    # Success #4 invariant: never invent an intimate pronoun for a brand-new relationship.
     addr_gender = id_to_gender.get(addr_id)
     return get_safe_default(addr_gender, settings, register=register)
 
