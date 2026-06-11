@@ -1638,3 +1638,78 @@ def test_r1_transition_truly_new_dyad_still_safe_defaults():
     assert result == ("tôi", "bạn"), (
         f"R1-D: truly-new dyad (existing=None) must fall to safe-default ('tôi','bạn'), got {result!r}"
     )
+
+
+# ---------------------------------------------------------------------------
+# R2: S00E00 transition skip (260611-ru6)
+# ---------------------------------------------------------------------------
+# Audit 260611-l74 B2/B3: when episode_key == "S00E00" (cold-Bible default, from a Plex
+# NxNN stem that fails the SxxExx regex), every relationship_event stamped S00E00 fires.
+# For Leg A series-1, ALL 12 events are stamped S00E00 → every run re-fires all events.
+# Guard: skip the transition branch entirely when episode_key == "S00E00" — that key is
+# the cold-Bible fallback and must never match any real event. Lock still wins before
+# this guard (lock is checked before the transition block).
+# D-02: S00E00 = "unknown episode" → carry-forward path used instead.
+# ---------------------------------------------------------------------------
+
+
+async def test_r2_s00e00_skips_transition_branch(session_factory):
+    """R2-H: episode_key='S00E00' skips the transition branch even when an event would match.
+
+    Arrange: established pair (tôi/ông), relationship_event stamped S00E00 with
+             suggested=(tôi/anh), low attribution. episode_key='S00E00'.
+    Act: reconcile_attributions.
+    Assert: pair is UNCHANGED (tôi/ông) — the S00E00 guard prevented the event from firing.
+    Lock check still runs before the guard; this test uses an UNLOCKED pair so only the guard matters.
+    """
+    from trezarr.translate.reconcile import reconcile_attributions
+
+    settings = _make_settings(threshold="high")  # low attribution → no survivors
+
+    series_id = await _create_series(session_factory, arr_series_id=410)
+    spk_id, addr_id = await _create_characters(
+        session_factory, series_id,
+        spk_name="GuardA", spk_gender=None, addr_name="GuardB", addr_gender="male",
+    )
+
+    # Relationship event stamped S00E00 that WOULD change the pair if allowed to fire
+    event_s00 = _make_relationship_event(
+        id=38, series_id=series_id, char_a_id=spk_id, char_b_id=addr_id,
+        episode_marker="S00E00",  # cold-Bible default marker
+        suggested_self_term="tôi",
+        suggested_address_term="anh",  # would change ông → anh if fired
+    )
+
+    # Established UNLOCKED pair (tôi/ông) — pre-existing from a prior episode
+    bible = _make_bible(
+        series_id=series_id,
+        characters=[
+            _make_character(spk_id, "GuardA", None),
+            _make_character(addr_id, "GuardB", "male"),
+        ],
+        address_map=[
+            _make_address_map_entry(38, series_id, spk_id, addr_id, "tôi", "ông"),
+        ],
+        relationship_events=[event_s00],
+    )
+
+    # LOW attribution → no survivors; but the guard (not the survivor check) must block the event
+    attributions = [_make_attribution("GuardA", "GuardB", "low")]
+
+    resolved = await reconcile_attributions(
+        flat_attributions=attributions,
+        bible=bible,
+        session_factory=session_factory,
+        series_id=series_id,
+        episode_key="S00E00",  # cold-Bible default — guard must fire
+        settings=settings,
+    )
+
+    result = resolved.get((spk_id, addr_id))
+    assert result is not None, "Expected a resolved entry"
+    # S00E00 guard: transition must NOT fire → pair must carry forward as (tôi/ông)
+    assert result == ("tôi", "ông"), (
+        f"R2-H: S00E00 guard must prevent transition branch from firing; "
+        f"expected carried ('tôi','ông'), got {result!r}. "
+        "Before fix: returns ('tôi','anh') = suggested terms from the fired event."
+    )

@@ -1306,3 +1306,59 @@ def test_h4_carves_out_pass3_pronoun_hint_from_preserve():
         "('echo' or 'keep') near the hint reference. This is the scaffolding-leak backstop "
         "at the prompt layer (validate.py Check 8 is the gate-layer backstop)."
     )
+
+
+# ── R2: NxNN episode key (260611-ru6) ──────────────────────────────────────────
+# Audit 260611-l74 B2: derive_episode_key falls back to S00E00 for Plex "NxNN" stems
+# (e.g. "A Record of a Mortal's Journey to Immortality - 6x19 - Episode 143.en.srt").
+# All 12 Leg A relationship_events are stamped S00E00, so every episode from a Plex
+# source matches all events on every run — the episode_key collapse BLOCKER.
+# Fix: add a pre-check for the NxNN pattern (r'(\d{1,2})[xX](\d{1,3})') before the
+# fallback so "6x19" → S06E19, "1x5" → S01E05, "12x103" → S12E103.
+# D-02: SxxExx standard pattern still takes priority (elif not if); NxNN fires only
+# when SxxExx did not match; season/episode fallback unchanged.
+
+
+def _make_media_item(season_number=None, source_type="episode", title="Show"):
+    """Minimal MediaItem-like object for derive_episode_key tests."""
+    from types import SimpleNamespace
+    return SimpleNamespace(season_number=season_number, source_type=source_type, title=title)
+
+
+def test_r2_nxnn_6x19_parses_to_s06e19():
+    """R2-E: Plex '- 6x19 -' stem parses to S06E19 (currently returns S00E00).
+
+    The real Leg A subtitle path: 'A Record of a Mortal's Journey to Immortality - 6x19 - Episode 143.en.srt'.
+    Before fix: SxxExx regex fails on '6x19' → season fallback with None → S00E00.
+    After fix: NxNN pre-check fires → S06E19.
+    """
+    from trezarr.translate.engine import derive_episode_key
+
+    path = "A Record of a Mortal's Journey to Immortality - 6x19 - Episode 143.en.srt"
+    result = derive_episode_key(_make_media_item(season_number=None), source_sub_path=path)
+    assert result == "S06E19", (
+        f"R2-E: '6x19' stem must parse to 'S06E19'; got {result!r}. "
+        "Before fix: returns 'S00E00' because SxxExx regex does not match NxNN form."
+    )
+
+
+def test_r2_nxnn_1x5_parses_to_s01e05():
+    """R2-F: 1-digit season + 1-digit episode 'Show - 1x5 - Ep.en.srt' → S01E05."""
+    from trezarr.translate.engine import derive_episode_key
+
+    path = "Show - 1x5 - Ep.en.srt"
+    result = derive_episode_key(_make_media_item(season_number=None), source_sub_path=path)
+    assert result == "S01E05", (
+        f"R2-F: '1x5' stem must parse to 'S01E05'; got {result!r}."
+    )
+
+
+def test_r2_nxnn_12x103_parses_to_s12e103():
+    """R2-G: 2-digit season + 3-digit episode 'Show - 12x103 - Title.en.srt' → S12E103."""
+    from trezarr.translate.engine import derive_episode_key
+
+    path = "Show - 12x103 - Title.en.srt"
+    result = derive_episode_key(_make_media_item(season_number=None), source_sub_path=path)
+    assert result == "S12E103", (
+        f"R2-G: '12x103' stem must parse to 'S12E103'; got {result!r}."
+    )
