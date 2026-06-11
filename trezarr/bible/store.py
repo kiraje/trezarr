@@ -526,10 +526,26 @@ async def _upsert_term_in_session(
     This helper MUST be called from inside an `async with session.begin():` block.
 
     For a NEW row: constructs TermDictionary, flushes, emits one event per non-None field.
-    For an EXISTING row: delegates to _merge_inferred_in_session.
+    For an EXISTING row: applies the carry-forward guard for ``vietnamese_rendering`` (see
+    below), then delegates to _merge_inferred_in_session for any remaining fields.
 
     Note on TermDictionary first insert: vietnamese_rendering is required (NOT NULL in DB).
     Callers must provide a non-None vietnamese_rendering for inserts.
+
+    Carry-forward policy (260612-7kt / D-02 — prior > inference for unlocked renderings):
+    If the existing row has a NON-EMPTY ``vietnamese_rendering`` AND the field is NOT in
+    ``locked_fields``, a new inference rendering is suppressed rather than applied.  This
+    prevents re-inference churn (MK run: 20/53 rows churned in one night; Khonshu→Khonsu
+    contradicting a locked row).  The suppressed inference is recorded as a BibleEvent so
+    the audit trail is preserved.  The ladder is:
+      locked > prior (non-empty unlocked) > inference
+    This guard lives here (not in compute_field_changes / _merge_inferred_in_session) to
+    keep the policy change localized to the term entity — mirroring how the scy/ru6
+    address-map carry-forward was implemented in _upsert_address_pair_in_session.
+
+    API PATCH path (apply_human_edit_term) is NOT routed through this function (D-80).
+    It writes directly via session.get(TermDictionary, term_id) + setattr — completely
+    bypassing the inference carry-forward guard.  Human edits are always authoritative.
 
     Args:
         session:               Open AsyncSession with active transaction.
@@ -543,10 +559,29 @@ async def _upsert_term_in_session(
     Returns:
         (TermDictionary_row, list_of_BibleEvent_instances)
     """
-    # SELECT existing row by identity key
+    # SELECT existing row by identity key (case-insensitive on source_term — 260612-7kt).
+    #
+    # WHY func.lower(): analyze.py keys terms by .strip().lower() when building the
+    # in-memory passed-bible glossary, so 'Judgment' and 'judgment' are the same key
+    # at the analysis layer.  Without func.lower() here, a case variant from a different
+    # inference pass creates a second DB row, producing competing renderings.
+    #
+    # ASYMMETRY: Only the WRITE boundary uses case-insensitive resolution.  get_term()
+    # (the public read function used by analyze.py and the API GET endpoint) retains
+    # exact-case semantics — this is intentional so the public API remains predictable.
+    # The canonical row's source_term is preserved as-is (first-inserted form wins the
+    # casing).  If the caller needs the exact casing, it should use get_term().
+    #
+    # CJK safety: SQLite lower() on CJK codepoints is identity (lower("孔苏") == "孔苏");
+    # case-insensitive matching never creates cross-term collisions for CJK source terms.
+    # (Verified: SQLite docs + test_cjk_term_unaffected_by_case_insensitive_lookup.)
+    #
+    # Prevention-only: this guard prevents NEW duplicate rows.  Existing duplicate rows
+    # (created before this fix) are not migrated — user may resolve via API PATCH as was
+    # done for the ru6 Latin/CJK character name conflict.
     stmt = select(TermDictionary).where(
         TermDictionary.series_id == series_id,
-        TermDictionary.source_term == source_term,
+        func.lower(TermDictionary.source_term) == func.lower(source_term),
     )
     existing_row = (await session.execute(stmt)).scalar_one_or_none()
 
@@ -585,26 +620,54 @@ async def _upsert_term_in_session(
                 events.append(evt)
         return row, events
 
-    # Existing row: build inferred dict of non-None provided fields
+    # Existing row: carry-forward guard for vietnamese_rendering (prior > inference).
+    # Must run BEFORE building the inferred dict so the suppressed field is excluded
+    # from the _merge_inferred_in_session call.
+    suppressed_events: list[BibleEvent] = []
+    rendering_suppressed = False
+
+    if vietnamese_rendering is not None:
+        prior_rendering = existing_row.vietnamese_rendering or ""
+        locked_fields = existing_row.locked_fields or []
+        if prior_rendering and "vietnamese_rendering" not in locked_fields:
+            # Prior non-empty unlocked rendering exists — suppress the new inference.
+            # Emit a provenance event so the suppressed inference is auditable.
+            evt = BibleEvent(
+                series_id=series_id,
+                episode_key=episode_key,
+                entity_type="term_dictionary",
+                entity_id=existing_row.id,
+                field="vietnamese_rendering",
+                old_value=prior_rendering,  # the prior rendering that was kept
+                new_value=vietnamese_rendering,  # the inference that was suppressed
+                source=source,
+            )
+            session.add(evt)
+            suppressed_events.append(evt)
+            rendering_suppressed = True
+            # Fall through: build inferred WITHOUT vietnamese_rendering
+
+    # Build inferred dict of non-None provided fields, excluding suppressed rendering
     inferred = {
         k: v
         for k, v in [
-            ("vietnamese_rendering", vietnamese_rendering),
+            ("vietnamese_rendering", None if rendering_suppressed else vietnamese_rendering),
             ("category", category),
         ]
         if v is not None
     }
     if not inferred:
-        return existing_row, []
+        return existing_row, suppressed_events
 
-    # Delegate to _merge_inferred_in_session
-    result, events = await _merge_inferred_in_session(
+    # Delegate remaining fields to _merge_inferred_in_session
+    result, merge_events = await _merge_inferred_in_session(
         session, existing_row, "term_dictionary", TermDTO, inferred, episode_key, source
     )
+    all_events = suppressed_events + merge_events
     if isinstance(result, TermDictionary):
-        return result, events
+        return result, all_events
     # No-op path: result is a DTO. Return existing_row unchanged.
-    return existing_row, events
+    return existing_row, all_events
 
 
 async def _upsert_address_pair_in_session(

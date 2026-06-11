@@ -1285,3 +1285,121 @@ def test_fix4_unclosed_sentinel_re_closed_form_does_match_via_backtrack():
     assert result2.group() == "<<T153", (
         f"FIX4: unclosed match expected '<<T153', got {result2.group()!r}"
     )
+
+
+# ---------------------------------------------------------------------------
+# 260612-7kt Task 1 — VN-label hint scaffold detection (Check 8 + VN_HINT_SCAFFOLD_RE)
+# ---------------------------------------------------------------------------
+# E143 cue 148: "(tại hạ nói: tại hạ; xưng hô: cô nương) xin cô nương nén bi thương."
+# A weak model translated the English labels into Vietnamese.  HINT_SCAFFOLD_RE is
+# anchored to "speaker says:" and misses this form.  VN_HINT_SCAFFOLD_RE closes the gap.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "leaked_vn",
+    [
+        # Exact E143 cue 148 string
+        "(tại hạ nói: tại hạ; xưng hô: cô nương) xin cô nương nén bi thương.",
+        # Bare nói: label only
+        "(nói: ta; xưng hô: ngươi) Ngươi tới rồi.",
+        # Bare xưng hô: label only
+        "(xưng hô: muội) Em đừng đi.",
+        # nói: with surrounding text before the colon — structural label must still fire
+        "(tôi nói: rằng sao) Điều đó sai rồi.",
+    ],
+)
+def test_vn_label_hint_scaffold_raises_check8(leaked_vn):
+    """A translated-label pronoun hint — e.g. '(tại hạ nói: tại hạ; xưng hô: cô nương)' —
+    must be quarantined by Check 8 via VN_HINT_SCAFFOLD_RE.
+
+    E143 cue 148 incident: the model translated the English labels 'speaker says' / 'addresses
+    as' into Vietnamese ('nói' / 'xưng hô'), evading both _LEAKED_HINT_RE (engine strip) and
+    HINT_SCAFFOLD_RE (Check 8).  VN_HINT_SCAFFOLD_RE adds the Vietnamese-label variant.
+
+    The discriminating structural signal is the COLON after the role token (`nói:` or
+    `xưng hô:`) — distinguishing a label structure from a stage direction (`nói to`).
+    """
+    validate_mod = pytest.importorskip("trezarr.translate.validate")
+    GateError = validate_mod.GateError
+    validate_subdoc = validate_mod.validate_subdoc
+
+    src_lines = [_make_line(1, text="English source cue")] + [
+        _make_line(i + 2, text=p) for i, p in enumerate(["A", "B", "C"])
+    ]
+    trn_lines = [_make_line(1, text=leaked_vn)] + [
+        _make_line(i + 2, text=p) for i, p in enumerate(["Xin chào bạn", "Tôi rất khỏe", "Cảm ơn"])
+    ]
+
+    with pytest.raises(GateError) as exc_info:
+        validate_subdoc(_make_doc(trn_lines), _make_doc(src_lines), _settings())
+
+    assert exc_info.value.failure.check == 8, (
+        f"Expected GateError.failure.check == 8 (VN-label hint scaffold), "
+        f"got check={exc_info.value.failure.check} for {leaked_vn!r}. "
+        f"VN_HINT_SCAFFOLD_RE must catch translated-label form (nói:/xưng hô: colon structure)."
+    )
+
+
+@pytest.mark.parametrize(
+    "safe_vn",
+    [
+        # Stage directions — nói WITHOUT colon → must pass
+        "(thì thầm)",
+        "(nói to)",
+        "(nói chậm rãi)",
+        "(vui vẻ)",
+        # Title-card with colon after chapter label — NOT a pronoun/speaker label
+        "(Hồi 01: Mở Đầu)",
+        # Title card no colon
+        "(Phàm Nhân Tu Tiên Ký)",
+    ],
+)
+def test_vn_label_false_positive_battery(safe_vn):
+    """Stage directions, title-cards and chapter labels must NOT be quarantined by VN_HINT_SCAFFOLD_RE.
+
+    False-positive battery for the colon-discriminator design: `nói` and `xưng hô` without a
+    COLON after them are stage directions, not pronoun-label structures.  `(Hồi 01: Mở Đầu)`
+    has a colon but the token before the colon is `Hồi 01`, not a pronoun-role word.
+
+    All inputs must pass validate_subdoc without raising GateError.
+    """
+    validate_mod = pytest.importorskip("trezarr.translate.validate")
+    validate_subdoc = validate_mod.validate_subdoc
+
+    # Build a doc where the first cue contains the parenthetical plus enough Vietnamese
+    # diacritics to clear Check 3.
+    cue_text = safe_vn + " Xin chào thế giới."
+    src_lines = [_make_line(1, text="English source")] + [
+        _make_line(i + 2, text=p) for i, p in enumerate(["A", "B", "C"])
+    ]
+    trn_lines = [_make_line(1, text=cue_text)] + [
+        _make_line(i + 2, text=p) for i, p in enumerate(["Xin chào bạn", "Tôi rất khỏe", "Cảm ơn"])
+    ]
+
+    # Must not raise GateError
+    result = validate_subdoc(_make_doc(trn_lines), _make_doc(src_lines), _settings())
+    assert result is None, (
+        f"Stage direction / title-card {safe_vn!r} must NOT be quarantined by VN_HINT_SCAFFOLD_RE. "
+        f"The colon-discriminator must require the token before ':' to be a pronoun-role word "
+        f"(nói or xưng hô), not an arbitrary chapter/episode marker."
+    )
+
+
+def test_t53_credit_exemption_unaffected_by_vn_hint_change():
+    """t53 credit cue 'Phụ đề bởi: 虫二' still passes via Check 9 exemption.
+
+    Regression guard: VN_HINT_SCAFFOLD_RE must NOT match 'Phụ đề bởi:' — the token before
+    ':' is 'bởi', not 'nói' or 'xưng hô'.  Check 9 credit exemption remains the gating path.
+    """
+    validate_mod = pytest.importorskip("trezarr.translate.validate")
+    validate_subdoc = validate_mod.validate_subdoc
+
+    src = _make_doc([_make_line(1, text="Subtitles by 虫二")])
+    trn = _make_doc([_make_line(1, text="Phụ đề bởi: 虫二")])
+
+    result = validate_subdoc(trn, src, _settings())
+    assert result is None, (
+        "t53 credit cue 'Phụ đề bởi: 虫二' must still pass via Check 9 exemption. "
+        "VN_HINT_SCAFFOLD_RE must NOT match 'Phụ đề bởi:' (bởi is not nói or xưng hô)."
+    )

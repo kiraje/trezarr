@@ -64,8 +64,35 @@ REVIEW_SCAFFOLD_RE = re.compile(r"\(\s*source\s*:", re.IGNORECASE)
 # the H4 paren-preserve rule (engine.py) *raises* that echo risk. Shared by gate Check 8 as
 # the defense-in-depth backstop: a leaked hint quarantines, never ships. Anchored on "(" +
 # the English label, whitespace/case-tolerant — mirrors REVIEW_SCAFFOLD_RE. (A
-# *translated*-label echo, e.g. "(người nói:", is residual risk — not matched, same stance.)
+# *translated*-label echo is caught by VN_HINT_SCAFFOLD_RE — see sibling constant below.)
 HINT_SCAFFOLD_RE = re.compile(r"\(\s*speaker\s+says\s*:", re.IGNORECASE)
+
+# 260612-7kt (Finding 1 / D-01) — Vietnamese-label variant of the Pass-3 pronoun-hint
+# scaffolding leak.  E143 cue 148 incident: a weak model translated the English labels
+# 'speaker says' → 'nói' and 'addresses as' → 'xưng hô', producing a parenthetical like
+# '(tại hạ nói: tại hạ; xưng hô: cô nương)' that evaded both _LEAKED_HINT_RE (engine
+# strip) and HINT_SCAFFOLD_RE (Check 8 — anchored to "speaker says:" only).
+#
+# Discriminating structural signal: the token IMMEDIATELY before ':' is a pronoun-ROLE
+# word — either `nói` (says/speaks) or `xưng hô` (form of address).  The mandatory colon
+# distinguishes a label structure from a stage direction:
+#   "(nói to)"        → NO colon after nói  → stage direction → NOT matched
+#   "(nói: ta)"       → colon after nói     → label structure → MATCHED
+#   "(xưng hô: muội)" → colon after xưng hô → label structure → MATCHED
+#   "(Hồi 01: …)"    → token before ':' is 'Hồi 01', not a role word → NOT matched
+#
+# Pattern: open paren, optional non-colon chars (e.g. "tại hạ "), then role token, then colon.
+# \(\s*             — literal '(' optionally followed by spaces
+# (?:[^():]*        — zero or more chars that are not '(' ')' or ':' (the optional "prefix name")
+# (?:nói|xưng\s+hô) — the pronoun-role token (case-insensitive covers Nói, XƯNG HÔ, etc.)
+# \s*:)             — zero or more spaces then the mandatory colon
+# Non-recursive; no alternation with overlapping paths (ASVS L1 V5 — mirrors HINT_SCAFFOLD_RE).
+# Sibling to HINT_SCAFFOLD_RE: one for English labels, one for Vietnamese labels; both feed
+# the same Check 8 OR condition.  engine.py _LEAKED_VN_HINT_RE is the strip-layer counterpart.
+VN_HINT_SCAFFOLD_RE = re.compile(
+    r"\(\s*(?:[^():]*(?:nói|xưng\s+hô)\s*:)",
+    re.IGNORECASE,
+)
 
 # IMP-02b gate-repair directive signature. _repair_failing_cues injects a
 # "[CORRECTION REQUIRED] <directive>" instruction into the RULES block of the repair prompt.
@@ -575,11 +602,18 @@ def validate_subdoc(
     #     '(No violation)' both bypassed Checks 10/12 because they contain VN diacritics
     #     (tôi, anh) causing those checks to treat them as legitimate Vietnamese dialogue.
     #     "no violation" and "correct;" cannot appear in genuine Vietnamese dialogue; zero FP.
-    # All four are English prompt scaffolding, not Vietnamese dialogue, so quarantining is safe.
+    #   - VN_HINT_SCAFFOLD_RE     → 260612-7kt Finding 1: Vietnamese-label hint echo.
+    #     E143 cue 148 incident: '(tại hạ nói: tại hạ; xưng hô: cô nương)' evaded both
+    #     _LEAKED_HINT_RE and HINT_SCAFFOLD_RE because the model translated the English labels.
+    #     Colon-discriminator: 'nói:' / 'xưng hô:' are structural label signals; stage
+    #     directions '(nói to)' lack the colon and are NOT matched (zero false positives
+    #     confirmed by false-positive battery — see tests/translate/test_validate.py).
+    # All five are prompt scaffolding, not genuine Vietnamese dialogue, so quarantining is safe.
     for i, sl in enumerate(translated.lines):
         if (
             REVIEW_SCAFFOLD_RE.search(sl.text)
             or HINT_SCAFFOLD_RE.search(sl.text)
+            or VN_HINT_SCAFFOLD_RE.search(sl.text)
             or CORRECTION_DIRECTIVE_RE.search(sl.text)
             or ATTRIBUTION_META_RE.search(sl.text)
         ):
