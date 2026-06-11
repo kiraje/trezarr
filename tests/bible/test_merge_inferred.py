@@ -1017,3 +1017,180 @@ async def test_term_rendering_api_edit_not_carryforward_guarded(session_factory)
         f"got {term.vietnamese_rendering!r}. "
         f"The API PATCH path is NOT carry-forward-guarded (D-80)."
     )
+
+
+# ---------------------------------------------------------------------------
+# 260612-7kt Task 3 — Case-insensitive lookup at upsert term boundary
+# ---------------------------------------------------------------------------
+# Finding 3 (MEDIUM): analyze.py matches terms case-insensitively (.strip().lower())
+# but _upsert_term_in_session queries with exact case-sensitive equality, creating
+# duplicate rows for 'judgment'/'Judgment', 'underworld'/'Underworld', etc.
+# Fix: case-insensitive lookup at the upsert boundary using func.lower().
+# ---------------------------------------------------------------------------
+
+
+async def test_case_variant_upsert_resolves_to_existing_row(session_factory):
+    """Case-variant upsert resolves to the existing row (no duplicate row created).
+
+    Sequence:
+    1. upsert_term source_term="Judgment" rendering="Thẩm Phán" → establishes row
+    2. upsert_term source_term="judgment" rendering="sự phán xét" → case variant
+    Result: exactly 1 TermDictionary row for "judgment"/"Judgment" in this series.
+    Rendering: "Thẩm Phán" (carry-forward from Task 2 keeps the prior).
+
+    func.lower() at the upsert boundary matches the .strip().lower() key analyze.py uses.
+    The canonical row's source_term casing is preserved (first-inserted form wins).
+    """
+    from sqlalchemy import select as sa_select, func as sa_func  # noqa: PLC0415
+    from trezarr.bible.models import TermDictionary as TD  # noqa: PLC0415
+
+    series_id = await _create_series(session_factory, arr_series_id=9005)
+
+    # Step 1: establish row with capital "Judgment"
+    await upsert_term(
+        session_factory,
+        series_id=series_id,
+        source_term="Judgment",
+        vietnamese_rendering="Thẩm Phán",
+        episode_key="S01E01",
+        source="inference",
+    )
+
+    # Step 2: case variant "judgment" (lowercase) should resolve to the same row
+    await upsert_term(
+        session_factory,
+        series_id=series_id,
+        source_term="judgment",
+        vietnamese_rendering="sự phán xét",
+        episode_key="S01E02",
+        source="inference",
+    )
+
+    # Confirm: exactly 1 row for this term in this series
+    async with session_factory() as session:
+        count = await session.scalar(
+            sa_select(sa_func.count()).select_from(TD).where(
+                TD.series_id == series_id,
+                sa_func.lower(TD.source_term) == "judgment",
+            )
+        )
+    assert count == 1, (
+        f"Expected exactly 1 row for 'Judgment'/'judgment' in series {series_id}, "
+        f"got {count}. func.lower() at the upsert boundary must prevent duplicate rows."
+    )
+
+
+async def test_case_variant_upsert_carryforward_applies_across_case(session_factory):
+    """Carry-forward applies across case variants (Task 2 + Task 3 combined).
+
+    Sequence:
+    1. upsert_term source_term="Scarab" rendering="bọ hung" → establishes prior (exact case)
+    2. upsert_term source_term="scarab" rendering="Bọ hung thần" → different case + rendering
+    Result: single row, rendering == "bọ hung" (carry-forward applies; no duplicate row).
+
+    This test verifies that the case-insensitive lookup (Task 3) correctly routes the
+    lowercase variant to the existing row, after which the carry-forward guard (Task 2)
+    preserves the prior rendering.
+    """
+    from sqlalchemy import select as sa_select, func as sa_func  # noqa: PLC0415
+    from trezarr.bible.models import TermDictionary as TD  # noqa: PLC0415
+    from trezarr.bible.store import get_term  # noqa: PLC0415
+
+    series_id = await _create_series(session_factory, arr_series_id=9006)
+
+    # Step 1: establish prior
+    await upsert_term(
+        session_factory,
+        series_id=series_id,
+        source_term="Scarab",
+        vietnamese_rendering="bọ hung",
+        episode_key="S01E01",
+        source="inference",
+    )
+
+    # Step 2: lowercase variant with different rendering
+    await upsert_term(
+        session_factory,
+        series_id=series_id,
+        source_term="scarab",
+        vietnamese_rendering="Bọ hung thần",
+        episode_key="S01E02",
+        source="inference",
+    )
+
+    # Single row
+    async with session_factory() as session:
+        count = await session.scalar(
+            sa_select(sa_func.count()).select_from(TD).where(
+                TD.series_id == series_id,
+                sa_func.lower(TD.source_term) == "scarab",
+            )
+        )
+    assert count == 1, (
+        f"Expected 1 row for 'Scarab'/'scarab', got {count}. Duplicate row must not be created."
+    )
+
+    # Carry-forward: prior "bọ hung" must be kept (not "Bọ hung thần")
+    term = await get_term(session_factory, series_id=series_id, source_term="Scarab")
+    assert term is not None
+    assert term.vietnamese_rendering == "bọ hung", (
+        f"Carry-forward must apply across case variant: prior 'bọ hung' must be kept, "
+        f"got {term.vietnamese_rendering!r}."
+    )
+
+
+async def test_cjk_term_unaffected_by_case_insensitive_lookup(session_factory):
+    """CJK source terms are unaffected: casefold on CJK is identity, no collision.
+
+    Sequence:
+    1. upsert_term source_term="孔苏" rendering="Khonshu"
+    2. upsert_term source_term="孔苏" rendering="Khonsu" (same term, different rendering)
+    Result: single row, rendering == "Khonshu" (carry-forward; casefold of CJK is identity)
+    AND no duplicate row for "孔苏".
+
+    SQLite lower("孔苏") == "孔苏" — safe; this test verifies that case-insensitive lookup
+    does not introduce any CJK regression.
+    """
+    from sqlalchemy import select as sa_select, func as sa_func  # noqa: PLC0415
+    from trezarr.bible.models import TermDictionary as TD  # noqa: PLC0415
+    from trezarr.bible.store import get_term  # noqa: PLC0415
+
+    series_id = await _create_series(session_factory, arr_series_id=9007)
+
+    await upsert_term(
+        session_factory,
+        series_id=series_id,
+        source_term="孔苏",
+        vietnamese_rendering="Khonshu",
+        episode_key="S01E01",
+        source="inference",
+    )
+
+    await upsert_term(
+        session_factory,
+        series_id=series_id,
+        source_term="孔苏",
+        vietnamese_rendering="Khonsu",
+        episode_key="S01E02",
+        source="inference",
+    )
+
+    # Single row for CJK term
+    async with session_factory() as session:
+        count = await session.scalar(
+            sa_select(sa_func.count()).select_from(TD).where(
+                TD.series_id == series_id,
+                TD.source_term == "孔苏",
+            )
+        )
+    assert count == 1, (
+        f"CJK term '孔苏' must have exactly 1 row, got {count}. "
+        f"Case-insensitive lookup must not break exact CJK matching."
+    )
+
+    # Carry-forward: prior "Khonshu" must be kept
+    term = await get_term(session_factory, series_id=series_id, source_term="孔苏")
+    assert term is not None
+    assert term.vietnamese_rendering == "Khonshu", (
+        f"CJK term carry-forward: prior 'Khonshu' must be kept, got {term.vietnamese_rendering!r}."
+    )
