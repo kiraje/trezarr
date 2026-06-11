@@ -1362,3 +1362,77 @@ def test_r2_nxnn_12x103_parses_to_s12e103():
     assert result == "S12E103", (
         f"R2-G: '12x103' stem must parse to 'S12E103'; got {result!r}."
     )
+
+
+# ── R2-R2: resolution / aspect-ratio stems must NOT parse as episode keys ────────
+# Bug: NxNN regex is unanchored — '1024x768' → S24E768, '4x3' → S04E03 (aspect).
+# Fix mirrors library.py:51 which uses digit-boundary lookarounds:
+#   r"(?<!\d)(\d{1,2})[xX](\d{1,3})(?!\d)"
+# These cases must fall through to the season-fallback (S00E00 when season_number=None).
+
+
+def test_r2_resolution_1024x768_does_not_parse_as_episode():
+    """R2-R1 RED: '1024x768' (resolution) must NOT be parsed as S24E768.
+
+    Before fix: unanchored regex grabs '24' from '1024' and '768' as episode → S24E768.
+    After fix:  digit-boundary lookahead/lookbehind prevents match → falls to season fallback.
+    Reference:  trezarr/web/routes/library.py:51 uses the same anchored pattern.
+    """
+    from trezarr.translate.engine import derive_episode_key
+
+    result = derive_episode_key(
+        _make_media_item(season_number=None),
+        source_sub_path="Show.1024x768.WEB.srt",
+    )
+    # Must NOT be S24E768 — the resolution must not parse as season×episode.
+    assert result != "S24E768", (
+        f"R2-R1: '1024x768' resolution stem must NOT parse as 'S24E768'; got {result!r}. "
+        "Unanchored NxNN regex falsely matches resolution digits."
+    )
+    # Season fallback with no season_number → S00E00
+    assert result == "S00E00", (
+        f"R2-R1: resolution stem with season_number=None must fall to 'S00E00'; got {result!r}."
+    )
+
+
+def test_r2_resolution_720x480_does_not_parse_as_episode():
+    """R2-R2 RED: '720x480' (DVD resolution) must NOT parse as S20E480.
+
+    Before fix: '720x480' → grabs '20' from '720', '480' as episode → S20E480.
+    After fix:  digit-boundary lookarounds block the match → season fallback.
+    """
+    from trezarr.translate.engine import derive_episode_key
+
+    result = derive_episode_key(
+        _make_media_item(season_number=None),
+        source_sub_path="Some.Show.720x480.DVDRip.srt",
+    )
+    assert result != "S20E480", (
+        f"R2-R2: '720x480' must NOT parse as 'S20E480'; got {result!r}."
+    )
+    assert result == "S00E00", (
+        f"R2-R2: DVD-resolution stem must fall to 'S00E00'; got {result!r}."
+    )
+
+
+def test_r2_aspect_ratio_4x3_does_not_parse_as_episode():
+    """R2-R3 RED: '4x3' (aspect ratio) must NOT parse as S04E03.
+
+    Before fix: '4x3' → S04E03 (aspect ratio token treated as season×episode).
+    After fix:  digit-boundary guards require non-digit before/after → no match → fallback.
+    Note: '4x3' itself would pass the lookarounds since the adjacent chars are '.' (non-digit),
+    BUT the fix uses (?<!\d) and (?!\d) which only exclude digit neighbours.  The key property
+    is that 1024x768 is fixed (digit immediately before '1024' is absent, but '1024' itself
+    starts at the digit '1' — the lookbehind checks the character BEFORE '1024', which is
+    '.', so the unanchored regex would match at position of '24' inside '1024').
+    The fix must at minimum fix the 1024x768 and 720x480 cases.
+    """
+    from trezarr.translate.engine import derive_episode_key
+
+    result = derive_episode_key(
+        _make_media_item(season_number=None),
+        source_sub_path="Title.4x3.Aspect.srt",
+    )
+    assert result != "S04E03", (
+        f"R2-R3: '4x3' aspect ratio must NOT parse as 'S04E03'; got {result!r}."
+    )
