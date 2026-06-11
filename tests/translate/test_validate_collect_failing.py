@@ -183,11 +183,18 @@ def test_B_mixed_check9_and_check10_check9_wins():
 def test_C_multi_check10_all_indices_collected():
     """A file with only check-10 failures raises GateError(check=10) with all indices.
 
-    4-cue layout (0-based):
+    7-cue layout (0-based) — 5 VI cues to keep Check-3 ratio at 5/7 ≈ 0.714 ≥ 0.70:
       0: verbatim English passthrough  — "I am here"   ← fails check 10
       1: clean VI                      — "Xin chào bạn"
       2: verbatim English passthrough  — "Go away now"  ← fails check 10
       3: clean VI                      — "Tôi rất khỏe"
+      4: clean VI                      — "Cảm ơn nhiều"
+      5: clean VI                      — "Hẹn gặp lại sau"
+      6: clean VI                      — "Chào buổi sáng"
+
+    7 cues: 5 VI (indices 1,3,4,5,6), 2 passthrough (0,2).
+    Translatable cues = 7 (passthrough cues have ASCII letters, not ALLOWLIST_RE).
+    VI diacritic cues = 5; ratio = 5/7 ≈ 0.714 ≥ 0.70 → Check-3 passes.
 
     Source cues carry the same tokens for cues 0 and 2 so all_in_source fires.
     No CJK, no honorific bigrams, no gloss parens.
@@ -201,16 +208,22 @@ def test_C_multi_check10_all_indices_collected():
     validate_subdoc = validate_mod.validate_subdoc
 
     trn_lines = [
-        _make_line(0, text="I am here"),          # verbatim — index 0
+        _make_line(0, text="I am here"),           # verbatim — index 0
         _make_line(1, text="Xin chào bạn"),
-        _make_line(2, text="Go away now"),         # verbatim — index 2
+        _make_line(2, text="Go away now"),          # verbatim — index 2
         _make_line(3, text="Tôi rất khỏe"),
+        _make_line(4, text="Cảm ơn nhiều"),
+        _make_line(5, text="Hẹn gặp lại sau"),
+        _make_line(6, text="Chào buổi sáng"),
     ]
     src_lines = [
-        _make_line(0, text="I am here"),           # same → all_in_source True
+        _make_line(0, text="I am here"),            # same → all_in_source True
         _make_line(1, text="Hello friend"),
-        _make_line(2, text="Go away now"),          # same → all_in_source True
+        _make_line(2, text="Go away now"),           # same → all_in_source True
         _make_line(3, text="I am fine"),
+        _make_line(4, text="Thanks a lot"),
+        _make_line(5, text="See you later"),
+        _make_line(6, text="Good morning"),
     ]
     trn = _make_doc(trn_lines)
     src = _make_doc(src_lines)
@@ -280,13 +293,15 @@ def test_E_multi_check11_all_indices_collected():
       0: clean VI  — "Xin chào bạn"
       1: honorific — "Miss Mei, tạm biệt."    ← fails check 11
       2: clean VI  — "Tôi rất khỏe"
-      3: honorific — "Doctor Zhao đến rồi."   ← fails check 11
+      3: honorific — "Elder Zhao đến rồi."    ← fails check 11
 
     Expected AFTER fix: GateError(check=11, failing_indices=[1, 3]).
     Before the fix: GateError raised with failing_indices=[1] only.
 
     Note: "tạm biệt" and "đến rồi" carry VN diacritics so check 10 is skipped for
     these cues; check 11 fires because HONORIFIC_CAPNAME_RE matches the bigram.
+    HONORIFIC_CAPNAME_RE word list: Mr, Mrs, Ms, Miss, Sir, Elder, Brother, Sister,
+    Master, Lord, Lady — "Doctor" is NOT in the list; use "Elder" instead.
     """
     import pytest
     validate_mod = pytest.importorskip("trezarr.translate.validate")
@@ -297,13 +312,13 @@ def test_E_multi_check11_all_indices_collected():
         _make_line(0, text="Xin chào bạn"),
         _make_line(1, text="Miss Mei, tạm biệt."),     # check 11 — index 1
         _make_line(2, text="Tôi rất khỏe"),
-        _make_line(3, text="Doctor Zhao đến rồi."),    # check 11 — index 3
+        _make_line(3, text="Elder Zhao đến rồi."),     # check 11 — index 3
     ]
     src_lines = [
         _make_line(0, text="Hello friend"),
         _make_line(1, text="Miss Mei goodbye"),
         _make_line(2, text="I am fine"),
-        _make_line(3, text="Doctor Zhao has arrived"),
+        _make_line(3, text="Elder Zhao has arrived"),
     ]
     trn = _make_doc(trn_lines)
     src = _make_doc(src_lines)
