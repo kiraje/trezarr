@@ -1299,26 +1299,27 @@ def test_fix4_unclosed_sentinel_re_closed_form_does_match_via_backtrack():
 @pytest.mark.parametrize(
     "leaked_vn",
     [
-        # Exact E143 cue 148 string
+        # Exact E143 cue 148 string — has BOTH nói: and xưng hô: → caught
         "(tại hạ nói: tại hạ; xưng hô: cô nương) xin cô nương nén bi thương.",
-        # Bare nói: label only
+        # nói: + xưng hô: pair → caught
         "(nói: ta; xưng hô: ngươi) Ngươi tới rồi.",
-        # Bare xưng hô: label only
+        # xưng hô: alone (mandatory anchor present) → caught
         "(xưng hô: muội) Em đừng đi.",
-        # nói: with surrounding text before the colon — structural label must still fire
-        "(tôi nói: rằng sao) Điều đó sai rồi.",
+        # NOTE: '(tôi nói: rằng sao)' was here in 7kt but is a false positive —
+        # nói:-only reported speech must NOT be quarantined (Finding A review fix).
+        # Moved to test_noi_only_reported_speech_not_quarantined.
     ],
 )
 def test_vn_label_hint_scaffold_raises_check8(leaked_vn):
-    """A translated-label pronoun hint — e.g. '(tại hạ nói: tại hạ; xưng hô: cô nương)' —
-    must be quarantined by Check 8 via VN_HINT_SCAFFOLD_RE.
+    """A translated-label pronoun hint containing 'xưng hô:' must be quarantined by Check 8.
 
     E143 cue 148 incident: the model translated the English labels 'speaker says' / 'addresses
     as' into Vietnamese ('nói' / 'xưng hô'), evading both _LEAKED_HINT_RE (engine strip) and
     HINT_SCAFFOLD_RE (Check 8).  VN_HINT_SCAFFOLD_RE adds the Vietnamese-label variant.
 
-    The discriminating structural signal is the COLON after the role token (`nói:` or
-    `xưng hô:`) — distinguishing a label structure from a stage direction (`nói to`).
+    Mandatory anchor: 'xưng hô:' (Finding A review fix — nói:-only is legitimate reported
+    speech and must NOT be quarantined).  'xưng hô' is Trezarr-internal jargon that cannot
+    appear in genuine Vietnamese subtitle text.
     """
     validate_mod = pytest.importorskip("trezarr.translate.validate")
     GateError = validate_mod.GateError
@@ -1513,8 +1514,8 @@ def test_square_bracket_vn_hint_scaffold_raises_check8(leaked_vn_sq):
     A model that uses '[' instead of '(' for the hint envelope still leaks scaffold.
     VN_HINT_SCAFFOLD_RE opener must match both '(' and '['.
 
-    RED: current pattern uses \\( literal; '[...]' evades it.
-    GREEN: opener class becomes [(\[] in VN_HINT_SCAFFOLD_RE.
+    RED: current pattern uses literal paren; '[...]' evades it.
+    GREEN: opener class becomes [([] in VN_HINT_SCAFFOLD_RE.
     """
     validate_mod = pytest.importorskip("trezarr.translate.validate")
     GateError = validate_mod.GateError
@@ -1532,14 +1533,14 @@ def test_square_bracket_vn_hint_scaffold_raises_check8(leaked_vn_sq):
 
     assert exc_info.value.failure.check == 8, (
         f"Square-bracket variant {leaked_vn_sq!r} must raise Check 8. "
-        f"Opener must be [(\[] to catch '[' as well as '('."
+        f"Opener must be [([] to catch '[' as well as '('."
     )
 
 
 def test_legit_bracket_title_card_not_quarantined():
     """Legitimate bracket title card '[Phàm Nhân Tu Tiên Ký]' must NOT be quarantined.
 
-    Guards the Finding B fix: the opener class [(\[] must not cause false positives on
+    Guards the Finding B fix: the opener class [([] must not cause false positives on
     square-bracket title cards.  '[Phàm Nhân Tu Tiên Ký]' has no 'xưng hô:' inside —
     the mandatory anchor — so it must pass Check 8 cleanly.
     """

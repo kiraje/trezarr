@@ -579,11 +579,22 @@ async def _upsert_term_in_session(
     # Prevention-only: this guard prevents NEW duplicate rows.  Existing duplicate rows
     # (created before this fix) are not migrated — user may resolve via API PATCH as was
     # done for the ru6 Latin/CJK character name conflict.
-    stmt = select(TermDictionary).where(
-        TermDictionary.series_id == series_id,
-        func.lower(TermDictionary.source_term) == func.lower(source_term),
+    #
+    # Finding C fix (260612-7kt review): use ORDER BY id ASC + .scalars().first() instead
+    # of scalar_one_or_none().  When two case-variant rows already exist (e.g. live MK DB:
+    # "Judgment"/"judgment"), scalar_one_or_none() raises MultipleResultsFound on every
+    # subsequent upsert for that term — permanently breaking future runs.  .scalars().first()
+    # is deterministic (lowest id = oldest = canonical) and never raises.  The duplicate
+    # row continues to exist (prevention-only posture); users may resolve via API PATCH.
+    stmt = (
+        select(TermDictionary)
+        .where(
+            TermDictionary.series_id == series_id,
+            func.lower(TermDictionary.source_term) == source_term.strip().lower(),
+        )
+        .order_by(TermDictionary.id.asc())
     )
-    existing_row = (await session.execute(stmt)).scalar_one_or_none()
+    existing_row = (await session.execute(stmt)).scalars().first()
 
     if existing_row is None:
         # First insert: vietnamese_rendering is required for TermDictionary (NOT NULL).
@@ -623,29 +634,49 @@ async def _upsert_term_in_session(
     # Existing row: carry-forward guard for vietnamese_rendering (prior > inference).
     # Must run BEFORE building the inferred dict so the suppressed field is excluded
     # from the _merge_inferred_in_session call.
+    #
+    # Finding D fix (260612-7kt review): gate suppression on source == "inference" only.
+    # Human/import sources (POST /api/series/{id}/terms, source="import") must fall through
+    # to the normal merge so the human's explicit value is applied.  Previously the guard
+    # fired on all sources, silently discarding every human-POST for an existing term.
+    #
+    # Finding E fix (260612-7kt review): only suppress-and-emit when the proposed rendering
+    # differs from the prior.  An equal proposal is a true no-op — emitting a BibleEvent
+    # for it violates BIBLE-06 and creates junk rows per term per run.
+    #
+    # Finding F fix (260612-7kt review): use (existing_row.vietnamese_rendering or "").strip()
+    # for the truthiness test.  A whitespace-only prior ('   ') is truthy but semantically
+    # empty — it must not block a genuine first write.  The unstripped value is still used
+    # for the audit old_value (audit trail preservation).
     suppressed_events: list[BibleEvent] = []
     rendering_suppressed = False
 
-    if vietnamese_rendering is not None:
+    if vietnamese_rendering is not None and source == "inference":
         prior_rendering = existing_row.vietnamese_rendering or ""
         locked_fields = existing_row.locked_fields or []
-        if prior_rendering and "vietnamese_rendering" not in locked_fields:
-            # Prior non-empty unlocked rendering exists — suppress the new inference.
-            # Emit a provenance event so the suppressed inference is auditable.
-            evt = BibleEvent(
-                series_id=series_id,
-                episode_key=episode_key,
-                entity_type="term_dictionary",
-                entity_id=existing_row.id,
-                field="vietnamese_rendering",
-                old_value=prior_rendering,  # the prior rendering that was kept
-                new_value=vietnamese_rendering,  # the inference that was suppressed
-                source=source,
-            )
-            session.add(evt)
-            suppressed_events.append(evt)
-            rendering_suppressed = True
-            # Fall through: build inferred WITHOUT vietnamese_rendering
+        # Finding F: strip for truthiness check; keep unstripped for old_value in audit event.
+        if prior_rendering.strip() and "vietnamese_rendering" not in locked_fields:
+            # Finding E: only suppress when the proposed rendering differs from the prior.
+            if vietnamese_rendering != prior_rendering:
+                # Prior non-empty unlocked rendering exists — suppress the new inference.
+                # Emit a provenance event so the suppressed inference is auditable.
+                evt = BibleEvent(
+                    series_id=series_id,
+                    episode_key=episode_key,
+                    entity_type="term_dictionary",
+                    entity_id=existing_row.id,
+                    field="vietnamese_rendering",
+                    old_value=prior_rendering,  # the prior rendering that was kept
+                    new_value=vietnamese_rendering,  # the inference that was suppressed
+                    source=source,
+                )
+                session.add(evt)
+                suppressed_events.append(evt)
+                rendering_suppressed = True
+                # Fall through: build inferred WITHOUT vietnamese_rendering
+            else:
+                # Equal proposal — true no-op (BIBLE-06): no write, no event.
+                rendering_suppressed = True
 
     # Build inferred dict of non-None provided fields, excluding suppressed rendering
     inferred = {

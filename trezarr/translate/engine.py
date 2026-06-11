@@ -743,16 +743,31 @@ _LEAKED_DIRECTIVE_RE = re.compile(
 # E143 cue 148: a weak model translated the hint labels into Vietnamese:
 #   "(tại hạ nói: tại hạ; xưng hô: cô nương) xin cô nương nén bi thương."
 #   → stripped: "xin cô nương nén bi thương."
-#   "(nói: em; xưng hô: anh) Mình đi thôi." → "Mình đi thôi."
-#   "(Phàm Nhân Tu Tiên Ký) Cảnh mở đầu." → NOT matched (no nói:/xưng hô:) → preserved
-# Structural discriminator: the role token (`nói` or `xưng hô`) followed by an IMMEDIATE
-# colon — same discriminator as validate.py VN_HINT_SCAFFOLD_RE.
-# [^)]* stops at the first ')' — no nested parens in the hint → no backtracking risk.
+#   "(xưng hô: anh) Mình đi thôi." → "Mình đi thôi."
+#   "(Phàm Nhân Tu Tiên Ký) Cảnh mở đầu." → NOT matched (no xưng hô:) → preserved
+#   "(Hắn nói: đợi ta ở đây)" → NOT matched (nói: only, no xưng hô:) → preserved
+#
+# Mandatory anchor: `xưng hô:` — same policy as VN_HINT_SCAFFOLD_RE (validate.py).
+# `nói:` alone matches ordinary reported speech and must NOT be stripped.
+#
+# Evasion hardening (260612-7kt review, findings A+B):
+#   • Mandatory anchor: xưng hô[:：] — nói:-only is legitimate reported speech (Finding A).
+#   • Colon class `[:：]` — catches fullwidth colon U+FF1A (Finding B).
+#   • Two alternations: `(...)` and `[...]` envelope styles with matching closers (Finding B).
+#   • Interior `[^()]*` / `[^\[\]]*` — stops at bracket boundaries only; colons in
+#     the interior (e.g. "nói: tại hạ;") are allowed so the two-label form
+#     "(tại hạ nói: tại hạ; xưng hô: cô nương)" is still stripped.
+#   • Post-anchor remainder `[^)]*` / `[^\]]*` — consumes to the matching closer.
+#
 # MOAT INVARIANT: strips ONLY the echoed Vietnamese-label prefix; dialogue pronouns untouched.
 # validate.py Check 8 / VN_HINT_SCAFFOLD_RE is the defense-in-depth backstop for any
 # leaked VN-label hint that this strip does not catch.
 _LEAKED_VN_HINT_RE = re.compile(
-    r"^\s*\(\s*(?:[^():]*(?:nói|xưng\s+hô)\s*:)[^)]*\)\s*",
+    r"^\s*(?:"
+    r"\(\s*(?:[^()]*xưng\s+hô\s*[:：])[^)]*\)"
+    r"|"
+    r"\[\s*(?:[^\[\]]*xưng\s+hô\s*[:：])[^\]]*\]"
+    r")\s*",
     re.IGNORECASE,
 )
 
