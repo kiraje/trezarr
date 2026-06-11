@@ -316,7 +316,16 @@ def _derive_transition_terms(
     # Step 2: This episode's confident attribution for the ordered pair
     if survivors and existing is not None and existing.self_term and existing.address_term:
         return (existing.self_term, existing.address_term)
-    # Step 3: Safe default (H3/B4: register-aware)
+    # Step 3: Carry forward the established pair (scy precedence: carried > safe-default).
+    # D-01: lock > genuine evolution (event WITH usable terms) > carried Bible pair > safe-default.
+    # A term-less event on an ESTABLISHED dyad must not flatten the existing pronoun pair
+    # to a stranger safe-default — only truly-new dyads (no prior entry) use get_safe_default.
+    # Audit 260611-ru6 R1: Leg B Steven→Khonshu (tôi/ông→tôi/anh) and Leg A Mei→Han
+    # (muội/huynh→tại hạ/các hạ) were both caused by this Step 3 fall-through.
+    if existing is not None and existing.self_term and existing.address_term:
+        return (existing.self_term, existing.address_term)
+    # Step 4: Truly-new dyad (no prior entry or entry with None terms) → safe default.
+    # Success #4 invariant: never invent an intimate pronoun for a brand-new relationship.
     addr_gender = id_to_gender.get(addr_id)
     return get_safe_default(addr_gender, settings, register=register)
 
@@ -432,7 +441,14 @@ async def reconcile_attributions(
 
         # [Phase 6] TRANSITION CHECK — logged event authorizes term change (D-54).
         # Precedence: human lock > logged transition (this episode) > carried-forward > safe-default.
-        if getattr(settings, "enable_relationship_events", True):
+        # R2 fix (260611-ru6): skip the transition branch entirely when episode_key == "S00E00".
+        # S00E00 is the cold-Bible fallback key produced when the subtitle stem cannot be parsed
+        # (e.g. a Plex "NxNN" stem before the NxNN regex fix lands). All 12 Leg A series-1
+        # relationship_events are stamped S00E00, so without this guard every run of ANY Plex
+        # episode triggers all events and re-fires the cold-Bible safe-default flatten. The guard
+        # is AFTER the lock check (lock always wins, even on S00E00 keys) and BEFORE the
+        # transition check. An S00E00 episode proceeds to the survivors/carry-forward path.
+        if getattr(settings, "enable_relationship_events", True) and episode_key != "S00E00":
             transition = _find_transition_for_pair(
                 getattr(bible, "relationship_events", []),
                 spk_id,
@@ -449,6 +465,17 @@ async def reconcile_attributions(
                     settings,
                     register=register,
                 )
+                # LOW fix (260611-ru6): vfe bumps ONLY on genuine term evolution (D-05).
+                # When _derive_transition_terms carries the existing pair unchanged (R1 Step-3
+                # path: no suggested terms, no survivors, established dyad), passing
+                # valid_from_episode=episode_key resets the provenance marker with no actual
+                # change — producing spurious vfe churn (7 pairs / episode in the 260611-l74
+                # audit). is_genuine_evolution is True only when the terms ACTUALLY changed.
+                is_genuine_evolution = not (
+                    existing is not None
+                    and new_self == existing.self_term
+                    and new_addr == existing.address_term
+                )
                 resolved_map[pair] = (new_self, new_addr)
                 await upsert_address_pair(
                     session_factory,
@@ -457,7 +484,7 @@ async def reconcile_attributions(
                     addressee_character_id=addr_id,
                     self_term=new_self,
                     address_term=new_addr,
-                    valid_from_episode=episode_key,  # D-53: bump version marker
+                    valid_from_episode=episode_key if is_genuine_evolution else None,  # D-53/D-05
                     episode_key=episode_key,
                     source="inference",
                 )

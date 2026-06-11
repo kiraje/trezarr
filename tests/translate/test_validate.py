@@ -1122,3 +1122,166 @@ def test_gate_check9_cjk_source_marker_in_source_still_exempts():
         f"260608-t53 positive guard), got {result!r}. CREDIT_SRC_RE must still match '字幕组' "
         f"in src_text and grant the exemption for a ≤8 CJK translated handle."
     )
+
+
+# ── R4: gate leak classes (260611-ru6) ──────────────────────────────────────────
+# Audit 260611-l74 C1: three cue forms leak through all 12 checks and ship on-screen.
+# Verbatim from the shipped Moon Knight S01E03 .vi.srt (confirmed raw bytes / raw cue text):
+#
+#   Cue 146: 'Anh không đi cùng sao? \n (Correct; "tôi"→"anh" is the right pair; no violation)'
+#   Cue 147: 'Tôi sẽ đi. (No violation)'
+#   Cue 459: '<<T153'  (raw, NOT HTML-escaped)
+#
+# WHY each bypasses all 12 existing checks (per 03_verdicts.md):
+#   Cues 146/147: Check 10 skipped (VN diacritics present); Check 12 skipped (diacritic in paren
+#     inner / no possessive); Check 8 does not match '(No violation)' or '(Correct;...)'.
+#   Cue 459: SENTINEL_RE requires closing '>>' — '<<T153' has none → Check 6 misses it;
+#     Check 10 skipped (0 ASCII word tokens >= 2 letters: 'T153' = 1 letter + digits).
+#
+# Fixes:
+#   Class 1+2: new ATTRIBUTION_META_RE added to Check 8 — catches '(No violation)' and
+#     '(Correct; ...)' patterns that cannot appear in genuine Vietnamese dialogue.
+#   Class 3: new UNCLOSED_SENTINEL_RE added to Check 6 — catches '<<TN' without closing '>>'.
+#
+# Regression guards: t53 credit exemption ('Phụ đề dịch bởi: 虫二') still passes;
+# envelope-preservation tests unchanged; all existing Check 6/8/10/12 behavior unchanged.
+# D-03: gate may only get STRICTER — no regression broadening.
+
+
+def test_r4_leak_attribution_meta_correct_prefix():
+    """R4-I: '(Correct; "tôi"→"anh" is the right pair; no violation)' raises GateError(check=8).
+
+    Verbatim E03 cue 146 leak (audit 260611-l74 C1). Currently passes all 12 checks because
+    Check 10 is skipped (VN diacritics 'Anh không' present) and Check 12 is skipped
+    (diacritics in inner text). After fix, ATTRIBUTION_META_RE in Check 8 must catch it.
+
+    Uses _doc_with_bad_cue / _src_for_bad_cue helpers to keep Check 3 (diacritic ratio)
+    passing so the per-cue Check 8 is reached.
+    """
+    validate_mod = pytest.importorskip("trezarr.translate.validate")
+    GateError = validate_mod.GateError
+    validate_subdoc = validate_mod.validate_subdoc
+
+    # Verbatim E03 cue 146 — source is Chinese, output leaked the attribution meta-comment.
+    # The text has VN diacritics ('Anh không', 'tôi', 'anh') so Check 10/12 skip it,
+    # letting it pass all 12 checks before the R4 fix.
+    src = _src_for_bad_cue("你不一起来吗？")
+    trn = _doc_with_bad_cue('Anh không đi cùng sao? (Correct; "tôi"→"anh" is the right pair; no violation)')
+
+    with pytest.raises(GateError) as exc_info:
+        validate_subdoc(trn, src, _settings())
+
+    assert exc_info.value.failure.check == 8, (
+        f"R4-I: cue 146 attribution meta '(Correct; ...)' must raise GateError(check=8); "
+        f"got check={exc_info.value.failure.check}. "
+        "Before fix: passes all 12 checks because Check 10/12 skip on VN diacritics."
+    )
+
+
+def test_r4_leak_attribution_meta_no_violation():
+    """R4-J: 'Tôi sẽ đi. (No violation)' raises GateError(check=8).
+
+    Verbatim E03 cue 147 leak (audit 260611-l74 C1). Currently passes because
+    Check 12 does not fire (no possessive/'s), Check 10 skipped (VN diacritics present).
+    After fix, ATTRIBUTION_META_RE must catch '(No violation)'.
+
+    Uses _doc_with_bad_cue helper to keep Check 3 diacritic ratio passing.
+    """
+    validate_mod = pytest.importorskip("trezarr.translate.validate")
+    GateError = validate_mod.GateError
+    validate_subdoc = validate_mod.validate_subdoc
+
+    # Verbatim E03 cue 147 — source is Chinese, output leaked the review note.
+    # 'Tôi sẽ đi.' has VN diacritics, so Check 10/12 skip the cue before R4 fix.
+    src = _src_for_bad_cue("我会去的")
+    trn = _doc_with_bad_cue("Tôi sẽ đi. (No violation)")
+
+    with pytest.raises(GateError) as exc_info:
+        validate_subdoc(trn, src, _settings())
+
+    assert exc_info.value.failure.check == 8, (
+        f"R4-J: '(No violation)' must raise GateError(check=8); "
+        f"got check={exc_info.value.failure.check}. "
+        "Before fix: passes all 12 checks because Check 10/12 skip on VN diacritics."
+    )
+
+
+def test_r4_leak_unclosed_sentinel():
+    """R4-K: '<<T153' (unclosed sentinel, no closing >>) raises GateError(check=6).
+
+    Verbatim E03 cue 459 (raw bytes 3c3c 5431 3533 — NOT HTML-escaped, per 03_verdicts.md).
+    Currently passes because SENTINEL_RE requires closing '>>' and Check 10 is skipped
+    (0 ASCII word tokens >= 2 letters: 'T153' = 1 letter + digits).
+    After fix, UNCLOSED_SENTINEL_RE must catch '<<T153' in Check 6.
+
+    Uses _doc_with_bad_cue helper to keep Check 3 diacritic ratio passing so
+    the structural Check 6 is reached.
+    """
+    validate_mod = pytest.importorskip("trezarr.translate.validate")
+    GateError = validate_mod.GateError
+    validate_subdoc = validate_mod.validate_subdoc
+
+    # Verbatim E03 cue 459 — source is Chinese, output has bare unclosed sentinel.
+    src = _src_for_bad_cue("没事的")
+    trn = _doc_with_bad_cue("<<T153")
+
+    with pytest.raises(GateError) as exc_info:
+        validate_subdoc(trn, src, _settings())
+
+    assert exc_info.value.failure.check == 6, (
+        f"R4-K: unclosed sentinel '<<T153' must raise GateError(check=6); "
+        f"got check={exc_info.value.failure.check}. "
+        "Before fix: SENTINEL_RE needs closing '>>' → passes Check 6; "
+        "Check 10 skipped (T153 has only 1 ASCII letter)."
+    )
+
+
+# ── FIX4: UNCLOSED_SENTINEL_RE comment accuracy (260611-ru6 LOW) ─────────────
+# Codec-fidelity-guardian finding: the comment on UNCLOSED_SENTINEL_RE at
+# validate.py:100-101 claims "(?!>>) prevents matching the closed form <<T153>>"
+# but this is factually wrong. The regex DOES match <<T153>> (at a shorter digit
+# offset due to backtracking: tries 153, lookahead fails, backtracks to 15 → matches
+# <<T15). The closed form is already caught by SENTINEL_RE, so the double-fire is
+# harmless (belt-and-suspenders), but the comment's claimed guarantee is false.
+#
+# TDD flow:
+#   RED: assert the comment's claim (closed form does NOT match → search returns None)
+#        → FAILS because the regex DOES match at the backtracked position.
+#   FIX: rewrite the comment to state the actual behaviour; flip test to GREEN form.
+#   GREEN: assert actual behaviour — closed form DOES match (backtracking occurs).
+
+
+def test_fix4_unclosed_sentinel_re_closed_form_does_match_via_backtrack():
+    """FIX4 GREEN: documents actual UNCLOSED_SENTINEL_RE behaviour for the closed form.
+
+    The prior comment claimed '(?!>>) prevents matching <<T153>>'. This was wrong.
+    Actual behaviour (confirmed by codec-fidelity-guardian review):
+      - <<T153>> → digit-group tries '153'; lookahead fails (next is '>>'); backtracks to '15';
+        lookahead sees '3' (not '>>') → MATCHES at span (0, 5) = '<<T15'.
+    The double-fire is harmless: SENTINEL_RE catches '<<T153>>' via the OR in Check 6,
+    so the verdict (GateError check=6) is the same regardless.
+
+    The comment has been corrected (FIX4) to state the actual backtracking behaviour.
+    This test is the contract: the closed form DOES match UNCLOSED_SENTINEL_RE.
+    """
+    validate_mod = pytest.importorskip("trezarr.translate.validate")
+    UNCLOSED_SENTINEL_RE = validate_mod.UNCLOSED_SENTINEL_RE
+
+    # Actual behaviour: closed form DOES match (at backtracked offset '<<T15')
+    result = UNCLOSED_SENTINEL_RE.search("<<T153>>")
+    assert result is not None, (
+        "FIX4: UNCLOSED_SENTINEL_RE must match '<<T153>>' (at backtracked position '<<T15'). "
+        "The (?!>>) lookahead does not exclude the closed form due to digit backtracking."
+    )
+    # The match is at the backtracked position (spans 0-5, matching '<<T15')
+    assert result.group() == "<<T15", (
+        f"FIX4: match on '<<T153>>' expected '<<T15' (backtracked digit group), "
+        f"got {result.group()!r}"
+    )
+
+    # Genuine unclosed form (no closing >>) still matches as before
+    result2 = UNCLOSED_SENTINEL_RE.search("<<T153")
+    assert result2 is not None, "FIX4: genuine unclosed '<<T153' must still match"
+    assert result2.group() == "<<T153", (
+        f"FIX4: unclosed match expected '<<T153', got {result2.group()!r}"
+    )

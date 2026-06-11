@@ -1426,6 +1426,124 @@ async def delete_term(
     return {"deleted": term_id}
 
 
+async def dedup_canonical_name_terms(
+    session_factory: async_sessionmaker[AsyncSession],
+    *,
+    series_id: int,
+) -> list[BibleEventDTO]:
+    """Repair: collapse competing locked name-term rows to a single canonical rendering (R3, D-04).
+
+    The kfn (key-for-name) auto-lock in merge_bible_analysis Step 3.5 can produce dual locked
+    rows for the same character entity: e.g. 'Steven Grant' → 'Steven Grant' (Latin, locked)
+    and '史蒂文·格兰特' → 'Sử Địch Văn · Cách Lan Đặc' (CJK, locked). The translate-prompt
+    glossary injects both rows, producing split renderings in output subtitles (260611-l74 R3).
+
+    D-04 rule: canonical = the FIRST-LOCKED row (lowest id / earliest established), regardless
+    of script (FIX2, 260611-ru6 R2 — bible-consistency-auditor + vietnamese-linguist combined
+    finding). The prior "LATIN-form is canonical" heuristic was removed because it false-merges
+    DIFFERENT characters in xianxia/CJK-heavy series where multiple CJK-named characters each
+    have their own locked CJK row and a single unrelated Latin-named character produces one
+    Latin row — making the heuristic rewrite every unrelated CJK row to the Latin character's
+    rendering (catastrophic identity collapse).
+
+    Character linkage requirement: a rewrite may ONLY happen when two rows are provably the
+    same character. Without a character_id FK on TermDictionary (current schema), this function
+    cannot establish linkage and therefore performs NO rewrites. It returns an empty list and
+    logs a diagnostic. The primary defence is plan_character_name_terms (FIX2-III guard), which
+    prevents the dual-row split from being created in the first place.
+
+    Future path: once a character_id FK is added to TermDictionary (via Alembic migration),
+    this function can group rows by character_id and elect the lowest-id locked row as
+    canonical — performing the repair with guaranteed-correct character identity.
+
+    Idempotent: returns an empty list on every call until FK linkage is available.
+    Series-scoped: only touches locked TermDictionary rows for the given series_id (T-ru6-04).
+
+    Args:
+        session_factory: Async session factory.
+        series_id:       Series to repair.
+
+    Returns:
+        list[BibleEventDTO] — one entry per row rewritten. Empty list = nothing to repair.
+    """
+
+    def _is_latin_only(text: str) -> bool:
+        """Return True if text contains no CJK or other non-Latin-extended codepoints."""
+        # CJK Unified Ideographs: U+4E00–U+9FFF (most common CJK block)
+        # Extended CJK blocks: U+3400–U+4DBF (CJK Extension A), U+20000+ (Ext B/C/D via surrogates)
+        # Katakana/Hiragana: U+3040–U+30FF
+        # Arabic, Hebrew, Thai, etc.: U+0600–U+06FF, U+0590–U+05FF, U+0E00–U+0E7F
+        # Conservative approach: any codepoint >= U+0250 that is not Latin Extended or
+        # IPA Extensions is treated as non-Latin for this guard.
+        # We use a simple CJK-range check sufficient for the name-term dedup use case:
+        return not any(
+            0x3040 <= ord(c) <= 0x9FFF or 0x3400 <= ord(c) <= 0x4DBF
+            for c in text
+        )
+
+    async with session_factory() as session:
+        # Load all locked name-term rows for this series in one read transaction.
+        stmt = select(TermDictionary).where(
+            TermDictionary.series_id == series_id,
+        )
+        all_rows: list[TermDictionary] = list((await session.execute(stmt)).scalars().all())
+
+    # Filter to rows that have vietnamese_rendering locked.
+    locked_rows = [
+        r for r in all_rows
+        if "vietnamese_rendering" in (r.locked_fields or [])
+    ]
+
+    if not locked_rows:
+        return []
+
+    # FIX2 (260611-ru6): character linkage required before any rewrite.
+    #
+    # The prior "canonical = the single Latin-form row" heuristic is REMOVED. That heuristic
+    # false-merged DIFFERENT characters in xianxia series: a single unrelated Latin-named
+    # character produced canonical_rows == [that Latin row], and then ALL CJK-named characters'
+    # locked rows (韩立/Hàn Lập, 南宫婉/Nam Cung Uyển, …) were rewritten to that Latin
+    # character's rendering — catastrophic identity collapse (bible-consistency-auditor HIGH,
+    # vietnamese-linguist HIGH, combined finding 260611-ru6 FIX2).
+    #
+    # Safe rule: rewrite ONLY when two rows are provably the SAME character entity.
+    # TermDictionary has NO character_id FK (current schema, confirmed models.py:134-159).
+    # Without a FK, we cannot establish cross-row character identity.
+    # → Return immediately with no events. Log a diagnostic for monitoring.
+    #
+    # Future path (TODO): add a character_id FK to TermDictionary via Alembic migration,
+    # then group rows by character_id and elect the lowest-id locked row as canonical —
+    # performing the repair with guaranteed-correct character identity and register-agnostic
+    # first-locked-wins semantics (D-04).
+    #
+    # Primary defence until then: plan_character_name_terms FIX2-III guard prevents the
+    # dual-row split from being created in the first place (analyze.py:180+).
+    #
+    # FIX3 atomicity (260611-ru6 LOW): the prior N-writes-in-N-separate-sessions design was
+    # non-atomic (crash mid-loop → partial repair). FIX2 removes the write loop entirely, so
+    # FIX3 is moot for now. When the FK migration enables writes, the implementation MUST
+    # use a single async with session.begin() wrapping all row rewrites and BibleEvent inserts
+    # to guarantee all-or-nothing repair (idempotency makes crash recovery safe but
+    # a single transaction is the stronger guarantee).
+    latin_rows = [r for r in locked_rows if _is_latin_only(r.source_term)]
+    script_rows = [r for r in locked_rows if not _is_latin_only(r.source_term)]
+
+    if not latin_rows or not script_rows:
+        # No mixed Latin/CJK situation — nothing to consider.
+        return []
+
+    logger.info(
+        "dedup_canonical_name_terms: series %d has %d Latin-locked and %d CJK-locked rows. "
+        "No character_id FK on TermDictionary — cannot safely establish per-row character "
+        "linkage. Skipping rewrite to prevent false-merge across different characters. "
+        "Add a character_id FK (Alembic migration) to enable safe dedup.",
+        series_id,
+        len(latin_rows),
+        len(script_rows),
+    )
+    return []
+
+
 async def load_field_history(
     session_factory: async_sessionmaker[AsyncSession],
     series_id: int,

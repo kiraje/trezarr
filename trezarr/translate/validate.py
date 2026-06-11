@@ -78,6 +78,41 @@ HINT_SCAFFOLD_RE = re.compile(r"\(\s*speaker\s+says\s*:", re.IGNORECASE)
 # on-screen sidecar), same defense tier (gate backstop after the parse-layer strip).
 CORRECTION_DIRECTIVE_RE = re.compile(r"\[\s*CORRECTION\s+REQUIRED\s*\]", re.IGNORECASE)
 
+# R4 fix (Check 8): attribution meta-commentary that bypasses Check 10/12 diacritic skips
+# (audit 260611-l74, 260611-ru6). Two verbatim E03 leak classes:
+#   Class 1: '(Correct; "tôi"→"anh" is the right pair; no violation)' — E03 cue 146.
+#            Check 12 SKIPPED: parenthetical contains VN diacritics (tôi, anh) → Latin-diacritic
+#            guard passes it as "Vietnamese dialogue". Check 10 SKIPPED: cue has VN diacritics.
+#   Class 2: '(No violation)' — E03 cue 147.
+#            Check 10 SKIPPED: cue has VN diacritics (Tôi sẽ đi). Check 12 doesn't fire
+#            (no possessive /'s, no honorific-cap bigram).
+# Pattern: anchored to the OPENING of a parenthetical + English review/attribution keyword.
+# "no violation" and "correct;" CANNOT appear in genuine Vietnamese dialogue — zero false positives.
+# Case-insensitive; covers "No violation", "Correct; ...", "correct;...", "no violation".
+# Non-recursive alternation — no ReDoS path (ASVS L1 V5 compliant, T-ru6-01/T-ru6-03).
+ATTRIBUTION_META_RE = re.compile(r"\(\s*(?:no\s+violation|correct\s*;)", re.IGNORECASE)
+
+# R4 fix (Check 6): unclosed/orphan sentinel — <<TN without closing >> (260611-ru6).
+# E03 cue 459 ships as raw '<<T153' (bytes 3c3c 5431 3533 — NOT HTML-escaped, confirmed
+# in 03_verdicts.md). SENTINEL_RE = r"<<T\d+>>" requires the closing '>>' and so
+# misses '<<T153'. SENTINEL_ONLY_RE also requires '>>'. Check 10 skipped ('T153' has
+# only 1 ASCII letter, so ASCII_WORD_RE finds 0 tokens >= 2 letters).
+#
+# The (?!>>) lookahead does NOT prevent matching the closed form '<<T153>>'.
+# Due to greedy-then-backtrack: \d+ first consumes '153', lookahead sees '>>' → fails;
+# engine backtracks to \d+='15', lookahead sees '3' (not '>>') → succeeds → matches
+# '<<T15' inside '<<T153>>'. So UNCLOSED_SENTINEL_RE DOES fire on the closed form.
+# This is intentional belt-and-suspenders: SENTINEL_RE already catches '<<T153>>' via
+# Check 6's OR condition, so the double-fire yields the same GateError(check=6).
+# The lookahead provides no exclusion guarantee for closed forms — its actual effect is
+# only to reduce the match length when backtracking occurs (cosmetically shorter match,
+# same verdict). Closed orphans are already and definitively caught by SENTINEL_RE.
+#
+# HTML-escaped form &lt;&lt;TN added as secondary pattern — belt-and-suspenders for any
+# proxy or templated output that HTML-escapes angle brackets before reaching validate.py.
+# ASVS L1 V5: non-recursive, no alternation with overlapping paths (T-ru6-02/T-ru6-03).
+UNCLOSED_SENTINEL_RE = re.compile(r"<<T\d+(?!>>)|&lt;&lt;T\d+")
+
 # ── Per-cue leak detectors (audit B2/H4/H5/M3) ──────────────────────────────────
 # The per-FILE diacritic average (Check 3) cannot see a single bad cue — ~40 short
 # Vietnamese cues average ~40 raw passthroughs away.  Checks 9-12 inspect each cue.
@@ -494,9 +529,14 @@ def validate_subdoc(
     # timecode strings) by catching ms-level corruption that survives string round-trip.
     _check_timing_preserved(translated, source)
 
-    # Check 6: no orphan sentinel tokens
+    # Check 6: no orphan sentinel tokens — closed form OR unclosed/orphan form.
+    # SENTINEL_RE catches '<<T\d+>>' (closed). UNCLOSED_SENTINEL_RE (R4, 260611-ru6)
+    # catches '<<T153' without closing '>>' — E03 cue 459 bypass class confirmed in
+    # 260611-l74 adversarial audit: Check 10 skips cues with ≤1 ASCII word >= 2 letters,
+    # so a bare '<<T153' leaks past all 12 prior checks without this backstop.
+    # HTML-escaped form also caught (belt-and-suspenders, D-ru4-01).
     for i, sl in enumerate(translated.lines):
-        if SENTINEL_RE.search(sl.text):
+        if SENTINEL_RE.search(sl.text) or UNCLOSED_SENTINEL_RE.search(sl.text):
             raise GateError(
                 GateFailure(
                     6,
@@ -518,7 +558,7 @@ def validate_subdoc(
                 )
             ) from exc
 
-    # Check 8: no prompt scaffolding leaked into output. Three signatures, same
+    # Check 8: no prompt scaffolding leaked into output. Four signatures, same
     # defense-in-depth class — a sidecar containing internal prompt machinery must
     # NEVER ship even if an upstream guard is bypassed (the blind-trust bar):
     #   - REVIEW_SCAFFOLD_RE      → Pass-4 "(source: …)" review echo (260604-gza/hp2).
@@ -530,12 +570,18 @@ def validate_subdoc(
     #     string that passes all other checks (no VI diacritic, not in source tokens) — this
     #     backstop closes the proven echo path. "[CORRECTION REQUIRED]" cannot appear in genuine
     #     Vietnamese dialogue, so quarantining is safe with zero false positives.
-    # All three are English prompt scaffolding, not Vietnamese dialogue, so quarantining is safe.
+    #   - ATTRIBUTION_META_RE     → R4 attribution-audit meta-commentary (260611-l74/ru6):
+    #     E03 cue 146 '(Correct; "tôi"→"anh" is the right pair; no violation)' and cue 147
+    #     '(No violation)' both bypassed Checks 10/12 because they contain VN diacritics
+    #     (tôi, anh) causing those checks to treat them as legitimate Vietnamese dialogue.
+    #     "no violation" and "correct;" cannot appear in genuine Vietnamese dialogue; zero FP.
+    # All four are English prompt scaffolding, not Vietnamese dialogue, so quarantining is safe.
     for i, sl in enumerate(translated.lines):
         if (
             REVIEW_SCAFFOLD_RE.search(sl.text)
             or HINT_SCAFFOLD_RE.search(sl.text)
             or CORRECTION_DIRECTIVE_RE.search(sl.text)
+            or ATTRIBUTION_META_RE.search(sl.text)
         ):
             raise GateError(
                 GateFailure(

@@ -618,15 +618,23 @@ async def test_transition_adopts_attribution_confirmed_terms(session_factory):
     )
 
 
-async def test_transition_no_survivors_falls_to_safe_default(session_factory):
-    """CR-02 fallback: transition with no suggested terms + no survivors → safe default.
+async def test_transition_no_survivors_established_pair_carries_forward(session_factory):
+    """R1 fix (260611-ru6): transition with no suggested terms + no survivors → carry forward established pair.
+
+    This test was previously named 'test_transition_no_survivors_falls_to_safe_default' and
+    documented the pre-R1 (buggy) behavior where an ESTABLISHED pair was flattened to safe-default.
+    After the R1 fix, _derive_transition_terms Step 3 carries the established pair instead of
+    falling to get_safe_default. Safe-default only applies to truly-new dyads (existing=None).
+
+    D-01 precedence ladder: lock > genuine evolution (event WITH terms) > carried Bible pair
+                            > safe-default (truly-new dyad only).
 
     Arrange: a relationship_event with NO suggested terms + LOW-confidence attribution
-             (no survivors above threshold) + an existing address_map entry.
+             (no survivors above threshold) + an ESTABLISHED address_map entry (anh/em).
     Act: reconcile_attributions.
-    Assert: the pair falls back to safe default — D-54 step 3.
+    Assert: the pair CARRIES FORWARD (anh/em), NOT safe-default — D-01 Step 3 (R1 fix).
     """
-    from trezarr.translate.reconcile import reconcile_attributions, get_safe_default
+    from trezarr.translate.reconcile import reconcile_attributions
 
     # HIGH threshold — "low" attribution won't be a survivor
     settings = _make_settings(threshold="high")
@@ -641,7 +649,7 @@ async def test_transition_no_survivors_falls_to_safe_default(session_factory):
         addr_gender=None,
     )
 
-    # A relationship_event with NO suggested terms
+    # A relationship_event with NO suggested terms (term-less event)
     event_no_suggest = _make_relationship_event(
         id=21,
         series_id=series_id,
@@ -652,6 +660,7 @@ async def test_transition_no_survivors_falls_to_safe_default(session_factory):
         suggested_address_term=None,
     )
 
+    # ESTABLISHED address_map entry (anh/em) — this dyad already has earned terms
     bible = _make_bible(
         series_id=series_id,
         characters=[
@@ -677,11 +686,11 @@ async def test_transition_no_survivors_falls_to_safe_default(session_factory):
     )
 
     pair_result = resolved.get((spk_id, addr_id))
-    assert pair_result is not None, "Expected a resolved entry (safe default)"
-    expected = get_safe_default(None, settings)
-    assert pair_result == expected, (
-        f"Transition with no suggested terms + no survivors must fall back to safe default "
-        f"{expected!r}, got {pair_result!r}"
+    assert pair_result is not None, "Expected a resolved entry"
+    # R1 fix: established pair (anh/em) must CARRY FORWARD, not flatten to safe-default
+    assert pair_result == ("anh", "em"), (
+        f"R1 fix: established pair must carry forward on term-less event; "
+        f"expected ('anh','em'), got {pair_result!r}"
     )
 
 
@@ -1472,4 +1481,407 @@ async def test_reciprocal_coherence_carry_forward(session_factory):
     )
     assert resolved.get((addr_id, spk_id)) == ("em", "anh"), (
         f"A→S must carry forward (em,anh); got {resolved.get((addr_id, spk_id))!r}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# R1: _derive_transition_terms Step-3 carry-forward (260611-ru6)
+# ---------------------------------------------------------------------------
+# Audit 260611-l74 finding: _derive_transition_terms Step 3 falls to get_safe_default
+# for ANY dyad lacking survivors AND suggested terms — including ESTABLISHED dyads that
+# already have a earned (muội/huynh) or (tôi/ông) pair from prior episodes. This is
+# the verified BLOCKER: Leg B Steven(15)→Khonshu(21) had tôi/ông after E01, then a
+# S01E02 event with suggested=(None,None) and no survivors → tôi/anh (safe-default).
+# Leg A Mei→Han had (muội/huynh) → (tại hạ/các hạ) for the same reason via S00E00 collapse.
+# Fix: Step 3 must return existing.self_term/address_term for an ESTABLISHED dyad
+# (existing is not None and both terms non-None); only truly-new dyads fall to safe-default.
+# D-01: lock > genuine evolution > carried Bible pair > safe-default (truly-new only).
+# ---------------------------------------------------------------------------
+
+
+def _make_existing_addr_map(self_term: str, address_term: str):
+    """Minimal AddressMapDTO-like object for _derive_transition_terms tests."""
+    from types import SimpleNamespace
+    return SimpleNamespace(
+        self_term=self_term,
+        address_term=address_term,
+        locked_fields=[],
+    )
+
+
+def test_r1_transition_carries_forward_leg_b_steven_khonshu():
+    """R1-A: term-less event on established (tôi/ông) — must carry forward, not safe-default.
+
+    Leg B fixture: Steven(15)→Khonshu(21), existing=(tôi,ông), event id=38 marker=S01E02,
+    suggested=(None,None), survivors=[]. Before fix: returns safe-default (tôi,anh).
+    After fix: returns carried (tôi,ông).
+    """
+    from trezarr.translate.reconcile import _derive_transition_terms
+
+    transition = _make_relationship_event(
+        id=38, series_id=18, char_a_id=15, char_b_id=21,
+        episode_marker="S01E02",
+        suggested_self_term=None,
+        suggested_address_term=None,
+    )
+    existing = _make_existing_addr_map("tôi", "ông")
+    settings = _make_settings(threshold="medium", safe_default=None)
+
+    result = _derive_transition_terms(
+        transition=transition,
+        survivors=[],
+        existing=existing,
+        addr_id=21,
+        id_to_gender={21: "male"},
+        settings=settings,
+        register=None,
+    )
+    # After R1 fix: carry established pair, NOT safe-default
+    assert result == ("tôi", "ông"), (
+        f"R1-A: established (tôi/ông) must carry forward on term-less event; got {result!r}. "
+        "Before fix: returns ('tôi','anh') = safe-default for male addressee."
+    )
+
+
+def test_r1_transition_carries_forward_leg_a_mei_han():
+    """R1-B: term-less event on established (muội/huynh) — must carry forward, not safe-default.
+
+    Leg A fixture: Miss Mei(2)→Han(1), existing=(muội,huynh), event with
+    suggested=(None,None), survivors=[]. Classical register (xianxia).
+    Before fix: returns classical safe-default (tại hạ/các hạ).
+    After fix: returns carried (muội,huynh).
+    """
+    from trezarr.translate.reconcile import _derive_transition_terms
+
+    transition = _make_relationship_event(
+        id=3, series_id=1, char_a_id=2, char_b_id=1,
+        episode_marker="S00E00",
+        suggested_self_term=None,
+        suggested_address_term=None,
+    )
+    existing = _make_existing_addr_map("muội", "huynh")
+    settings = _make_settings(threshold="medium", safe_default=None)
+
+    result = _derive_transition_terms(
+        transition=transition,
+        survivors=[],
+        existing=existing,
+        addr_id=1,
+        id_to_gender={1: "male"},
+        settings=settings,
+        register="xianxia",
+    )
+    # After R1 fix: carry established pair, NOT classical safe-default
+    assert result == ("muội", "huynh"), (
+        f"R1-B: established (muội/huynh) must carry forward on term-less event; got {result!r}. "
+        "Before fix: returns ('tại hạ','các hạ') = classical safe-default."
+    )
+
+
+def test_r1_transition_suggested_terms_still_win_bible07():
+    """R1-C regression guard: BIBLE-07 — suggested terms still win over carried pair.
+
+    A transition WITH both suggested terms must still return those terms regardless
+    of the existing pair. Step 1 must fire before Step 3.
+    """
+    from trezarr.translate.reconcile import _derive_transition_terms
+
+    transition = _make_relationship_event(
+        id=10, series_id=1, char_a_id=1, char_b_id=2,
+        episode_marker="S01E05",
+        suggested_self_term="anh",
+        suggested_address_term="em",
+    )
+    existing = _make_existing_addr_map("tôi", "bạn")
+    settings = _make_settings(threshold="medium", safe_default=None)
+
+    result = _derive_transition_terms(
+        transition=transition,
+        survivors=[_make_attribution("CharA", "CharB", "high")],
+        existing=existing,
+        addr_id=2,
+        id_to_gender={2: "female"},
+        settings=settings,
+        register=None,
+    )
+    assert result == ("anh", "em"), (
+        f"R1-C: BIBLE-07 guard — suggested terms must win; expected ('anh','em'), got {result!r}"
+    )
+
+
+def test_r1_transition_truly_new_dyad_still_safe_defaults():
+    """R1-D regression guard: truly-new dyad (no prior entry) still falls to safe-default.
+
+    When existing=None (no prior Address Map entry), Step 3 must still call
+    get_safe_default — only ESTABLISHED dyads carry forward.
+    """
+    from trezarr.translate.reconcile import _derive_transition_terms
+
+    transition = _make_relationship_event(
+        id=99, series_id=1, char_a_id=5, char_b_id=6,
+        episode_marker="S01E01",
+        suggested_self_term=None,
+        suggested_address_term=None,
+    )
+    settings = _make_settings(threshold="medium", safe_default=None)
+
+    result = _derive_transition_terms(
+        transition=transition,
+        survivors=[],
+        existing=None,      # no prior entry — truly-new dyad
+        addr_id=6,
+        id_to_gender={6: None},
+        settings=settings,
+        register=None,
+    )
+    # Truly-new dyad: safe-default modern neutral
+    assert result == ("tôi", "bạn"), (
+        f"R1-D: truly-new dyad (existing=None) must fall to safe-default ('tôi','bạn'), got {result!r}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# R2: S00E00 transition skip (260611-ru6)
+# ---------------------------------------------------------------------------
+# Audit 260611-l74 B2/B3: when episode_key == "S00E00" (cold-Bible default, from a Plex
+# NxNN stem that fails the SxxExx regex), every relationship_event stamped S00E00 fires.
+# For Leg A series-1, ALL 12 events are stamped S00E00 → every run re-fires all events.
+# Guard: skip the transition branch entirely when episode_key == "S00E00" — that key is
+# the cold-Bible fallback and must never match any real event. Lock still wins before
+# this guard (lock is checked before the transition block).
+# D-02: S00E00 = "unknown episode" → carry-forward path used instead.
+# ---------------------------------------------------------------------------
+
+
+async def test_r2_s00e00_skips_transition_branch(session_factory):
+    """R2-H: episode_key='S00E00' skips the transition branch even when an event would match.
+
+    Arrange: established pair (tôi/ông), relationship_event stamped S00E00 with
+             suggested=(tôi/anh), low attribution. episode_key='S00E00'.
+    Act: reconcile_attributions.
+    Assert: pair is UNCHANGED (tôi/ông) — the S00E00 guard prevented the event from firing.
+    Lock check still runs before the guard; this test uses an UNLOCKED pair so only the guard matters.
+    """
+    from trezarr.translate.reconcile import reconcile_attributions
+
+    settings = _make_settings(threshold="high")  # low attribution → no survivors
+
+    series_id = await _create_series(session_factory, arr_series_id=410)
+    spk_id, addr_id = await _create_characters(
+        session_factory, series_id,
+        spk_name="GuardA", spk_gender=None, addr_name="GuardB", addr_gender="male",
+    )
+
+    # Relationship event stamped S00E00 that WOULD change the pair if allowed to fire
+    event_s00 = _make_relationship_event(
+        id=38, series_id=series_id, char_a_id=spk_id, char_b_id=addr_id,
+        episode_marker="S00E00",  # cold-Bible default marker
+        suggested_self_term="tôi",
+        suggested_address_term="anh",  # would change ông → anh if fired
+    )
+
+    # Established UNLOCKED pair (tôi/ông) — pre-existing from a prior episode
+    bible = _make_bible(
+        series_id=series_id,
+        characters=[
+            _make_character(spk_id, "GuardA", None),
+            _make_character(addr_id, "GuardB", "male"),
+        ],
+        address_map=[
+            _make_address_map_entry(38, series_id, spk_id, addr_id, "tôi", "ông"),
+        ],
+        relationship_events=[event_s00],
+    )
+
+    # LOW attribution → no survivors; but the guard (not the survivor check) must block the event
+    attributions = [_make_attribution("GuardA", "GuardB", "low")]
+
+    resolved = await reconcile_attributions(
+        flat_attributions=attributions,
+        bible=bible,
+        session_factory=session_factory,
+        series_id=series_id,
+        episode_key="S00E00",  # cold-Bible default — guard must fire
+        settings=settings,
+    )
+
+    result = resolved.get((spk_id, addr_id))
+    assert result is not None, "Expected a resolved entry"
+    # S00E00 guard: transition must NOT fire → pair must carry forward as (tôi/ông)
+    assert result == ("tôi", "ông"), (
+        f"R2-H: S00E00 guard must prevent transition branch from firing; "
+        f"expected carried ('tôi','ông'), got {result!r}. "
+        "Before fix: returns ('tôi','anh') = suggested terms from the fired event."
+    )
+
+
+# ---------------------------------------------------------------------------
+# LOW: vfe stability on carry-affirm (260611-ru6)
+# ---------------------------------------------------------------------------
+# Audit 260611-l74 LOW finding: the transition branch passes valid_from_episode=episode_key
+# for ALL transition calls, even when _derive_transition_terms returns the SAME terms as
+# the existing entry (the R1 carry-forward case). This stamps every run with a new vfe
+# marker, leaking spurious provenance churn into the Bible (7 pairs per E02 run in the audit).
+# D-05 fix: vfe bumps ONLY on genuine term evolution (new terms differ from existing).
+#           When the transition returns the exact existing pair (carry-affirm), pass
+#           valid_from_episode=None so the DB row's vfe stays at its prior value.
+# ---------------------------------------------------------------------------
+
+
+async def test_low_vfe_carry_affirm_does_not_bump_valid_from_episode(session_factory):
+    """LOW Test O: transition branch with carry-affirm must NOT bump valid_from_episode.
+
+    Arrange: established pair (tôi/ông) seeded with valid_from_episode='S01E01'.
+             relationship_event stamped S01E02 with NO suggested terms AND no survivors.
+             episode_key='S01E02'. (After R1 fix, _derive_transition_terms returns tôi/ông.)
+    Act: reconcile_attributions with episode_key='S01E02'.
+    Assert: the AddressMap DB row's valid_from_episode remains 'S01E01' (NOT bumped to 'S01E02').
+
+    Before LOW fix: valid_from_episode=episode_key passed unconditionally →
+    row.valid_from_episode is rewritten to 'S01E02' even though the terms are unchanged.
+    """
+    from trezarr.translate.reconcile import reconcile_attributions
+    from trezarr.bible.store import upsert_address_pair, load_series_bible
+
+    settings = _make_settings(threshold="high")  # high threshold → no survivors from low attribution
+
+    series_id = await _create_series(session_factory, arr_series_id=501)
+    spk_id, addr_id = await _create_characters(
+        session_factory, series_id,
+        spk_name="VfeA", spk_gender="male", addr_name="VfeB", addr_gender="male",
+    )
+
+    # Seed the pair with terms from S01E01 so valid_from_episode='S01E01'
+    await upsert_address_pair(
+        session_factory,
+        series_id=series_id,
+        speaker_character_id=spk_id,
+        addressee_character_id=addr_id,
+        self_term="tôi",
+        address_term="ông",
+        valid_from_episode="S01E01",  # established in E01
+        episode_key="S01E01",
+        source="inference",
+    )
+
+    # Relationship event on S01E02 with NO suggested terms — after R1 fix, carry-affirm path
+    event_no_terms = _make_relationship_event(
+        id=99, series_id=series_id, char_a_id=spk_id, char_b_id=addr_id,
+        episode_marker="S01E02",
+        suggested_self_term=None,   # no suggested terms → _derive_transition_terms Step 3
+        suggested_address_term=None,
+    )
+
+    bible = _make_bible(
+        series_id=series_id,
+        characters=[_make_character(spk_id, "VfeA", "male"), _make_character(addr_id, "VfeB", "male")],
+        address_map=[
+            _make_address_map_entry(99, series_id, spk_id, addr_id, "tôi", "ông"),
+        ],
+        relationship_events=[event_no_terms],
+    )
+
+    # LOW attribution → no survivors (threshold=high)
+    attributions = [_make_attribution("VfeA", "VfeB", "low")]
+
+    await reconcile_attributions(
+        flat_attributions=attributions, bible=bible,
+        session_factory=session_factory, series_id=series_id,
+        episode_key="S01E02", settings=settings,
+    )
+
+    # Read the DB row and check valid_from_episode
+    post_bible = await load_series_bible(session_factory, series_id=series_id)
+    am_rows = [
+        a for a in post_bible.address_map
+        if a.speaker_character_id == spk_id and a.addressee_character_id == addr_id
+    ]
+    assert len(am_rows) == 1, f"Expected 1 address_map row, got {len(am_rows)}"
+    am = am_rows[0]
+
+    assert am.self_term == "tôi" and am.address_term == "ông", (
+        f"Carry-affirm must keep terms (tôi/ông), got ({am.self_term!r},{am.address_term!r})"
+    )
+    assert am.valid_from_episode == "S01E01", (
+        f"LOW O: carry-affirm must NOT bump valid_from_episode; expected 'S01E01', got {am.valid_from_episode!r}.\n"
+        "Before fix: transition branch passes valid_from_episode=episode_key unconditionally, "
+        "rewriting to 'S01E02' even though terms are unchanged."
+    )
+
+
+async def test_low_vfe_genuine_evolution_still_bumps_valid_from_episode(session_factory):
+    """LOW Test P: transition branch with genuine evolution MUST bump valid_from_episode.
+
+    Arrange: established pair (anh/em) seeded with valid_from_episode='S01E01'.
+             relationship_event stamped S01E05 WITH suggested terms (tôi/cô).
+             episode_key='S01E05'.
+    Act: reconcile_attributions.
+    Assert: AddressMap DB row's valid_from_episode is updated to 'S01E05' (terms changed).
+
+    This is the existing CORRECT behavior — the test guards that D-05 (LOW fix) does NOT
+    break genuine evolution provenance bumps.
+    """
+    from trezarr.translate.reconcile import reconcile_attributions
+    from trezarr.bible.store import upsert_address_pair, load_series_bible
+
+    settings = _make_settings(threshold="high")  # high threshold → no survivors
+
+    series_id = await _create_series(session_factory, arr_series_id=502)
+    spk_id, addr_id = await _create_characters(
+        session_factory, series_id,
+        spk_name="VfeC", spk_gender="male", addr_name="VfeD", addr_gender="female",
+    )
+
+    # Established pair from S01E01
+    await upsert_address_pair(
+        session_factory,
+        series_id=series_id,
+        speaker_character_id=spk_id,
+        addressee_character_id=addr_id,
+        self_term="anh",
+        address_term="em",
+        valid_from_episode="S01E01",
+        episode_key="S01E01",
+        source="inference",
+    )
+
+    # Relationship event on S01E05 WITH suggested new terms → genuine evolution
+    event_evolution = _make_relationship_event(
+        id=100, series_id=series_id, char_a_id=spk_id, char_b_id=addr_id,
+        episode_marker="S01E05",
+        suggested_self_term="tôi",    # new terms — different from existing (anh/em)
+        suggested_address_term="cô",
+    )
+
+    bible = _make_bible(
+        series_id=series_id,
+        characters=[_make_character(spk_id, "VfeC", "male"), _make_character(addr_id, "VfeD", "female")],
+        address_map=[
+            _make_address_map_entry(100, series_id, spk_id, addr_id, "anh", "em"),
+        ],
+        relationship_events=[event_evolution],
+    )
+
+    attributions = [_make_attribution("VfeC", "VfeD", "low")]
+
+    await reconcile_attributions(
+        flat_attributions=attributions, bible=bible,
+        session_factory=session_factory, series_id=series_id,
+        episode_key="S01E05", settings=settings,
+    )
+
+    post_bible = await load_series_bible(session_factory, series_id=series_id)
+    am_rows = [
+        a for a in post_bible.address_map
+        if a.speaker_character_id == spk_id and a.addressee_character_id == addr_id
+    ]
+    assert len(am_rows) == 1, f"Expected 1 address_map row, got {len(am_rows)}"
+    am = am_rows[0]
+
+    assert am.self_term == "tôi" and am.address_term == "cô", (
+        f"Genuine evolution must change terms to (tôi/cô), got ({am.self_term!r},{am.address_term!r})"
+    )
+    assert am.valid_from_episode == "S01E05", (
+        f"LOW P: genuine evolution must bump valid_from_episode to 'S01E05', got {am.valid_from_episode!r}.\n"
+        "D-05: vfe must bump when terms actually change; this guards the D-53 provenance contract."
     )

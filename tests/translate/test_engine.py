@@ -1306,3 +1306,143 @@ def test_h4_carves_out_pass3_pronoun_hint_from_preserve():
         "('echo' or 'keep') near the hint reference. This is the scaffolding-leak backstop "
         "at the prompt layer (validate.py Check 8 is the gate-layer backstop)."
     )
+
+
+# ── R2: NxNN episode key (260611-ru6) ──────────────────────────────────────────
+# Audit 260611-l74 B2: derive_episode_key falls back to S00E00 for Plex "NxNN" stems
+# (e.g. "A Record of a Mortal's Journey to Immortality - 6x19 - Episode 143.en.srt").
+# All 12 Leg A relationship_events are stamped S00E00, so every episode from a Plex
+# source matches all events on every run — the episode_key collapse BLOCKER.
+# Fix: add a pre-check for the NxNN pattern (r'(\d{1,2})[xX](\d{1,3})') before the
+# fallback so "6x19" → S06E19, "1x5" → S01E05, "12x103" → S12E103.
+# D-02: SxxExx standard pattern still takes priority (elif not if); NxNN fires only
+# when SxxExx did not match; season/episode fallback unchanged.
+
+
+def _make_media_item(season_number=None, source_type="episode", title="Show"):
+    """Minimal MediaItem-like object for derive_episode_key tests."""
+    from types import SimpleNamespace
+    return SimpleNamespace(season_number=season_number, source_type=source_type, title=title)
+
+
+def test_r2_nxnn_6x19_parses_to_s06e19():
+    """R2-E: Plex '- 6x19 -' stem parses to S06E19 (currently returns S00E00).
+
+    The real Leg A subtitle path: 'A Record of a Mortal's Journey to Immortality - 6x19 - Episode 143.en.srt'.
+    Before fix: SxxExx regex fails on '6x19' → season fallback with None → S00E00.
+    After fix: NxNN pre-check fires → S06E19.
+    """
+    from trezarr.translate.engine import derive_episode_key
+
+    path = "A Record of a Mortal's Journey to Immortality - 6x19 - Episode 143.en.srt"
+    result = derive_episode_key(_make_media_item(season_number=None), source_sub_path=path)
+    assert result == "S06E19", (
+        f"R2-E: '6x19' stem must parse to 'S06E19'; got {result!r}. "
+        "Before fix: returns 'S00E00' because SxxExx regex does not match NxNN form."
+    )
+
+
+def test_r2_nxnn_1x5_parses_to_s01e05():
+    """R2-F: 1-digit season + 1-digit episode 'Show - 1x5 - Ep.en.srt' → S01E05."""
+    from trezarr.translate.engine import derive_episode_key
+
+    path = "Show - 1x5 - Ep.en.srt"
+    result = derive_episode_key(_make_media_item(season_number=None), source_sub_path=path)
+    assert result == "S01E05", (
+        f"R2-F: '1x5' stem must parse to 'S01E05'; got {result!r}."
+    )
+
+
+def test_r2_nxnn_12x103_parses_to_s12e103():
+    """R2-G: 2-digit season + 3-digit episode 'Show - 12x103 - Title.en.srt' → S12E103."""
+    from trezarr.translate.engine import derive_episode_key
+
+    path = "Show - 12x103 - Title.en.srt"
+    result = derive_episode_key(_make_media_item(season_number=None), source_sub_path=path)
+    assert result == "S12E103", (
+        f"R2-G: '12x103' stem must parse to 'S12E103'; got {result!r}."
+    )
+
+
+# ── R2-R2: resolution / aspect-ratio stems must NOT parse as episode keys ────────
+# Bug: NxNN regex is unanchored — '1024x768' → S24E768, '4x3' → S04E03 (aspect).
+# Fix mirrors library.py:51 which uses digit-boundary lookarounds:
+#   r"(?<!\d)(\d{1,2})[xX](\d{1,3})(?!\d)"
+# These cases must fall through to the season-fallback (S00E00 when season_number=None).
+
+
+def test_r2_resolution_1024x768_does_not_parse_as_episode():
+    """R2-R1 RED: '1024x768' (resolution) must NOT be parsed as S24E768.
+
+    Before fix: unanchored regex grabs '24' from '1024' and '768' as episode → S24E768.
+    After fix:  digit-boundary lookahead/lookbehind prevents match → falls to season fallback.
+    Reference:  trezarr/web/routes/library.py:51 uses the same anchored pattern.
+    """
+    from trezarr.translate.engine import derive_episode_key
+
+    result = derive_episode_key(
+        _make_media_item(season_number=None),
+        source_sub_path="Show.1024x768.WEB.srt",
+    )
+    # Must NOT be S24E768 — the resolution must not parse as season×episode.
+    assert result != "S24E768", (
+        f"R2-R1: '1024x768' resolution stem must NOT parse as 'S24E768'; got {result!r}. "
+        "Unanchored NxNN regex falsely matches resolution digits."
+    )
+    # Season fallback with no season_number → S00E00
+    assert result == "S00E00", (
+        f"R2-R1: resolution stem with season_number=None must fall to 'S00E00'; got {result!r}."
+    )
+
+
+def test_r2_resolution_720x480_does_not_parse_as_episode():
+    """R2-R2 RED: '720x480' (DVD resolution) must NOT parse as S20E480.
+
+    Before fix: '720x480' → grabs '20' from '720', '480' as episode → S20E480.
+    After fix:  digit-boundary lookarounds block the match → season fallback.
+    """
+    from trezarr.translate.engine import derive_episode_key
+
+    result = derive_episode_key(
+        _make_media_item(season_number=None),
+        source_sub_path="Some.Show.720x480.DVDRip.srt",
+    )
+    assert result != "S20E480", (
+        f"R2-R2: '720x480' must NOT parse as 'S20E480'; got {result!r}."
+    )
+    assert result == "S00E00", (
+        f"R2-R2: DVD-resolution stem must fall to 'S00E00'; got {result!r}."
+    )
+
+
+def test_r2_resolution_1920x1080_does_not_parse_as_episode():
+    """R2-R3 RED: '1920x1080' (HD resolution) must NOT parse as S20E108 (or similar).
+
+    Before fix: unanchored regex scans inside '1920' and matches '20' as season, '1080'
+    as a 3-digit episode attempt — but '1080' exceeds the {1,3} limit, so it actually tries
+    starting at other offsets inside the string. The key failure is '1080' → digit-group = 108.
+    After fix:  digit-boundary lookarounds require no digit immediately before/after the match.
+    '1920x1080' has the digit '9' immediately before position where '20' would start inside
+    '1920', so the lookbehind blocks the false match at that offset. Falls to season fallback.
+    Reference: trezarr/web/routes/library.py:51 anchored pattern.
+    """
+    from trezarr.translate.engine import derive_episode_key
+
+    result = derive_episode_key(
+        _make_media_item(season_number=None),
+        source_sub_path="Show.S01E01.1920x1080.WEB.srt",
+    )
+    # SxxExx should match first (S01E01 is present) — test the fallback case when stripped:
+    # Use a stem that only has the resolution (no SxxExx prefix)
+    result2 = derive_episode_key(
+        _make_media_item(season_number=None),
+        source_sub_path="Show.1920x1080.WEB.srt",
+    )
+    # With anchored regex, the '20' inside '1920' must NOT be matched (digit before it is '9').
+    assert result2 != "S20E108", (
+        f"R2-R3: '1920x1080' must NOT parse as 'S20E108' (or any bogus form); "
+        f"got {result2!r}. Digit-boundary lookaround must block inner-digit matches."
+    )
+    assert result2 == "S00E00", (
+        f"R2-R3: HD resolution stem with season_number=None must fall to 'S00E00'; got {result2!r}."
+    )
