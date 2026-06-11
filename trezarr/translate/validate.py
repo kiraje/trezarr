@@ -597,7 +597,17 @@ def validate_subdoc(
     # away ~40 bad cues. These checks inspect each cue against its CORRESPONDING
     # source cue (raw cues interleave identically in both lists, so zip aligns them).
     # All four loops skip opaque pass-through cues (SubLine.raw set — D-98/D-99).
+    #
+    # Accumulation design (260612-4lq): collect ALL failing cue indices per check
+    # across the full SubDoc, then raise ONE GateError with the complete sorted list.
+    # Priority order (highest first): 9 > 11 > 12 > 10 — matches the original
+    # left-to-right check order, ensuring engine.py repair receives all failing
+    # indices in one shot (fixes MK E01 job-16: 3-cue CJK leak burning 3 repair slots).
     allowlist = {t.lower() for t in (proper_noun_allowlist or set())}
+    _fail9: list[int] = []
+    _fail10: list[int] = []
+    _fail11: list[int] = []
+    _fail12: list[int] = []
     for i, (src_sl, trn_sl) in enumerate(zip(source.lines, translated.lines)):
         # Opaque pass-through cues (karaoke/drawing) are intentionally untranslated.
         if trn_sl.raw is not None:
@@ -610,17 +620,12 @@ def validate_subdoc(
         if CJK_LEAK_RE.search(text):
             if is_credit_fansub_cue(src_sl.text, text):
                 continue
-            raise GateError(
-                GateFailure(
-                    9,
-                    f"CJK/Hangul/Kana script leaked into cue {i}: {text!r}",
-                    failing_indices=[i],
-                )
-            )
+            _fail9.append(i)
+            continue  # a CJK-leaking cue need not be tested for checks 10/11/12
 
         # Check 12 (H4): English-gloss parenthetical. A parenthetical with ASCII
         # letters, no Latin diacritic, long enough to be a gloss (inner len>=3 AND a
-        # space or a possessive 's). A Vietnamese parenthetical carries diacritics
+        # space or a possessive ‘s). A Vietnamese parenthetical carries diacritics
         # (LATIN_DIACRITIC_RE) and is skipped; tiny tokens "(!)"/"(?)"/"(A)" are skipped.
         for _m in GLOSS_PAREN_RE.finditer(text):
             inner = _m.group(1).strip()
@@ -631,57 +636,77 @@ def validate_subdoc(
             # MEDIUM-2 fix: a bare "ASCII + a space, no diacritic" parenthetical also matches
             # legitimate diacritic-free Vietnamese asides ("(anh em ta)", "(cho con)"), which
             # would quarantine the whole file. Require a concrete ENGLISH-gloss signal — a
-            # possessive ('s) or an English honorific+Capitalized-name bigram — which is the
-            # actual audit leak pattern ("(Miss Mei's brother)", "(X's brother)") and cannot
-            # appear in normal Vietnamese dialogue.
-            if ("'s" in inner) or ("’s" in inner) or HONORIFIC_CAPNAME_RE.search(inner):
-                raise GateError(
-                    GateFailure(
-                        12,
-                        f"Gloss/parenthetical leaked into cue {i}: {text!r}",
-                        failing_indices=[i],
-                    )
-                )
+            # possessive (\x27s / ’s) or an English honorific+Capitalized-name bigram — which
+            # is the actual audit leak pattern and cannot appear in normal Vietnamese dialogue.
+            if ("\x27s" in inner) or ("’s" in inner) or HONORIFIC_CAPNAME_RE.search(inner):
+                _fail12.append(i)
+                break  # one match per cue is sufficient; skip check 11/10 for this cue
+        else:
+            # No check-12 trigger for this cue — proceed to check 11 and check 10.
 
-        # Check 11 (B2/H5): English honorific + Capitalized name bigram.
-        if HONORIFIC_CAPNAME_RE.search(text):
-            raise GateError(
-                GateFailure(
-                    11,
-                    f"English honorific + name leaked into cue {i}: {text!r}",
-                    failing_indices=[i],
-                )
+            # Check 11 (B2/H5): English honorific + Capitalized name bigram.
+            if HONORIFIC_CAPNAME_RE.search(text):
+                _fail11.append(i)
+                continue  # skip check 10 for this cue
+
+            # Check 10 (B2/H5): source-passthrough leak. Only consider a cue that has NO
+            # Vietnamese diacritic (narrow VN range) and is not allowlist/sentinel-only.
+            if VN_DIACRITIC_RE.search(text):
+                continue
+            if ALLOWLIST_RE.match(text) or SENTINEL_ONLY_RE.match(text):
+                continue
+            tokens = ASCII_WORD_RE.findall(text)
+            if len(tokens) < 2:
+                continue  # need >=2 ASCII word tokens (length>=2 each) — short VI cues are safe
+            # MEDIUM-3 fix: exempt laughter/onomatopoeia — a cue made ONLY of listed interjection
+            # syllables ("Ha ha ha", "Ho ho ho", "Hmm uh") — legitimately untranslated and identical
+            # to source. Deliberately NOT a blanket "repeated token" exemption: real repeated English
+            # imperatives ("Go go", "No no", "Stop stop") must still be caught as passthrough leaks.
+            _lower_tokens = [t.lower() for t in tokens]
+            if all(t in _INTERJECTION_TOKENS for t in _lower_tokens):
+                continue
+            src_lower = (src_sl.text or "").lower()
+            all_in_source = all(
+                re.search(r"\b" + re.escape(tok.lower()) + r"\b", src_lower) for tok in tokens
             )
+            if not all_in_source:
+                continue  # not a verbatim echo of the source cue
+            if all(tok.lower() in allowlist for tok in tokens):
+                continue  # every token is a Bible-pinned proper noun — legitimate passthrough
+            _fail10.append(i)
+        # end for-else (check 12 inner loop)
+    # end outer for loop
 
-        # Check 10 (B2/H5): source-passthrough leak. Only consider a cue that has NO
-        # Vietnamese diacritic (narrow VN range) and is not allowlist/sentinel-only.
-        if VN_DIACRITIC_RE.search(text):
-            continue
-        if ALLOWLIST_RE.match(text) or SENTINEL_ONLY_RE.match(text):
-            continue
-        tokens = ASCII_WORD_RE.findall(text)
-        if len(tokens) < 2:
-            continue  # need >=2 ASCII word tokens (length>=2 each) — short VI cues are safe
-        # MEDIUM-3 fix: exempt laughter/onomatopoeia — a cue made ONLY of listed interjection
-        # syllables ("Ha ha ha", "Ho ho ho", "Hmm uh") — legitimately untranslated and identical
-        # to source. Deliberately NOT a blanket "repeated token" exemption: real repeated English
-        # imperatives ("Go go", "No no", "Stop stop") must still be caught as passthrough leaks.
-        _lower_tokens = [t.lower() for t in tokens]
-        if all(t in _INTERJECTION_TOKENS for t in _lower_tokens):
-            continue
-        src_lower = (src_sl.text or "").lower()
-        all_in_source = all(
-            re.search(r"\b" + re.escape(tok.lower()) + r"\b", src_lower) for tok in tokens
+    # ── Post-loop: raise ONE GateError carrying all failing indices (priority: 9 > 11 > 12 > 10)
+    if _fail9:
+        raise GateError(
+            GateFailure(
+                9,
+                f"CJK/Hangul/Kana script leaked into {len(_fail9)} cue(s): {sorted(_fail9)}",
+                failing_indices=sorted(_fail9),
+            )
         )
-        if not all_in_source:
-            continue  # not a verbatim echo of the source cue
-        if all(tok.lower() in allowlist for tok in tokens):
-            continue  # every token is a Bible-pinned proper noun — legitimate passthrough
+    if _fail11:
+        raise GateError(
+            GateFailure(
+                11,
+                f"English honorific + name leaked into {len(_fail11)} cue(s): {sorted(_fail11)}",
+                failing_indices=sorted(_fail11),
+            )
+        )
+    if _fail12:
+        raise GateError(
+            GateFailure(
+                12,
+                f"Gloss/parenthetical leaked into {len(_fail12)} cue(s): {sorted(_fail12)}",
+                failing_indices=sorted(_fail12),
+            )
+        )
+    if _fail10:
         raise GateError(
             GateFailure(
                 10,
-                f"Source-language passthrough leak in cue {i}: {text!r} "
-                f"(all ASCII tokens appear verbatim in source)",
-                failing_indices=[i],
+                f"Source-language passthrough leak in {len(_fail10)} cue(s): {sorted(_fail10)}",
+                failing_indices=sorted(_fail10),
             )
         )
