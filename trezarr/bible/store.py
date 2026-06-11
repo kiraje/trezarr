@@ -1438,18 +1438,25 @@ async def dedup_canonical_name_terms(
     and '史蒂文·格兰特' → 'Sử Địch Văn · Cách Lan Đặc' (CJK, locked). The translate-prompt
     glossary injects both rows, producing split renderings in output subtitles (260611-l74 R3).
 
-    D-04 rule: the LATIN-form row's vietnamese_rendering is canonical (first-established locked
-    rendering wins; the Latin name is the anchor used by plan_character_name_terms and
-    rendering_by_latin). Non-Latin (CJK/script) rows whose vietnamese_rendering differs from
-    their co-character canonical are rewritten.
+    D-04 rule: canonical = the FIRST-LOCKED row (lowest id / earliest established), regardless
+    of script (FIX2, 260611-ru6 R2 — bible-consistency-auditor + vietnamese-linguist combined
+    finding). The prior "LATIN-form is canonical" heuristic was removed because it false-merges
+    DIFFERENT characters in xianxia/CJK-heavy series where multiple CJK-named characters each
+    have their own locked CJK row and a single unrelated Latin-named character produces one
+    Latin row — making the heuristic rewrite every unrelated CJK row to the Latin character's
+    rendering (catastrophic identity collapse).
 
-    Detection: a locked TermDictionary row is treated as "canonical" when its source_term
-    contains only ASCII and Latin-extended characters (i.e., not CJK/script). A row is treated
-    as a "secondary" (CJK/script form for the same character) when its source_term contains
-    non-ASCII CJK characters. The canonical row's rendering is the authority; if a secondary
-    row has a DIFFERENT rendering, this function rewrites it and emits a BibleEvent audit record.
+    Character linkage requirement: a rewrite may ONLY happen when two rows are provably the
+    same character. Without a character_id FK on TermDictionary (current schema), this function
+    cannot establish linkage and therefore performs NO rewrites. It returns an empty list and
+    logs a diagnostic. The primary defence is plan_character_name_terms (FIX2-III guard), which
+    prevents the dual-row split from being created in the first place.
 
-    Idempotent: a second call with the same data returns an empty list of events (nothing to repair).
+    Future path: once a character_id FK is added to TermDictionary (via Alembic migration),
+    this function can group rows by character_id and elect the lowest-id locked row as
+    canonical — performing the repair with guaranteed-correct character identity.
+
+    Idempotent: returns an empty list on every call until FK linkage is available.
     Series-scoped: only touches locked TermDictionary rows for the given series_id (T-ru6-04).
 
     Args:
@@ -1490,94 +1497,44 @@ async def dedup_canonical_name_terms(
     if not locked_rows:
         return []
 
-    # Partition into canonical (Latin-source) and secondary (CJK/script-source) rows.
-    canonical_rows = [r for r in locked_rows if _is_latin_only(r.source_term)]
-    secondary_rows = [r for r in locked_rows if not _is_latin_only(r.source_term)]
+    # FIX2 (260611-ru6): character linkage required before any rewrite.
+    #
+    # The prior "canonical = the single Latin-form row" heuristic is REMOVED. That heuristic
+    # false-merged DIFFERENT characters in xianxia series: a single unrelated Latin-named
+    # character produced canonical_rows == [that Latin row], and then ALL CJK-named characters'
+    # locked rows (韩立/Hàn Lập, 南宫婉/Nam Cung Uyển, …) were rewritten to that Latin
+    # character's rendering — catastrophic identity collapse (bible-consistency-auditor HIGH,
+    # vietnamese-linguist HIGH, combined finding 260611-ru6 FIX2).
+    #
+    # Safe rule: rewrite ONLY when two rows are provably the SAME character entity.
+    # TermDictionary has NO character_id FK (current schema, confirmed models.py:134-159).
+    # Without a FK, we cannot establish cross-row character identity.
+    # → Return immediately with no events. Log a diagnostic for monitoring.
+    #
+    # Future path (TODO): add a character_id FK to TermDictionary via Alembic migration,
+    # then group rows by character_id and elect the lowest-id locked row as canonical —
+    # performing the repair with guaranteed-correct character identity and register-agnostic
+    # first-locked-wins semantics (D-04).
+    #
+    # Primary defence until then: plan_character_name_terms FIX2-III guard prevents the
+    # dual-row split from being created in the first place (analyze.py:180+).
+    latin_rows = [r for r in locked_rows if _is_latin_only(r.source_term)]
+    script_rows = [r for r in locked_rows if not _is_latin_only(r.source_term)]
 
-    if not canonical_rows or not secondary_rows:
-        # Nothing to deduplicate — either all canonical or all secondary (unusual case).
+    if not latin_rows or not script_rows:
+        # No mixed Latin/CJK situation — nothing to consider.
         return []
 
-    # Build a map from canonical rendering (normalised) → the authoritative rendering string.
-    # If two canonical rows have conflicting renderings, the alphabetically-first source_term
-    # wins (deterministic, avoids non-determinism in repair order). In practice there is at
-    # most one canonical row per character.
-    canonical_by_rendering: dict[str, str] = {}  # lower(rendering) → authoritative rendering
-    for row in sorted(canonical_rows, key=lambda r: r.source_term.lower()):
-        key = (row.vietnamese_rendering or "").strip().lower()
-        if key not in canonical_by_rendering:
-            canonical_by_rendering[key] = (row.vietnamese_rendering or "").strip()
-
-    # Also build a lookup: latin_source_lower → canonical rendering.
-    # This is the primary dedup axis: the secondary row's rendering should match the canonical.
-    canonical_by_latin: dict[str, str] = {
-        row.source_term.strip().lower(): (row.vietnamese_rendering or "").strip()
-        for row in canonical_rows
-    }
-
-    # For each secondary row: find its canonical rendering.
-    # Heuristic: try exact-match on the secondary row's current rendering (already consistent
-    # → skip); fall back to using the FIRST canonical row's rendering if there is only one
-    # canonical row (the Moon Knight case: one Latin name, one CJK name, one canonical rendering).
-    # This covers the common scenario; edge cases with multiple characters per series are
-    # handled by the series_id scope (each series call is independent).
-    events: list[BibleEventDTO] = []
-
-    for sec_row in secondary_rows:
-        sec_rendering = (sec_row.vietnamese_rendering or "").strip()
-
-        # Is this secondary row's rendering already among the canonical renderings?
-        if sec_rendering.lower() in canonical_by_rendering:
-            # Already consistent — nothing to do.
-            continue
-
-        # Find the canonical rendering. If there is exactly one canonical row,
-        # that is unambiguous. If multiple canonical rows exist, we cannot determine
-        # which character this secondary row belongs to without a character FK — skip.
-        if len(canonical_rows) == 1:
-            target_rendering = canonical_rows[0].vietnamese_rendering or ""
-        else:
-            # Multiple canonical rows: attempt a lookup by name similarity is too fragile.
-            # Defer to the human. Log and skip.
-            logger.warning(
-                "dedup_canonical_name_terms: series %d secondary row %r — cannot resolve "
-                "canonical rendering among %d canonical rows; skipping (manual dedup required).",
-                series_id,
-                sec_row.source_term,
-                len(canonical_rows),
-            )
-            continue
-
-        if sec_rendering == target_rendering:
-            continue  # Already correct — idempotency guard.
-
-        # Rewrite the secondary row's rendering to the canonical value in a fresh transaction.
-        # WR-01: re-read the row inside the transaction to avoid reading stale state.
-        async with session_factory() as session:
-            async with session.begin():
-                live_row = await session.get(TermDictionary, sec_row.id)
-                if live_row is None or live_row.series_id != series_id:
-                    # Row was deleted or moved between the read and now — skip.
-                    continue
-                old_rendering = live_row.vietnamese_rendering
-                live_row.vietnamese_rendering = target_rendering
-
-                # D-32: emit a BibleEvent audit record for the rewrite.
-                evt = BibleEvent(
-                    series_id=series_id,
-                    episode_key=None,
-                    entity_type="term_dictionary",
-                    entity_id=live_row.id,
-                    field="vietnamese_rendering",
-                    old_value=old_rendering,
-                    new_value=target_rendering,
-                    source="lock",  # system dedup is categorized as lock-provenance
-                )
-                session.add(evt)
-                await session.flush()
-                events.append(BibleEventDTO.model_validate(evt, from_attributes=True))
-
-    return events
+    logger.info(
+        "dedup_canonical_name_terms: series %d has %d Latin-locked and %d CJK-locked rows. "
+        "No character_id FK on TermDictionary — cannot safely establish per-row character "
+        "linkage. Skipping rewrite to prevent false-merge across different characters. "
+        "Add a character_id FK (Alembic migration) to enable safe dedup.",
+        series_id,
+        len(latin_rows),
+        len(script_rows),
+    )
+    return []
 
 
 async def load_field_history(

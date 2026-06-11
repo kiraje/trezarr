@@ -169,11 +169,53 @@ def plan_character_name_terms(
         ren = (getattr(t, "vietnamese_rendering", "") or "").strip()
         if ren:
             rendering_by_latin[src.lower()] = ren
-        # Build locked_sources: record Latin names that already have a locked rendering.
+        # Build locked_sources: record source_terms that already have a locked rendering.
         # Uses duck-typed access per the function contract (works for TermDTO + TermInference).
         locked_fields = getattr(t, "locked_fields", None) or []
         if "vietnamese_rendering" in locked_fields:
             locked_sources.add(src.lower())
+
+    # FIX2-III (260611-ru6 R2): extend locked_sources to cover the Latin name of any
+    # character whose CJK/script form is already locked. This closes the ordering hole
+    # where a CJK-first locked row (source_term='韩立') does not block a later Latin
+    # (source_term='Han Li') spec on a second run where original_script_name may be absent.
+    #
+    # Two linkage mechanisms (both applied; either suffices):
+    #   (1) Script-name match: character's original_script_name is in locked_sources.
+    #       Covers runs where the CJK name is still available in the inference.
+    #   (2) Rendering match: any locked CJK row's vietnamese_rendering equals the character's
+    #       inferred vietnamese_rendering (ch_rendering). Covers second runs where
+    #       original_script_name is absent (English-only source) but the character's
+    #       Hán-Việt rendering matches the established locked CJK row rendering.
+    #       Guards against creating a competing Latin lock for the same entity.
+    # bible-name-matching contract: source_term comparisons are case-insensitive.
+    #
+    # Build a set of renderings that are locked under CJK source_terms.
+    locked_cjk_renderings: set[str] = set()
+    for t in existing_terms or []:
+        src = (getattr(t, "source_term", "") or "").strip()
+        locked_fields = getattr(t, "locked_fields", None) or []
+        if "vietnamese_rendering" in locked_fields and src.lower() in locked_sources:
+            # Check if this locked source_term is a CJK/script term (non-Latin).
+            # CJK range check: U+3040–U+9FFF covers Hiragana/Katakana/CJK Unified,
+            # U+3400–U+4DBF covers CJK Extension A — sufficient for name-term dedup use case.
+            if any(0x3040 <= ord(c) <= 0x9FFF or 0x3400 <= ord(c) <= 0x4DBF for c in src):
+                ren = (getattr(t, "vietnamese_rendering", "") or "").strip()
+                if ren:
+                    locked_cjk_renderings.add(ren.lower())
+
+    for ch in characters or []:
+        latin = (getattr(ch, "original_latin_name", "") or "").strip()
+        if not latin:
+            continue
+        script = (getattr(ch, "original_script_name", "") or "").strip()
+        ch_hv = (getattr(ch, "vietnamese_rendering", "") or "").strip()
+        # Mechanism 1: script form is directly in locked_sources.
+        if script and script.lower() in locked_sources:
+            locked_sources.add(latin.lower())
+        # Mechanism 2: character's rendering matches a locked CJK row's rendering.
+        elif ch_hv and ch_hv.lower() in locked_cjk_renderings:
+            locked_sources.add(latin.lower())
 
     specs: "list[NameTermSpec]" = []
     seen: set[str] = set()
