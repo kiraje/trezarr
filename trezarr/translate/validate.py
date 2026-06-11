@@ -73,24 +73,37 @@ HINT_SCAFFOLD_RE = re.compile(r"\(\s*speaker\s+says\s*:", re.IGNORECASE)
 # '(tại hạ nói: tại hạ; xưng hô: cô nương)' that evaded both _LEAKED_HINT_RE (engine
 # strip) and HINT_SCAFFOLD_RE (Check 8 — anchored to "speaker says:" only).
 #
-# Discriminating structural signal: the token IMMEDIATELY before ':' is a pronoun-ROLE
-# word — either `nói` (says/speaks) or `xưng hô` (form of address).  The mandatory colon
-# distinguishes a label structure from a stage direction:
-#   "(nói to)"        → NO colon after nói  → stage direction → NOT matched
-#   "(nói: ta)"       → colon after nói     → label structure → MATCHED
-#   "(xưng hô: muội)" → colon after xưng hô → label structure → MATCHED
-#   "(Hồi 01: …)"    → token before ':' is 'Hồi 01', not a role word → NOT matched
+# Mandatory anchor: `xưng hô:` (form-of-address label).  This is Trezarr-specific
+# internal jargon that CAN NEVER appear in genuine Vietnamese subtitle text.
+# `nói:` alone is too general — ordinary reported speech uses `(X nói: Y)` legitimately,
+# e.g. `(Hắn nói: đợi ta ở đây)` manufactured by _preserve_source_envelopes from
+# source `（他说：在这里等我）`.  Making `xưng hô:` mandatory eliminates all such
+# false positives while still catching every real hint leak (the hint always includes
+# the address-form label whether or not nói: is also present).
 #
-# Pattern: open paren, optional non-colon chars (e.g. "tại hạ "), then role token, then colon.
-# \(\s*             — literal '(' optionally followed by spaces
-# (?:[^():]*        — zero or more chars that are not '(' ')' or ':' (the optional "prefix name")
-# (?:nói|xưng\s+hô) — the pronoun-role token (case-insensitive covers Nói, XƯNG HÔ, etc.)
-# \s*:)             — zero or more spaces then the mandatory colon
+# Evasion hardening (260612-7kt review, findings A+B):
+#   • Mandatory anchor: `xưng hô[:：]` — `nói:` alone is legitimate reported speech.
+#   • Colon class `[:：]` — catches fullwidth colon U+FF1A in addition to ASCII U+003A.
+#   • Opener class `[(\[]` — catches both `(` and `[` envelope styles.
+#   • Interior exclusion `[^()[\]]*` — stops at opener/closer boundaries only; colons
+#     in the interior (e.g. "nói: tại hạ;") are allowed so patterns like
+#     "(tại hạ nói: tại hạ; xưng hô: cô nương)" can be matched.
+#
+# Examples:
+#   "(tại hạ nói: tại hạ; xưng hô: cô nương)"  → MATCHED (xưng hô: present)
+#   "(xưng hô: muội)"                            → MATCHED (xưng hô:-only)
+#   "[xưng hô: muội]"                            → MATCHED ([..] opener)
+#   "(tại hạ nói：tại hạ; xưng hô：cô nương)"   → MATCHED (fullwidth colon)
+#   "(Hắn nói: đợi ta ở đây)"                    → NOT matched (xưng hô: absent)
+#   "(nói to)"                                   → NOT matched (no colon, no xưng hô:)
+#   "(Hồi 01: Mở Đầu)"                          → NOT matched (no xưng hô:)
+#   "[Phàm Nhân Tu Tiên Ký]"                     → NOT matched (no xưng hô:)
+#
 # Non-recursive; no alternation with overlapping paths (ASVS L1 V5 — mirrors HINT_SCAFFOLD_RE).
 # Sibling to HINT_SCAFFOLD_RE: one for English labels, one for Vietnamese labels; both feed
 # the same Check 8 OR condition.  engine.py _LEAKED_VN_HINT_RE is the strip-layer counterpart.
 VN_HINT_SCAFFOLD_RE = re.compile(
-    r"\(\s*(?:[^():]*(?:nói|xưng\s+hô)\s*:)",
+    r"[(\[]\s*(?:[^()[\]]*xưng\s+hô\s*[:：])",
     re.IGNORECASE,
 )
 

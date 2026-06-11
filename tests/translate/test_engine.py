@@ -1612,3 +1612,87 @@ def test_parse_english_label_hint_still_stripped_regression():
     assert result == ["Chư vị tu sĩ..."], (
         f"English-label hint must still be stripped by _LEAKED_HINT_RE, got {result!r}"
     )
+
+
+# ---------------------------------------------------------------------------
+# 260612-7kt review round — Finding A: nói:-only not stripped (false positive fix)
+# ---------------------------------------------------------------------------
+
+
+def test_parse_preserves_noi_only_reported_speech():
+    """Reported speech '(Hắn nói: đợi ta ở đây)' must NOT be stripped by _LEAKED_VN_HINT_RE.
+
+    'nói:' without 'xưng hô:' is ordinary reported speech, not a leaked pronoun hint.
+    The mandatory anchor for _LEAKED_VN_HINT_RE must be 'xưng hô:'.
+
+    RED: current pattern matches nói:-only and strips the paren incorrectly.
+    GREEN: pattern changed to require xưng hô: as mandatory anchor.
+    """
+    from trezarr.translate.engine import parse_numbered_response  # noqa: PLC0415
+
+    result = parse_numbered_response(
+        "[1] (Hắn nói: đợi ta ở đây) Anh đợi ta nhé.",
+        1,
+    )
+    assert result == ["(Hắn nói: đợi ta ở đây) Anh đợi ta nhé."], (
+        f"Reported speech '(Hắn nói: đợi ta ở đây)' must be preserved. "
+        f"_LEAKED_VN_HINT_RE must require 'xưng hô:' as mandatory anchor, got {result!r}."
+    )
+
+
+# ---------------------------------------------------------------------------
+# 260612-7kt review round — Finding B: fullwidth colon and square-bracket strip
+# ---------------------------------------------------------------------------
+
+
+def test_parse_strips_fullwidth_colon_vn_hint():
+    """Fullwidth-colon '：' (U+FF1A) VN-label hint is stripped by _LEAKED_VN_HINT_RE.
+
+    RED: current colon literal ':' does not match U+FF1A; fullwidth variant survives the strip.
+    GREEN: colon class becomes [:：] in _LEAKED_VN_HINT_RE.
+    """
+    from trezarr.translate.engine import parse_numbered_response  # noqa: PLC0415
+
+    result = parse_numbered_response(
+        "[1] (tại hạ nói：tại hạ; xưng hô：cô nương) xin cô nương nén bi thương.",
+        1,
+    )
+    assert result == ["xin cô nương nén bi thương."], (
+        f"Fullwidth-colon VN hint must be stripped; got {result!r}. "
+        f"Colon class must be [:：] in _LEAKED_VN_HINT_RE."
+    )
+
+
+def test_parse_strips_square_bracket_vn_hint():
+    """Square-bracket '[...]' VN-label hint is stripped by _LEAKED_VN_HINT_RE.
+
+    RED: current opener '\\(' does not match '['; square-bracket variant survives.
+    GREEN: pattern handles both '(' and '[' openers with matching closers.
+    """
+    from trezarr.translate.engine import parse_numbered_response  # noqa: PLC0415
+
+    result = parse_numbered_response(
+        "[1] [tại hạ nói: tại hạ; xưng hô: cô nương] xin cô nương nén bi thương.",
+        1,
+    )
+    assert result == ["xin cô nương nén bi thương."], (
+        f"Square-bracket VN hint must be stripped; got {result!r}. "
+        f"_LEAKED_VN_HINT_RE opener must cover both '(' and '['."
+    )
+
+
+def test_parse_preserves_legit_bracket_title_card():
+    """Legitimate bracket title card '[Phàm Nhân Tu Tiên Ký]' must NOT be stripped.
+
+    Guards the Finding B fix: '[...]' opener without 'xưng hô:' inside is not a hint.
+    """
+    from trezarr.translate.engine import parse_numbered_response  # noqa: PLC0415
+
+    result = parse_numbered_response(
+        "[1] [Phàm Nhân Tu Tiên Ký] Hồi Ức Đầu Tiên.",
+        1,
+    )
+    assert result == ["[Phàm Nhân Tu Tiên Ký] Hồi Ức Đầu Tiên."], (
+        f"Bracket title card must be preserved; got {result!r}. "
+        f"No 'xưng hô:' inside — must not be stripped."
+    )

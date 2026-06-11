@@ -1194,3 +1194,279 @@ async def test_cjk_term_unaffected_by_case_insensitive_lookup(session_factory):
     assert term.vietnamese_rendering == "Khonshu", (
         f"CJK term carry-forward: prior 'Khonshu' must be kept, got {term.vietnamese_rendering!r}."
     )
+
+
+# ---------------------------------------------------------------------------
+# 260612-7kt review round — Finding C: MultipleResultsFound on pre-existing dup rows
+# ---------------------------------------------------------------------------
+# store.py:582-586 uses scalar_one_or_none() which raises MultipleResultsFound when
+# two case-variant rows already exist (e.g. live MK DB: judgment/Judgment).
+# Fix: ORDER BY id ASC + .scalars().first() — deterministic, takes the oldest row.
+# ---------------------------------------------------------------------------
+
+
+async def test_pre_existing_case_dup_rows_resolve_to_oldest_no_exception(session_factory):
+    """When two case-variant rows already exist, upsert resolves to the oldest without exception.
+
+    Scenario mirrors the live MK DB: 'Judgment' (id lower, inserted first) and
+    'judgment' (id higher, inserted later) both exist.  A subsequent upsert with
+    source_term='judgment' must NOT raise MultipleResultsFound — it must resolve to
+    the oldest row (lowest id = first canonical) and apply carry-forward.
+
+    RED: scalar_one_or_none() raises MultipleResultsFound when two rows exist.
+    GREEN: .scalars().first() with ORDER BY id ASC takes the canonical oldest row.
+    """
+    from sqlalchemy import insert  # noqa: PLC0415
+    from trezarr.bible.models import TermDictionary as TD  # noqa: PLC0415
+    from trezarr.bible.store import get_term  # noqa: PLC0415
+
+    series_id = await _create_series(session_factory, arr_series_id=9010)
+
+    # Directly insert two case-variant rows (bypassing upsert to simulate the pre-existing state)
+    async with session_factory() as session:
+        async with session.begin():
+            row_a = TD(
+                series_id=series_id,
+                source_term="Judgment",
+                vietnamese_rendering="Thẩm Phán",
+                category="title",
+                locked_fields=[],
+            )
+            session.add(row_a)
+            await session.flush()
+            id_a = row_a.id
+
+            row_b = TD(
+                series_id=series_id,
+                source_term="judgment",
+                vietnamese_rendering="sự phán xét",
+                category="title",
+                locked_fields=[],
+            )
+            session.add(row_b)
+            await session.flush()
+            id_b = row_b.id
+
+    assert id_a < id_b, "Sanity: first insert must have the lower id"
+
+    # Now upsert — must NOT raise, must return the oldest row ("Judgment" / "Thẩm Phán")
+    dto, events = await upsert_term(
+        session_factory,
+        series_id=series_id,
+        source_term="judgment",
+        vietnamese_rendering="another rendering",
+        episode_key="S01E03",
+        source="inference",
+    )
+
+    # Oldest row's rendering must be kept (carry-forward) — no exception
+    term = await get_term(session_factory, series_id=series_id, source_term="Judgment")
+    assert term is not None
+    assert term.vietnamese_rendering == "Thẩm Phán", (
+        f"Oldest row 'Judgment'→'Thẩm Phán' must be kept by carry-forward after dup-row resolution; "
+        f"got {term.vietnamese_rendering!r}."
+    )
+
+
+# ---------------------------------------------------------------------------
+# 260612-7kt review round — Finding D: human POST (source="import") suppressed
+# ---------------------------------------------------------------------------
+# The carry-forward guard fires on ANY non-None rendering regardless of `source`.
+# A human POST /api/series/{id}/terms routes through upsert_term(source="import")
+# and silently gets suppressed — the value stays unchanged even though the human
+# explicitly sent a new value.
+# Fix: gate suppression on source == "inference" only.
+# ---------------------------------------------------------------------------
+
+
+async def test_import_source_upsert_overwrites_unlocked_rendering(session_factory):
+    """upsert_term(source='import') must overwrite an existing unlocked rendering.
+
+    Sequence:
+    1. upsert_term source_term="Ankh", rendering="First Value", source="inference"
+    2. upsert_term source_term="Ankh", rendering="Imported Override", source="import"
+    Result: row.vietnamese_rendering == "Imported Override"
+
+    The carry-forward guard must suppress ONLY source="inference".
+    Human/import sources fall through to the normal merge.
+
+    RED: current guard fires on all sources; import is silently suppressed.
+    GREEN: guard condition becomes `source == 'inference'`.
+    """
+    from trezarr.bible.store import get_term  # noqa: PLC0415
+
+    series_id = await _create_series(session_factory, arr_series_id=9011)
+
+    await upsert_term(
+        session_factory,
+        series_id=series_id,
+        source_term="Ankh",
+        vietnamese_rendering="First Value",
+        episode_key="S01E01",
+        source="inference",
+    )
+
+    await upsert_term(
+        session_factory,
+        series_id=series_id,
+        source_term="Ankh",
+        vietnamese_rendering="Imported Override",
+        episode_key=None,
+        source="import",
+    )
+
+    term = await get_term(session_factory, series_id=series_id, source_term="Ankh")
+    assert term is not None
+    assert term.vietnamese_rendering == "Imported Override", (
+        f"source='import' must overwrite unlocked rendering; got {term.vietnamese_rendering!r}. "
+        f"Carry-forward must only suppress source='inference'."
+    )
+
+
+async def test_inference_source_still_suppressed_after_finding_d_fix(session_factory):
+    """After the Finding D fix, inference is still suppressed by the carry-forward guard.
+
+    Regression guard: the fix must NOT make inference always win.
+
+    Sequence:
+    1. upsert_term rendering="Prior", source="inference"
+    2. upsert_term rendering="New Inference", source="inference"
+    Result: row stays "Prior" (carry-forward still suppresses inference).
+    """
+    from trezarr.bible.store import get_term  # noqa: PLC0415
+
+    series_id = await _create_series(session_factory, arr_series_id=9012)
+
+    await upsert_term(
+        session_factory,
+        series_id=series_id,
+        source_term="Scarab2",
+        vietnamese_rendering="Prior",
+        episode_key="S01E01",
+        source="inference",
+    )
+
+    await upsert_term(
+        session_factory,
+        series_id=series_id,
+        source_term="Scarab2",
+        vietnamese_rendering="New Inference",
+        episode_key="S01E02",
+        source="inference",
+    )
+
+    term = await get_term(session_factory, series_id=series_id, source_term="Scarab2")
+    assert term is not None
+    assert term.vietnamese_rendering == "Prior", (
+        f"Inference must still be suppressed by carry-forward; got {term.vietnamese_rendering!r}."
+    )
+
+
+# ---------------------------------------------------------------------------
+# 260612-7kt review round — Finding E: no-op churn (equal inference emits event)
+# ---------------------------------------------------------------------------
+# When inference proposes the same rendering as the prior, the guard suppresses
+# the write but still emits a BibleEvent — violating BIBLE-06 (no-op = no event).
+# Fix: only suppress-and-emit when vietnamese_rendering != prior_rendering.
+# ---------------------------------------------------------------------------
+
+
+async def test_equal_inference_emits_no_event(session_factory):
+    """Two inference upserts proposing the same rendering → zero new BibleEvents on second.
+
+    BIBLE-06: a no-op (proposed == current) must not create a bible_event row.
+
+    Sequence:
+    1. upsert_term rendering="Thẩm Phán", source="inference" → establishes row (1 event)
+    2. upsert_term rendering="Thẩm Phán", source="inference" → same value, no change
+    Result: zero BibleEvents returned from the second upsert call.
+
+    RED: current guard emits a suppressed BibleEvent even when the value is identical.
+    GREEN: guard only fires when proposed != prior.
+    """
+    from trezarr.bible.store import get_term  # noqa: PLC0415
+
+    series_id = await _create_series(session_factory, arr_series_id=9013)
+
+    await upsert_term(
+        session_factory,
+        series_id=series_id,
+        source_term="Underworld",
+        vietnamese_rendering="Thẩm Phán",
+        episode_key="S01E01",
+        source="inference",
+    )
+
+    _, events = await upsert_term(
+        session_factory,
+        series_id=series_id,
+        source_term="Underworld",
+        vietnamese_rendering="Thẩm Phán",
+        episode_key="S01E02",
+        source="inference",
+    )
+
+    assert len(events) == 0, (
+        f"Equal inference (same rendering) must emit zero BibleEvents; got {len(events)}. "
+        f"BIBLE-06: no-op inference must be a true no-op — no event row created."
+    )
+
+
+# ---------------------------------------------------------------------------
+# 260612-7kt review round — Finding F: whitespace-only prior blocks first write
+# ---------------------------------------------------------------------------
+# The carry-forward guard checks `prior_rendering` truthiness: `if prior_rendering`.
+# `'   '.strip()` is falsy but the guard uses `prior_rendering = existing_row.vietnamese_rendering or ""`
+# without stripping, so `'   '` is truthy and blocks a real first write.
+# Fix: truthiness check on `(existing_row.vietnamese_rendering or "").strip()`.
+# ---------------------------------------------------------------------------
+
+
+async def test_whitespace_only_prior_filled_by_inference(session_factory):
+    """Prior whitespace-only rendering '   ' must be filled by the next inference.
+
+    Sequence:
+    1. Insert row directly with vietnamese_rendering='   ' (whitespace-only)
+    2. upsert_term rendering='Real Value', source='inference'
+    Result: row.vietnamese_rendering == 'Real Value'
+
+    The truthiness test must use .strip() so whitespace-only prior is treated as empty.
+
+    RED: `if prior_rendering` is truthy for '   ' → suppresses the write incorrectly.
+    GREEN: `if (existing_row.vietnamese_rendering or '').strip()` — whitespace = empty.
+    """
+    from sqlalchemy import insert  # noqa: PLC0415
+    from trezarr.bible.models import TermDictionary as TD  # noqa: PLC0415
+    from trezarr.bible.store import get_term  # noqa: PLC0415
+
+    series_id = await _create_series(session_factory, arr_series_id=9014)
+
+    # Directly insert a row with whitespace-only rendering
+    async with session_factory() as session:
+        async with session.begin():
+            row = TD(
+                series_id=series_id,
+                source_term="Avatar",
+                vietnamese_rendering="   ",
+                category=None,
+                locked_fields=[],
+            )
+            session.add(row)
+
+    # Inference must fill the whitespace-only prior
+    await upsert_term(
+        session_factory,
+        series_id=series_id,
+        source_term="Avatar",
+        vietnamese_rendering="Real Value",
+        episode_key="S01E01",
+        source="inference",
+    )
+
+    term = await get_term(session_factory, series_id=series_id, source_term="Avatar")
+    assert term is not None
+    assert term.vietnamese_rendering == "Real Value", (
+        f"Whitespace-only prior '   ' must be filled by inference 'Real Value'; "
+        f"got {term.vietnamese_rendering!r}. "
+        f"Truthiness check must use .strip() to treat whitespace as empty."
+    )
