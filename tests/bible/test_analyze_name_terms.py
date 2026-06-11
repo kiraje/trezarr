@@ -137,28 +137,30 @@ def test_r3_canonical_m_adopts_canonical_rendering_for_cjk_spec():
         )
 
 
-async def test_r3_canonical_n_dedup_collapses_dual_locked_rows(session_factory):
-    """R3 Test N: dedup_canonical_name_terms collapses dual locked rows to canonical.
+async def test_r3_canonical_n_dedup_no_rewrite_without_character_linkage(session_factory):
+    """R3 Test N (updated FIX2): dedup must NOT rewrite rows when character linkage cannot
+    be established (no FK, no Character table entry).
 
-    Seed the DB with two locked TermDictionary rows for the same character entity:
-      Row 1: source_term='Steven Grant', vietnamese_rendering='Steven Grant' (Latin, locked)
-      Row 2: source_term='史蒂文·格兰特', vietnamese_rendering='Sử Địch Văn · Cách Lan Đặc' (CJK, locked)
+    After FIX2, the 'len(canonical_rows) == 1 → rewrite all secondary rows' heuristic is
+    REMOVED because it false-merges different characters (FIX2-I finding).  Without a
+    Character FK in TermDictionary or a Character row providing original_script_name,
+    the dedup function has no basis for asserting that 'Steven Grant' and '史蒂文·格兰特'
+    refer to the same character — it returns no events (safe skip).
 
-    After dedup_canonical_name_terms(session_factory, series_id=X):
-      - Row 2's vietnamese_rendering is rewritten to 'Steven Grant' (canonical)
-      - At least one BibleEvent audit record exists for the change
-      - A second call (idempotent) returns an empty list of events
+    The Moon Knight dual-lock split is best resolved by:
+      1. Not creating the split in the first place (plan_character_name_terms guard, Tests L/III),
+      2. Manual human correction, or
+      3. A future migration that adds a character_id FK to TermDictionary.
 
-    This is the repair path for the live Moon Knight Bible (260611-l74 audit R3 evidence).
+    Seed: two locked rows (one Latin, one CJK) with no Character rows.
+    Expected post-FIX2: events == [] (no rewrite; safe skip logs a warning).
+    Idempotency still holds (second call also returns []).
     """
-    from trezarr.bible.store import apply_human_edit_term, load_series_bible
-
-    # Import the new function — will fail (ImportError) until implemented (RED).
-    from trezarr.bible.store import dedup_canonical_name_terms  # noqa: PLC0415
+    from trezarr.bible.store import apply_human_edit_term, dedup_canonical_name_terms, load_series_bible
 
     series_id = await _create_series(session_factory, arr_series_id=902)
 
-    # Seed Row 1: Latin canonical (locked)
+    # Seed Row 1: Latin (locked)
     await apply_human_edit_term(
         session_factory,
         series_id=series_id,
@@ -178,29 +180,29 @@ async def test_r3_canonical_n_dedup_collapses_dual_locked_rows(session_factory):
         lock=True,
     )
 
-    # Run dedup — should rewrite Row 2 to 'Steven Grant'
+    # After FIX2: no Character rows → no linkage → no rewrite
     events = await dedup_canonical_name_terms(session_factory, series_id=series_id)
 
-    assert len(events) >= 1, (
-        f"Expected at least 1 BibleEvent for the dedup repair, got {len(events)}.\n"
-        "R3 regression: dedup_canonical_name_terms must emit an audit event for each "
-        "row it rewrites to the canonical rendering."
+    assert events == [], (
+        f"R3 Test N (FIX2): dedup must return no events when character linkage cannot be "
+        f"established (no Character FK / no Character rows in DB). Got: {events!r}\n"
+        "The 'len==1 → rewrite all' heuristic was removed because it false-merges different "
+        "characters. Without proof of co-character linkage, skip safely."
     )
 
-    # Verify the CJK row was rewritten
+    # Verify CJK row is unchanged (no silent rewrite)
     bible = await load_series_bible(session_factory, series_id=series_id)
     cjk_terms = [t for t in bible.terms if t.source_term == "史蒂文·格兰特"]
-    assert len(cjk_terms) == 1, f"Expected 1 CJK term row, got: {cjk_terms!r}"
-    assert cjk_terms[0].vietnamese_rendering == "Steven Grant", (
-        f"Expected CJK row rewritten to canonical 'Steven Grant', "
-        f"got: {cjk_terms[0].vietnamese_rendering!r}"
+    assert len(cjk_terms) == 1
+    assert cjk_terms[0].vietnamese_rendering == "Sử Địch Văn · Cách Lan Đặc", (
+        f"R3 Test N (FIX2): CJK row must NOT be rewritten without linkage, "
+        f"got {cjk_terms[0].vietnamese_rendering!r}"
     )
 
-    # Idempotency: second call returns empty events list
+    # Idempotency: second call also returns empty
     events2 = await dedup_canonical_name_terms(session_factory, series_id=series_id)
     assert events2 == [], (
-        f"Expected dedup_canonical_name_terms to be idempotent (empty events on re-run), "
-        f"got: {events2!r}"
+        f"R3 Test N (FIX2): idempotency — second call must return [] too, got: {events2!r}"
     )
 
 
