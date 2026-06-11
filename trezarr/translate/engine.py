@@ -152,6 +152,16 @@ def derive_episode_key(media_item: object, source_sub_path: "str | Path | None" 
             m = re.search(r"S(\d{2,})E(\d{2,})", stem, re.IGNORECASE)
             if m:
                 return f"S{m.group(1).upper()}E{m.group(2).upper()}"
+            # R2 fix (260611-ru6): also match Plex "NxNN" / "NxNNN" dash-separated stems
+            # (case-insensitive, 1-2 digit season, 1-3 digit episode).
+            # Example: "A Record of a Mortal's Journey to Immortality - 6x19 - Episode 143"
+            # → S06E19. The SxxExx primary regex takes priority (elif not if) so a stem that
+            # has both forms uses the SxxExx form — backward-compatible.
+            # Without this fix, Plex stems collapse to S{season:02d}E00 which matches every
+            # cold-Bible S00E00 relationship_event — the episode_key collapse BLOCKER (audit B2).
+            m_plex = re.search(r"(\d{1,2})[xX](\d{1,3})", stem)
+            if m_plex:
+                return f"S{int(m_plex.group(1)):02d}E{int(m_plex.group(2)):02d}"
         # Fallback: use season_number if parse fails
         season = getattr(media_item, "season_number", None) or 0
         return f"S{season:02d}E00"

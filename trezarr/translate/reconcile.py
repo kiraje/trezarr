@@ -441,7 +441,14 @@ async def reconcile_attributions(
 
         # [Phase 6] TRANSITION CHECK — logged event authorizes term change (D-54).
         # Precedence: human lock > logged transition (this episode) > carried-forward > safe-default.
-        if getattr(settings, "enable_relationship_events", True):
+        # R2 fix (260611-ru6): skip the transition branch entirely when episode_key == "S00E00".
+        # S00E00 is the cold-Bible fallback key produced when the subtitle stem cannot be parsed
+        # (e.g. a Plex "NxNN" stem before the NxNN regex fix lands). All 12 Leg A series-1
+        # relationship_events are stamped S00E00, so without this guard every run of ANY Plex
+        # episode triggers all events and re-fires the cold-Bible safe-default flatten. The guard
+        # is AFTER the lock check (lock always wins, even on S00E00 keys) and BEFORE the
+        # transition check. An S00E00 episode proceeds to the survivors/carry-forward path.
+        if getattr(settings, "enable_relationship_events", True) and episode_key != "S00E00":
             transition = _find_transition_for_pair(
                 getattr(bible, "relationship_events", []),
                 spk_id,
