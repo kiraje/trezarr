@@ -68,6 +68,10 @@ async def run_migrations_to_head(engine: AsyncEngine) -> None:
         Exception: Re-raises any Alembic error; caller (cli.py) should sys.exit(1).
     """
     cfg = Config(str(ALEMBIC_INI))
+    # In-app migrations must NOT let env.py's fileConfig(alembic.ini) replace
+    # the daemon's logging setup (alembic.ini root is WARNING — it silently
+    # drops all app INFO records, including the per-pass instrumentation).
+    cfg.attributes["configure_logger"] = False
     logger.info("Running Alembic migrations to head (alembic.ini: %s)", ALEMBIC_INI)
     async with engine.begin() as conn:
         await conn.run_sync(_do_upgrade, cfg)

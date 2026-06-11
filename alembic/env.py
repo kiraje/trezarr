@@ -29,15 +29,28 @@ from trezarr.jobs import models as _job_models  # noqa: F401 — registers Job/J
 config = context.config
 
 # Configure Python logging if a config file is present.
-# Guard: skip fileConfig when running inside pytest to avoid overwriting the
+# Guard 1: skip fileConfig when running inside pytest to avoid overwriting the
 # test harness's logging configuration (which would break caplog captures in
 # tests that run after a migration).  pytest sets sys.modules['_pytest'] so
 # we can detect the test environment without an extra dependency.
+# Guard 2: skip fileConfig when the in-app migration runner opts out via
+# cfg.attributes["configure_logger"] = False.  alembic.ini's [logger_root]
+# is level=WARNING with the "%(levelname)-5.5s [%(name)s]" format — letting
+# fileConfig run inside the daemon's lifespan silently replaced run_serve's
+# basicConfig and dropped every app INFO record after startup (observed live
+# 2026-06-12: per-pass instrumentation lines never reached docker logs).
+# The alembic CLI (standalone `alembic upgrade head`) keeps configuring
+# logging as before — the attribute defaults to True.
 import sys as _sys
 _running_under_pytest = "_pytest" in _sys.modules
-if config.config_file_name is not None and not _running_under_pytest:
+_should_configure_logger = config.attributes.get("configure_logger", True)
+if (
+    config.config_file_name is not None
+    and not _running_under_pytest
+    and _should_configure_logger
+):
     fileConfig(config.config_file_name, disable_existing_loggers=False)
-del _sys, _running_under_pytest
+del _sys, _running_under_pytest, _should_configure_logger
 
 target_metadata = Base.metadata
 
