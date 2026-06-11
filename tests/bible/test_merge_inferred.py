@@ -812,3 +812,208 @@ async def test_merge_bible_analysis_locks_character_name_terms(session_factory):
     assert "vietnamese_rendering" in (term.locked_fields or []), (
         "the auto-created name term's rendering must be LOCKED (contract, not prompt)"
     )
+
+
+# ---------------------------------------------------------------------------
+# 260612-7kt Task 2 — Term rendering carry-forward (prior > inference for unlocked rows)
+# ---------------------------------------------------------------------------
+# Finding 2 (HIGH): _upsert_term_in_session delegates to _merge_inferred_in_session for
+# existing rows.  compute_field_changes only skips LOCKED fields — an unlocked
+# vietnamese_rendering is overwritten by every re-inference.  Fix: term-specific
+# carry-forward guard before delegating to merge.
+# ---------------------------------------------------------------------------
+
+
+async def test_term_rendering_carryforward_prior_kept(session_factory):
+    """Second upsert_term with different rendering keeps the prior value (carry-forward).
+
+    Sequence:
+    1. upsert_term source_term="Scarab", rendering="bọ hung" → establishes prior
+    2. upsert_term source_term="Scarab", rendering="Bọ hung thần" → new inference
+    Result: row.vietnamese_rendering == "bọ hung" (prior kept, NOT overwritten)
+    AND exactly 1 BibleEvent emitted with new_value == "Bọ hung thần" (suppressed inference recorded)
+    AND old_value in that event reflects the prior rendering (audit trail).
+
+    This mirrors the scy/ru6 address-map carry-forward: prior > inference for unlocked rows.
+    """
+    series_id = await _create_series(session_factory, arr_series_id=9001)
+
+    # Step 1: establish the prior rendering
+    await upsert_term(
+        session_factory,
+        series_id=series_id,
+        source_term="Scarab",
+        vietnamese_rendering="bọ hung",
+        episode_key="S01E01",
+        source="inference",
+    )
+
+    # Step 2: second inference with a different rendering
+    _, events = await upsert_term(
+        session_factory,
+        series_id=series_id,
+        source_term="Scarab",
+        vietnamese_rendering="Bọ hung thần",
+        episode_key="S01E02",
+        source="inference",
+    )
+
+    # Check DB value: prior must be kept
+    from trezarr.bible.store import get_term  # noqa: PLC0415
+    term = await get_term(session_factory, series_id=series_id, source_term="Scarab")
+    assert term is not None
+    assert term.vietnamese_rendering == "bọ hung", (
+        f"Prior rendering 'bọ hung' must be kept when a new inference 'Bọ hung thần' arrives. "
+        f"Got: {term.vietnamese_rendering!r}. carry-forward guard is missing in _upsert_term_in_session."
+    )
+
+    # Check audit event: suppressed inference must be recorded
+    assert len(events) == 1, (
+        f"Expected 1 BibleEvent for suppressed inference, got {len(events)}. "
+        f"The carry-forward guard must emit a provenance event for the suppressed rendering."
+    )
+    evt = events[0]
+    assert evt.field == "vietnamese_rendering", f"Event field must be 'vietnamese_rendering', got {evt.field!r}"
+    assert evt.new_value == "Bọ hung thần", (
+        f"Event new_value must record the suppressed inference 'Bọ hung thần', got {evt.new_value!r}"
+    )
+    assert evt.old_value == "bọ hung", (
+        f"Event old_value must record the prior 'bọ hung', got {evt.old_value!r}"
+    )
+
+
+async def test_term_rendering_carryforward_first_write_fills(session_factory):
+    """First write on a new term with empty rendering: inference fills it normally.
+
+    Sequence:
+    1. upsert_term source_term="NewTerm", rendering="" → row with blank rendering
+    2. upsert_term source_term="NewTerm", rendering="Thuật Ngữ Mới" → should fill it
+    Result: row.vietnamese_rendering == "Thuật Ngữ Mới" (empty prior is replaced, not carried)
+
+    The carry-forward guard must only fire when the prior rendering is NON-EMPTY.
+    """
+    series_id = await _create_series(session_factory, arr_series_id=9002)
+
+    # Step 1: insert with blank rendering (edge case for the carry-forward guard)
+    await upsert_term(
+        session_factory,
+        series_id=series_id,
+        source_term="NewTerm",
+        vietnamese_rendering="",  # blank — treated as "no rendering yet"
+        episode_key="S01E01",
+        source="inference",
+    )
+
+    # Step 2: inference fills the blank
+    await upsert_term(
+        session_factory,
+        series_id=series_id,
+        source_term="NewTerm",
+        vietnamese_rendering="Thuật Ngữ Mới",
+        episode_key="S01E02",
+        source="inference",
+    )
+
+    from trezarr.bible.store import get_term  # noqa: PLC0415
+    term = await get_term(session_factory, series_id=series_id, source_term="NewTerm")
+    assert term is not None
+    assert term.vietnamese_rendering == "Thuật Ngữ Mới", (
+        f"Empty prior should be filled by inference; got {term.vietnamese_rendering!r}. "
+        f"carry-forward guard must NOT block first-write (blank prior path)."
+    )
+
+
+async def test_term_rendering_carryforward_locked_still_protected(session_factory):
+    """Locked rendering is not overwritten by either inference or the carry-forward guard.
+
+    Sequence:
+    1. upsert_term → establishes rendering "Thẩm Phán"
+    2. apply_human_edit_term (lock=True) → sets rendering "Locked Value" + locks it
+    3. upsert_term with different rendering → must NOT overwrite the locked value
+    Result: row.vietnamese_rendering == "Locked Value"
+
+    compute_field_changes already enforces this; this test ensures the carry-forward guard
+    does not accidentally bypass the lock check.
+    """
+    from trezarr.bible.store import apply_human_edit_term, get_term  # noqa: PLC0415
+
+    series_id = await _create_series(session_factory, arr_series_id=9003)
+
+    dto, _ = await upsert_term(
+        session_factory,
+        series_id=series_id,
+        source_term="Khonshu",
+        vietnamese_rendering="Thẩm Phán",
+        episode_key="S01E01",
+        source="inference",
+    )
+
+    # Lock the rendering
+    await apply_human_edit_term(
+        session_factory,
+        series_id=series_id,
+        term_id=dto.id,
+        field="vietnamese_rendering",
+        new_value="Locked Value",
+        lock=True,
+    )
+
+    # Attempt to overwrite with inference
+    await upsert_term(
+        session_factory,
+        series_id=series_id,
+        source_term="Khonshu",
+        vietnamese_rendering="Khonsu (different)",
+        episode_key="S01E02",
+        source="inference",
+    )
+
+    term = await get_term(session_factory, series_id=series_id, source_term="Khonshu")
+    assert term is not None
+    assert term.vietnamese_rendering == "Locked Value", (
+        f"Locked rendering 'Locked Value' must survive inference; got {term.vietnamese_rendering!r}. "
+        f"Lock wins over both carry-forward and inference (D-34)."
+    )
+
+
+async def test_term_rendering_api_edit_not_carryforward_guarded(session_factory):
+    """API human-edit path overwrites an inference-established rendering (no carry-forward guard).
+
+    Sequence:
+    1. upsert_term → establishes rendering "First Value" via inference
+    2. apply_human_edit_term (lock=False) → sets rendering "Human Override"
+    Result: row.vietnamese_rendering == "Human Override"
+
+    apply_human_edit_term must NOT route through the inference carry-forward guard.
+    The PATCH path is always authoritative (D-80).
+    """
+    from trezarr.bible.store import apply_human_edit_term, get_term  # noqa: PLC0415
+
+    series_id = await _create_series(session_factory, arr_series_id=9004)
+
+    dto, _ = await upsert_term(
+        session_factory,
+        series_id=series_id,
+        source_term="Ankh",
+        vietnamese_rendering="First Value",
+        episode_key="S01E01",
+        source="inference",
+    )
+
+    # Human edit (unlocked) — should overwrite inference-established value
+    await apply_human_edit_term(
+        session_factory,
+        series_id=series_id,
+        term_id=dto.id,
+        field="vietnamese_rendering",
+        new_value="Human Override",
+        lock=False,
+    )
+
+    term = await get_term(session_factory, series_id=series_id, source_term="Ankh")
+    assert term is not None
+    assert term.vietnamese_rendering == "Human Override", (
+        f"apply_human_edit_term must overwrite inference-established rendering; "
+        f"got {term.vietnamese_rendering!r}. "
+        f"The API PATCH path is NOT carry-forward-guarded (D-80)."
+    )
