@@ -202,3 +202,185 @@ async def test_r3_canonical_n_dedup_collapses_dual_locked_rows(session_factory):
         f"Expected dedup_canonical_name_terms to be idempotent (empty events on re-run), "
         f"got: {events2!r}"
     )
+
+
+# ── FIX 2 RED: xianxia multi-character dedup + CJK-first guard ─────────────────
+# Defect (a): dedup false-merges DIFFERENT characters — when there is exactly one
+#   Latin-locked row for a different character (Mei/Mai), ALL CJK-locked rows
+#   (Han Li/韩立 + Nam Cung Uyen/南宫婉) get rewritten to 'Mai'. This is catastrophic.
+# Defect (b): canonical-by-script is wrong-register — a later Latin/pinyin row beats
+#   the first-locked CJK Hán-Việt row, rewriting correct 'Hàn Lập' to bare 'Han Li'.
+# Defect (c): guard ordering hole — plan_character_name_terms tracks locked_sources by
+#   source_term only; a CJK-first locked row (source_term='韩立') does not block the
+#   later 'Han Li' Latin form because 'han li' ∉ {'韩立'}.
+#
+# Fix decision (linguist option 1 + auditor linkage requirement combined):
+#   - Canonical = first-locked row (lowest id), NOT the Latin row.
+#   - Rewrite only when rows are provably the same character (Character FK linkage OR
+#     exact same-series resolution). Without FK linkage, SKIP (log, no rewrite).
+#   - Guard: locked_sources must track BOTH the CJK source_term AND the Latin name so a
+#     CJK-first lock blocks the later pinyin competitor.
+
+
+async def test_r3_fix2_i_xianxia_multi_char_no_false_merge(session_factory):
+    """FIX2-I RED: dedup must perform ZERO rewrites when CJK rows are different characters.
+
+    Scenario (xianxia — A Record of a Mortal's Journey to Immortality):
+      - Row 1: '韩立' → 'Hàn Lập'  (CJK, locked) — character Han Li
+      - Row 2: '南宫婉' → 'Nam Cung Uyển'  (CJK, locked) — character Nan Gong Wan
+      - Row 3: 'Mei' → 'Mai'  (Latin, locked) — character Mei (unrelated)
+
+    The current code: canonical_rows = [Row 3] (len==1, Latin).
+    It rewrites BOTH Row 1 and Row 2 to 'Mai' — destroying both Hán-Việt renderings.
+
+    After fix: dedup cannot establish character linkage for Rows 1/2 vs Row 3 (no FK,
+    no Character table entry wired). SKIP all rewrites → events == [].
+    """
+    from trezarr.bible.store import apply_human_edit_term, dedup_canonical_name_terms
+
+    series_id = await _create_series(session_factory, arr_series_id=910)
+
+    # Seed three locked rows: two distinct CJK characters + one Latin character
+    await apply_human_edit_term(
+        session_factory, series_id=series_id,
+        source_term="韩立", field="vietnamese_rendering",
+        new_value="Hàn Lập", lock=True,
+    )
+    await apply_human_edit_term(
+        session_factory, series_id=series_id,
+        source_term="南宫婉", field="vietnamese_rendering",
+        new_value="Nam Cung Uyển", lock=True,
+    )
+    await apply_human_edit_term(
+        session_factory, series_id=series_id,
+        source_term="Mei", field="vietnamese_rendering",
+        new_value="Mai", lock=True,
+    )
+
+    events = await dedup_canonical_name_terms(session_factory, series_id=series_id)
+
+    assert events == [], (
+        f"FIX2-I: dedup must perform ZERO rewrites when CJK rows belong to different "
+        f"characters than the single Latin row. Got {len(events)} rewrite event(s): "
+        f"{[e.new_value for e in events]!r}\n"
+        "Current bug: rewrites both 'Hàn Lập' and 'Nam Cung Uyển' to 'Mai' (false-merge)."
+    )
+
+    # Verify that the original renderings are untouched
+    from trezarr.bible.store import load_series_bible
+    bible = await load_series_bible(session_factory, series_id=series_id)
+    renderings = {t.source_term: t.vietnamese_rendering for t in bible.terms}
+    assert renderings.get("韩立") == "Hàn Lập", (
+        f"FIX2-I: '韩立' rendering must remain 'Hàn Lập', got {renderings.get('韩立')!r}"
+    )
+    assert renderings.get("南宫婉") == "Nam Cung Uyển", (
+        f"FIX2-I: '南宫婉' rendering must remain 'Nam Cung Uyển', got {renderings.get('南宫婉')!r}"
+    )
+
+
+async def test_r3_fix2_ii_cjk_first_locked_is_canonical(session_factory):
+    """FIX2-II RED: when CJK row is locked FIRST, it should be canonical (first-locked-wins).
+
+    Scenario: same character Han Li — CJK form locked first, then a Latin/pinyin row added.
+      - Row 1: '韩立' → 'Hàn Lập'  (locked FIRST — row id is lower)
+      - Row 2: 'Han Li' → 'Han Li'  (locked LATER — row id is higher)
+
+    After fix with Character FK linkage: rows are provably the same character →
+    canonical = first-locked (Row 1, lowest id) = 'Hàn Lập'.
+    Row 2 should be rewritten to 'Hàn Lập'.
+
+    Without FK linkage (current TermDictionary schema): the test documents the expected
+    SKIP behaviour — no linkage, no rewrite. The FIX2-I behaviour (skip when unresolvable)
+    also applies here. At minimum, we assert the CJK row's rendering is NOT overwritten
+    by the Latin/pinyin row.
+
+    NOTE: If FK linkage is added in a future migration, this test should be updated to
+    assert the canonical == 'Hàn Lập' and Row 2 → 'Hàn Lập'. For now: no rewrite since
+    no FK → events == [] and 'Hàn Lập' is preserved.
+    """
+    from trezarr.bible.store import apply_human_edit_term, dedup_canonical_name_terms, load_series_bible
+
+    series_id = await _create_series(session_factory, arr_series_id=911)
+
+    # Seed: CJK form locked FIRST (lower id), Latin/pinyin locked SECOND
+    await apply_human_edit_term(
+        session_factory, series_id=series_id,
+        source_term="韩立", field="vietnamese_rendering",
+        new_value="Hàn Lập", lock=True,
+    )
+    await apply_human_edit_term(
+        session_factory, series_id=series_id,
+        source_term="Han Li", field="vietnamese_rendering",
+        new_value="Han Li", lock=True,
+    )
+
+    events = await dedup_canonical_name_terms(session_factory, series_id=series_id)
+
+    # With the fix (no FK linkage → skip unresolvable): events == [], and 'Hàn Lập' preserved.
+    assert events == [], (
+        f"FIX2-II: without FK linkage, dedup must skip the rewrite and return no events. "
+        f"Got {len(events)} event(s): {[(e.old_value, e.new_value) for e in events]!r}\n"
+        "Current bug: Latin row is canonical so CJK 'Hàn Lập' gets overwritten to 'Han Li'."
+    )
+
+    bible = await load_series_bible(session_factory, series_id=series_id)
+    renderings = {t.source_term: t.vietnamese_rendering for t in bible.terms}
+    assert renderings.get("韩立") == "Hàn Lập", (
+        f"FIX2-II: '韩立' rendering must remain 'Hàn Lập' (CJK-first locked wins); "
+        f"got {renderings.get('韩立')!r}"
+    )
+
+
+def test_r3_fix2_iii_cjk_first_lock_blocks_latin_competitor():
+    """FIX2-III RED: plan_character_name_terms must block a Latin/pinyin spec when the
+    same character's CJK form is already locked in existing_terms, even when the
+    CHARACTER INFERENCE provides no original_script_name (e.g., second cold-run with
+    English-only source that drops the CJK form).
+
+    Scenario:
+      - existing_terms: source_term='韩立', rendering='Hàn Lập', locked=True
+        (CJK form locked on first run when script name was available)
+      - characters: latin='Han Li', script=None (English source; no CJK form this pass)
+
+    Current bug path:
+      existing_sources = {'韩立'}
+      locked_sources   = {'韩立'}   ← from CJK locked row
+      source = script or latin = 'Han Li'
+      key    = 'han li'
+      'han li' ∉ existing_sources  → not skipped by key-in-existing
+      latin.lower() = 'han li' ∉ locked_sources = {'韩立'}  → guard does NOT fire
+      → spec NameTermSpec(source_term='Han Li', ...) is emitted → competing Latin lock
+
+    After fix: the guard must also check whether any existing LOCKED row's source_term
+    matches this character's original_script_name (when script is non-empty) OR resolve
+    the CJK source_term back to the character Latin name. One concrete approach: when
+    building locked_sources, if the locked row's source_term is CJK AND a character in
+    the batch has original_script_name == that source_term, add that character's
+    original_latin_name to locked_sources too.
+    """
+    from trezarr.bible.analyze import plan_character_name_terms
+
+    existing_terms = [
+        # CJK row locked FIRST (source_term is script form from a prior run)
+        _make_term_dto("韩立", "Hàn Lập", locked=True),
+    ]
+    characters = [
+        # Second pass: English source — script name NOT available; only Latin name
+        _make_char_inference(
+            original_latin_name="Han Li",
+            original_script_name=None,  # ← key: no script form available this run
+            vietnamese_rendering="Hàn Lập",
+        )
+    ]
+
+    specs = plan_character_name_terms(characters, existing_terms)
+
+    # After fix: the guard must recognise that '韩立' (CJK locked) corresponds to
+    # character 'Han Li' via the character list and suppress the competing Latin spec.
+    # Without the fix: 'Han Li' spec IS emitted (Latin is not in locked_sources).
+    assert specs == [], (
+        f"FIX2-III: plan_character_name_terms must NOT emit a spec for 'Han Li' when "
+        f"the character is already locked under CJK source_term '韩立'. Got: {specs!r}\n"
+        "Current bug: locked_sources = {{'韩立'}}; 'han li' not in it → "
+        "competing Latin spec emitted → later dedup false-merges or creates split lock."
+    )
