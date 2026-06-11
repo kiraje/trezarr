@@ -134,3 +134,80 @@ None — plan executed exactly as written.
 ## Threat Flags
 
 None — no new network endpoints, auth paths, file access patterns, or schema changes beyond those planned and threat-modelled in the PLAN.md `<threat_model>` section.
+
+---
+
+## Review Fixes (Round 2)
+
+Harness review of the round-1 code produced four findings across pipeline-reliability-reviewer, bible-consistency-auditor, vietnamese-linguist, and codec-fidelity-guardian. All four fixed via TDD.
+
+**Tests before round 2:** 541 (baseline at start of this session)
+**Tests after round 2:** 548 (+7 new tests)
+
+### Finding 1 — [HIGH, pipeline] Unanchored NxNN regex false-matches resolution/aspect strings
+
+**Finding:** `engine.py:162` used `re.search(r"(\d{1,2})[xX](\d{1,3})", stem)` — unanchored. Verified false matches: `Show.1024x768.WEB` → S24E768, `Some.Show.720x480.DVDRip` → S20E480, `Show.1920x1080.WEB` → S20E108. The sibling parser at `library.py:51` already uses digit-boundary lookarounds to avoid this exact problem.
+
+**Fix:** Added `(?<!\d)` lookbehind and `(?!\d)` lookahead to the `m_plex` search pattern, mirroring `library.py:51`. Added a TODO comment pointing to the MEDIUM shared-parser tech debt. Existing NxNN happy-path tests (6x19, 1x5, 12x103) unaffected.
+
+**RED tests (3):** `test_r2_resolution_1024x768_does_not_parse_as_episode`, `test_r2_resolution_720x480_does_not_parse_as_episode`, `test_r2_resolution_1920x1080_does_not_parse_as_episode` — all failed before fix, pass after.
+
+| Commit | Description |
+|--------|-------------|
+| 3c5700b | RED: resolution/aspect-ratio stems must not parse as episode keys |
+| a1d2b98 | FIX: anchor NxNN regex with digit-boundary lookarounds (engine.py) |
+
+### Finding 2 — [HIGH×2, bible-auditor + linguist] dedup false-merge + CJK-first guard hole
+
+**Finding (a) — dedup false-merge:** `dedup_canonical_name_terms` (store.py:1534-1538) used a `len(canonical_rows) == 1 → rewrite ALL secondary rows` heuristic. In xianxia series with multiple CJK-named characters (韩立/Hàn Lập, 南宫婉/Nam Cung Uyển) plus one unrelated Latin-named character (Mei/Mai), the single Latin row triggered the heuristic and ALL CJK rows were rewritten to 'Mai' — catastrophic identity collapse.
+
+**Finding (b) — wrong-register canonical:** The heuristic elected the Latin/pinyin row as canonical. For a CJK-first-locked character (韩立→Hàn Lập locked first, then Han Li→Han Li added later), the correct Hán-Việt rendering was overwritten to bare pinyin.
+
+**Finding (c) — guard ordering hole in plan_character_name_terms:** `locked_sources` was built from existing_terms `source_term` values only. A CJK-first locked row (`source_term='韩立'`) populated `locked_sources = {'韩立'}`. On a second run with English-only source (no `original_script_name`), the character inference for 'Han Li' saw `'han li' ∉ {'韩立'}` → guard did NOT fire → competing Latin spec was emitted → dual-lock created.
+
+**Fix (store.py):** Removed the `len(canonical_rows) == 1` unconditional-rewrite heuristic entirely. `TermDictionary` has no `character_id` FK, so character linkage cannot be established. Function returns `[]` with a diagnostic log. Docstring updated with the canonical-by-first-locked rule for when a FK migration is added, and with FIX3 atomicity note. Test N updated to expect `events == []` (no rewrites without FK linkage).
+
+**Fix (analyze.py):** Extended `locked_sources` population after the existing-terms loop by cross-referencing the characters list with two linkage mechanisms: (1) `character.original_script_name` in `locked_sources` → add character's Latin name; (2) `character.vietnamese_rendering` matches a locked CJK row's rendering → add character's Latin name. This covers the second-run case where `original_script_name` is absent.
+
+**RED tests (4):** `test_r3_fix2_i_xianxia_multi_char_no_false_merge`, `test_r3_fix2_ii_cjk_first_locked_is_canonical`, `test_r3_fix2_iii_cjk_first_lock_blocks_latin_competitor`, `test_r3_canonical_n_dedup_no_rewrite_without_character_linkage` (test N updated).
+
+| Commit | Description |
+|--------|-------------|
+| 9e36342 | RED: xianxia multi-char false-merge + CJK-first guard hole (including updated test N) |
+| 42fc991 | FIX: remove false-merge heuristic + close CJK-first guard hole |
+
+### Finding 3 — [LOW, bible-auditor] Non-atomic dedup repair loop
+
+**Finding:** The repair loop opened N separate `session.begin()` contexts (one per row rewrite). A crash mid-loop left a partial repair.
+
+**Resolution:** FIX 2 removed the write loop entirely (no rewrites without character FK linkage). FIX 3 is moot. A comment was added to the docstring specifying that when the FK migration enables writes, the repair MUST use a single `async with session.begin()` wrapping all rewrites.
+
+| Commit | Description |
+|--------|-------------|
+| 153c636 | FIX: document FIX3 atomicity as resolved by FIX2 write-removal |
+
+### Finding 4 — [LOW, codec] Misleading `(?!>>)` comment on UNCLOSED_SENTINEL_RE
+
+**Finding:** The comment at `validate.py:100-101` claimed `(?!>>)` "prevents matching the closed form `<<T153>>`". This is factually wrong. Greedy backtracking: `\d+` tries `153`, lookahead fails (sees `>>`), engine backtracks to `\d+='15'`, lookahead sees `3` (not `>>`) → matches `<<T15` inside `<<T153>>`. The double-fire is harmless (SENTINEL_RE already catches the closed form), but the comment's claimed guarantee is false.
+
+**Fix:** Rewrote the comment to accurately describe: (a) the backtracking mechanism, (b) that UNCLOSED_SENTINEL_RE DOES match the closed form at a shorter offset, (c) that closed orphans are definitively caught by SENTINEL_RE regardless, and (d) that the double-fire is intentional belt-and-suspenders. No code change.
+
+**RED test:** `test_fix4_red_unclosed_sentinel_re_comment_claimed_closed_no_match` — asserted the comment's claim (search returns None), failed because regex DOES match.
+
+**GREEN test:** `test_fix4_unclosed_sentinel_re_closed_form_does_match_via_backtrack` — asserts actual behavior: closed form matches at `'<<T15'`; genuine unclosed form matches at `'<<T153'`.
+
+| Commit | Description |
+|--------|-------------|
+| acadf4b | RED: UNCLOSED_SENTINEL_RE comment false-claims no closed-form match |
+| d2ffd3b | FIX: correct misleading UNCLOSED_SENTINEL_RE comment on lookahead |
+
+### Round 2 Summary
+
+| Finding | Severity | Files | Result |
+|---------|----------|-------|--------|
+| FIX 1: NxNN unanchored regex | HIGH | engine.py, test_engine.py | Fixed — digit-boundary lookarounds |
+| FIX 2a: dedup false-merge heuristic | HIGH (bible-auditor) | store.py, test_analyze_name_terms.py | Fixed — heuristic removed; safe skip |
+| FIX 2b: wrong-register canonical | HIGH (linguist) | store.py | Fixed — via heuristic removal |
+| FIX 2c: guard ordering hole (CJK-first) | HIGH (linguist) | analyze.py, test_analyze_name_terms.py | Fixed — rendering-match linkage |
+| FIX 3: non-atomic repair | LOW (bible-auditor) | store.py | Resolved by FIX 2 + comment |
+| FIX 4: misleading comment | LOW (codec) | validate.py, test_validate.py | Fixed — comment corrected |
