@@ -1251,27 +1251,37 @@ def test_r4_leak_unclosed_sentinel():
 #   GREEN: assert actual behaviour — closed form DOES match (backtracking occurs).
 
 
-def test_fix4_red_unclosed_sentinel_re_comment_claimed_closed_no_match():
-    """FIX4 RED: UNCLOSED_SENTINEL_RE comment claims '(?!>>) prevents matching <<T153>>'.
+def test_fix4_unclosed_sentinel_re_closed_form_does_match_via_backtrack():
+    """FIX4 GREEN: documents actual UNCLOSED_SENTINEL_RE behaviour for the closed form.
 
-    The comment is factually wrong. This test asserts what the comment CLAIMS
-    (search returns None for the closed form) and must FAIL — proving the defect.
+    The prior comment claimed '(?!>>) prevents matching <<T153>>'. This was wrong.
+    Actual behaviour (confirmed by codec-fidelity-guardian review):
+      - <<T153>> → digit-group tries '153'; lookahead fails (next is '>>'); backtracks to '15';
+        lookahead sees '3' (not '>>') → MATCHES at span (0, 5) = '<<T15'.
+    The double-fire is harmless: SENTINEL_RE catches '<<T153>>' via the OR in Check 6,
+    so the verdict (GateError check=6) is the same regardless.
 
-    Expected pre-fix result: search("<<T153>>") is NOT None (regex matches at <<T15).
-    This test will FAIL because the comment's claim is incorrect.
+    The comment has been corrected (FIX4) to state the actual backtracking behaviour.
+    This test is the contract: the closed form DOES match UNCLOSED_SENTINEL_RE.
     """
-    import re
-    # Import directly to test the pattern, not the full gate
     validate_mod = pytest.importorskip("trezarr.translate.validate")
     UNCLOSED_SENTINEL_RE = validate_mod.UNCLOSED_SENTINEL_RE
 
-    # What the CURRENT COMMENT claims: the lookahead prevents matching the closed form.
-    # This assertion SHOULD be True if the comment were correct — but it is False.
+    # Actual behaviour: closed form DOES match (at backtracked offset '<<T15')
     result = UNCLOSED_SENTINEL_RE.search("<<T153>>")
-    assert result is None, (
-        f"FIX4 RED: Comment claims UNCLOSED_SENTINEL_RE does NOT match the closed form "
-        f"'<<T153>>', but it does (match: {result!r} at span {result.span() if result else None}). "
-        "The '(?!>>) lookahead does not prevent matching because \\d+ backtracks from '153' "
-        "to '15', and then (?!>>) succeeds (next char is '3', not '>>'). "
-        "The comment must be corrected to state the actual behaviour."
+    assert result is not None, (
+        "FIX4: UNCLOSED_SENTINEL_RE must match '<<T153>>' (at backtracked position '<<T15'). "
+        "The (?!>>) lookahead does not exclude the closed form due to digit backtracking."
+    )
+    # The match is at the backtracked position (spans 0-5, matching '<<T15')
+    assert result.group() == "<<T15", (
+        f"FIX4: match on '<<T153>>' expected '<<T15' (backtracked digit group), "
+        f"got {result.group()!r}"
+    )
+
+    # Genuine unclosed form (no closing >>) still matches as before
+    result2 = UNCLOSED_SENTINEL_RE.search("<<T153")
+    assert result2 is not None, "FIX4: genuine unclosed '<<T153' must still match"
+    assert result2.group() == "<<T153", (
+        f"FIX4: unclosed match expected '<<T153', got {result2.group()!r}"
     )

@@ -97,8 +97,17 @@ ATTRIBUTION_META_RE = re.compile(r"\(\s*(?:no\s+violation|correct\s*;)", re.IGNO
 # in 03_verdicts.md). SENTINEL_RE = r"<<T\d+>>" requires the closing '>>' and so
 # misses '<<T153'. SENTINEL_ONLY_RE also requires '>>'. Check 10 skipped ('T153' has
 # only 1 ASCII letter, so ASCII_WORD_RE finds 0 tokens >= 2 letters).
-# Negative lookahead (?!>>) prevents matching the closed form '<<T153>>' (SENTINEL_RE
-# already handles those; belt-and-suspenders would double-fire, not a regression but noisy).
+#
+# The (?!>>) lookahead does NOT prevent matching the closed form '<<T153>>'.
+# Due to greedy-then-backtrack: \d+ first consumes '153', lookahead sees '>>' → fails;
+# engine backtracks to \d+='15', lookahead sees '3' (not '>>') → succeeds → matches
+# '<<T15' inside '<<T153>>'. So UNCLOSED_SENTINEL_RE DOES fire on the closed form.
+# This is intentional belt-and-suspenders: SENTINEL_RE already catches '<<T153>>' via
+# Check 6's OR condition, so the double-fire yields the same GateError(check=6).
+# The lookahead provides no exclusion guarantee for closed forms — its actual effect is
+# only to reduce the match length when backtracking occurs (cosmetically shorter match,
+# same verdict). Closed orphans are already and definitively caught by SENTINEL_RE.
+#
 # HTML-escaped form &lt;&lt;TN added as secondary pattern — belt-and-suspenders for any
 # proxy or templated output that HTML-escapes angle brackets before reaching validate.py.
 # ASVS L1 V5: non-recursive, no alternation with overlapping paths (T-ru6-02/T-ru6-03).
