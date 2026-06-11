@@ -465,6 +465,17 @@ async def reconcile_attributions(
                     settings,
                     register=register,
                 )
+                # LOW fix (260611-ru6): vfe bumps ONLY on genuine term evolution (D-05).
+                # When _derive_transition_terms carries the existing pair unchanged (R1 Step-3
+                # path: no suggested terms, no survivors, established dyad), passing
+                # valid_from_episode=episode_key resets the provenance marker with no actual
+                # change — producing spurious vfe churn (7 pairs / episode in the 260611-l74
+                # audit). is_genuine_evolution is True only when the terms ACTUALLY changed.
+                is_genuine_evolution = not (
+                    existing is not None
+                    and new_self == existing.self_term
+                    and new_addr == existing.address_term
+                )
                 resolved_map[pair] = (new_self, new_addr)
                 await upsert_address_pair(
                     session_factory,
@@ -473,7 +484,7 @@ async def reconcile_attributions(
                     addressee_character_id=addr_id,
                     self_term=new_self,
                     address_term=new_addr,
-                    valid_from_episode=episode_key,  # D-53: bump version marker
+                    valid_from_episode=episode_key if is_genuine_evolution else None,  # D-53/D-05
                     episode_key=episode_key,
                     source="inference",
                 )
