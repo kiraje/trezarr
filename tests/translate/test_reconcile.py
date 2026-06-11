@@ -1473,3 +1473,159 @@ async def test_reciprocal_coherence_carry_forward(session_factory):
     assert resolved.get((addr_id, spk_id)) == ("em", "anh"), (
         f"A→S must carry forward (em,anh); got {resolved.get((addr_id, spk_id))!r}"
     )
+
+
+# ---------------------------------------------------------------------------
+# R1: _derive_transition_terms Step-3 carry-forward (260611-ru6)
+# ---------------------------------------------------------------------------
+# Audit 260611-l74 finding: _derive_transition_terms Step 3 falls to get_safe_default
+# for ANY dyad lacking survivors AND suggested terms — including ESTABLISHED dyads that
+# already have a earned (muội/huynh) or (tôi/ông) pair from prior episodes. This is
+# the verified BLOCKER: Leg B Steven(15)→Khonshu(21) had tôi/ông after E01, then a
+# S01E02 event with suggested=(None,None) and no survivors → tôi/anh (safe-default).
+# Leg A Mei→Han had (muội/huynh) → (tại hạ/các hạ) for the same reason via S00E00 collapse.
+# Fix: Step 3 must return existing.self_term/address_term for an ESTABLISHED dyad
+# (existing is not None and both terms non-None); only truly-new dyads fall to safe-default.
+# D-01: lock > genuine evolution > carried Bible pair > safe-default (truly-new only).
+# ---------------------------------------------------------------------------
+
+
+def _make_existing_addr_map(self_term: str, address_term: str):
+    """Minimal AddressMapDTO-like object for _derive_transition_terms tests."""
+    from types import SimpleNamespace
+    return SimpleNamespace(
+        self_term=self_term,
+        address_term=address_term,
+        locked_fields=[],
+    )
+
+
+def test_r1_transition_carries_forward_leg_b_steven_khonshu():
+    """R1-A: term-less event on established (tôi/ông) — must carry forward, not safe-default.
+
+    Leg B fixture: Steven(15)→Khonshu(21), existing=(tôi,ông), event id=38 marker=S01E02,
+    suggested=(None,None), survivors=[]. Before fix: returns safe-default (tôi,anh).
+    After fix: returns carried (tôi,ông).
+    """
+    from trezarr.translate.reconcile import _derive_transition_terms
+
+    transition = _make_relationship_event(
+        id=38, series_id=18, char_a_id=15, char_b_id=21,
+        episode_marker="S01E02",
+        suggested_self_term=None,
+        suggested_address_term=None,
+    )
+    existing = _make_existing_addr_map("tôi", "ông")
+    settings = _make_settings(threshold="medium", safe_default=None)
+
+    result = _derive_transition_terms(
+        transition=transition,
+        survivors=[],
+        existing=existing,
+        addr_id=21,
+        id_to_gender={21: "male"},
+        settings=settings,
+        register=None,
+    )
+    # After R1 fix: carry established pair, NOT safe-default
+    assert result == ("tôi", "ông"), (
+        f"R1-A: established (tôi/ông) must carry forward on term-less event; got {result!r}. "
+        "Before fix: returns ('tôi','anh') = safe-default for male addressee."
+    )
+
+
+def test_r1_transition_carries_forward_leg_a_mei_han():
+    """R1-B: term-less event on established (muội/huynh) — must carry forward, not safe-default.
+
+    Leg A fixture: Miss Mei(2)→Han(1), existing=(muội,huynh), event with
+    suggested=(None,None), survivors=[]. Classical register (xianxia).
+    Before fix: returns classical safe-default (tại hạ/các hạ).
+    After fix: returns carried (muội,huynh).
+    """
+    from trezarr.translate.reconcile import _derive_transition_terms
+
+    transition = _make_relationship_event(
+        id=3, series_id=1, char_a_id=2, char_b_id=1,
+        episode_marker="S00E00",
+        suggested_self_term=None,
+        suggested_address_term=None,
+    )
+    existing = _make_existing_addr_map("muội", "huynh")
+    settings = _make_settings(threshold="medium", safe_default=None)
+
+    result = _derive_transition_terms(
+        transition=transition,
+        survivors=[],
+        existing=existing,
+        addr_id=1,
+        id_to_gender={1: "male"},
+        settings=settings,
+        register="xianxia",
+    )
+    # After R1 fix: carry established pair, NOT classical safe-default
+    assert result == ("muội", "huynh"), (
+        f"R1-B: established (muội/huynh) must carry forward on term-less event; got {result!r}. "
+        "Before fix: returns ('tại hạ','các hạ') = classical safe-default."
+    )
+
+
+def test_r1_transition_suggested_terms_still_win_bible07():
+    """R1-C regression guard: BIBLE-07 — suggested terms still win over carried pair.
+
+    A transition WITH both suggested terms must still return those terms regardless
+    of the existing pair. Step 1 must fire before Step 3.
+    """
+    from trezarr.translate.reconcile import _derive_transition_terms
+
+    transition = _make_relationship_event(
+        id=10, series_id=1, char_a_id=1, char_b_id=2,
+        episode_marker="S01E05",
+        suggested_self_term="anh",
+        suggested_address_term="em",
+    )
+    existing = _make_existing_addr_map("tôi", "bạn")
+    settings = _make_settings(threshold="medium", safe_default=None)
+
+    result = _derive_transition_terms(
+        transition=transition,
+        survivors=[_make_attribution("CharA", "CharB", "high")],
+        existing=existing,
+        addr_id=2,
+        id_to_gender={2: "female"},
+        settings=settings,
+        register=None,
+    )
+    assert result == ("anh", "em"), (
+        f"R1-C: BIBLE-07 guard — suggested terms must win; expected ('anh','em'), got {result!r}"
+    )
+
+
+def test_r1_transition_truly_new_dyad_still_safe_defaults():
+    """R1-D regression guard: truly-new dyad (no prior entry) still falls to safe-default.
+
+    When existing=None (no prior Address Map entry), Step 3 must still call
+    get_safe_default — only ESTABLISHED dyads carry forward.
+    """
+    from trezarr.translate.reconcile import _derive_transition_terms
+
+    transition = _make_relationship_event(
+        id=99, series_id=1, char_a_id=5, char_b_id=6,
+        episode_marker="S01E01",
+        suggested_self_term=None,
+        suggested_address_term=None,
+    )
+    settings = _make_settings(threshold="medium", safe_default=None)
+
+    result = _derive_transition_terms(
+        transition=transition,
+        survivors=[],
+        existing=None,      # no prior entry — truly-new dyad
+        addr_id=6,
+        id_to_gender={6: None},
+        settings=settings,
+        register=None,
+    )
+    # Truly-new dyad: safe-default modern neutral
+    assert result == ("tôi", "bạn"), (
+        f"R1-D: truly-new dyad (existing=None) must fall to safe-default ('tôi','bạn'), got {result!r}"
+    )
