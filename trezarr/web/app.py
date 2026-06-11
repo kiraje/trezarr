@@ -415,6 +415,16 @@ def run_serve(config_path: str | None = None) -> None:
     """
     import uvicorn  # noqa: PLC0415
 
+    # Configure the root logger so app-level INFO records (e.g. the per-pass
+    # timing + job_summary instrumentation lines) reach stdout under the daemon.
+    # uvicorn's log_level only configures uvicorn's own loggers; without this,
+    # trezarr.* INFO records fall through to logging.lastResort (WARNING+ only).
+    # Mirrors the basicConfig already done in the run-once CLI path.
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+    )
+
     settings = TrezarrSettings(_yaml_file=config_path) if config_path else TrezarrSettings()
     uvicorn.run(
         "trezarr.web.app:app",
