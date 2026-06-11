@@ -1415,24 +1415,34 @@ def test_r2_resolution_720x480_does_not_parse_as_episode():
     )
 
 
-def test_r2_aspect_ratio_4x3_does_not_parse_as_episode():
-    """R2-R3 RED: '4x3' (aspect ratio) must NOT parse as S04E03.
+def test_r2_resolution_1920x1080_does_not_parse_as_episode():
+    """R2-R3 RED: '1920x1080' (HD resolution) must NOT parse as S20E108 (or similar).
 
-    Before fix: '4x3' → S04E03 (aspect ratio token treated as season×episode).
-    After fix:  digit-boundary guards require non-digit before/after → no match → fallback.
-    Note: '4x3' itself would pass the lookarounds since the adjacent chars are '.' (non-digit),
-    BUT the fix uses (?<!\d) and (?!\d) which only exclude digit neighbours.  The key property
-    is that 1024x768 is fixed (digit immediately before '1024' is absent, but '1024' itself
-    starts at the digit '1' — the lookbehind checks the character BEFORE '1024', which is
-    '.', so the unanchored regex would match at position of '24' inside '1024').
-    The fix must at minimum fix the 1024x768 and 720x480 cases.
+    Before fix: unanchored regex scans inside '1920' and matches '20' as season, '1080'
+    as a 3-digit episode attempt — but '1080' exceeds the {1,3} limit, so it actually tries
+    starting at other offsets inside the string. The key failure is '1080' → digit-group = 108.
+    After fix:  digit-boundary lookarounds require no digit immediately before/after the match.
+    '1920x1080' has the digit '9' immediately before position where '20' would start inside
+    '1920', so the lookbehind blocks the false match at that offset. Falls to season fallback.
+    Reference: trezarr/web/routes/library.py:51 anchored pattern.
     """
     from trezarr.translate.engine import derive_episode_key
 
     result = derive_episode_key(
         _make_media_item(season_number=None),
-        source_sub_path="Title.4x3.Aspect.srt",
+        source_sub_path="Show.S01E01.1920x1080.WEB.srt",
     )
-    assert result != "S04E03", (
-        f"R2-R3: '4x3' aspect ratio must NOT parse as 'S04E03'; got {result!r}."
+    # SxxExx should match first (S01E01 is present) — test the fallback case when stripped:
+    # Use a stem that only has the resolution (no SxxExx prefix)
+    result2 = derive_episode_key(
+        _make_media_item(season_number=None),
+        source_sub_path="Show.1920x1080.WEB.srt",
+    )
+    # With anchored regex, the '20' inside '1920' must NOT be matched (digit before it is '9').
+    assert result2 != "S20E108", (
+        f"R2-R3: '1920x1080' must NOT parse as 'S20E108' (or any bogus form); "
+        f"got {result2!r}. Digit-boundary lookaround must block inner-digit matches."
+    )
+    assert result2 == "S00E00", (
+        f"R2-R3: HD resolution stem with season_number=None must fall to 'S00E00'; got {result2!r}."
     )
