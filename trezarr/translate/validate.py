@@ -192,6 +192,88 @@ LATIN_DIACRITIC_RE = re.compile(r"[À-ɏḀ-ỿ̀-ͯ]")
 # catastrophic backtracking (ASVS L1 V5).
 GLOSS_PAREN_RE = re.compile(r"\(([^()]*[A-Za-z][^()]*)\)")
 
+# ── Credit / fansub attribution detector (Check 9 narrow exemption) ──────────
+# A fansub credit/attribution cue whose only untranslatable content is a short
+# CJK proper-name handle (e.g. "虫二") must not quarantine the entire file.
+# The exemption fires ONLY when BOTH conditions hold:
+#   1. A credit/attribution keyword appears in the source OR translated cue text.
+#   2. The total CJK/Hangul/Kana codepoint count in the TRANSLATED text is ≤ the
+#      threshold — a fully-untranslated dialogue body has many CJK chars and exceeds
+#      this threshold, so it still quarantines.
+# Conservative-by-design: a credit line left fully untranslated (many CJK chars) still
+# quarantines — that signals a real translation failure, not a short proper-name handle.
+#
+# WHY TWO REGEXES (CREDIT_SRC_RE and CREDIT_TRN_RE):
+# The translated output is Vietnamese. A CJK token appearing in trn_text is always the
+# leak itself — never a credit keyword. Matching the Chinese fansub source markers
+# (翻译, 校对, 字幕組, etc.) against trn_text caused the "self-exempt" class of bug:
+# a model that leaked "翻译" into the translation would self-satisfy the credit keyword
+# condition and escape quarantine even when the source had no credit keyword at all.
+# Fix: CJK/source-language markers are matched ONLY against src_text (CREDIT_SRC_RE).
+# trn_text is matched ONLY against Vietnamese (and optionally English) markers
+# (CREDIT_TRN_RE). Any CJK that appears in trn_text is therefore treated exclusively as
+# a potential leak character, counted by CJK_LEAK_RE.findall. (260608-t53 final round)
+#
+# English signals REQUIRE the attribution form "... by" with word boundaries so bare
+# dialogue words (e.g. "subtitle", "subtitles", "timing") cannot trigger a false exemption.
+# Bare "subtitle"/"subtitles" and "timing" are intentionally excluded — they collide with
+# ordinary dialogue (codec-guardian HIGH finding, 260608-t53).
+# Word boundaries (\b) add no backtracking (ASVS L1 V5) — they are zero-width assertions.
+#
+# Chinese source markers: matched against src_text only (CREDIT_SRC_RE). The full set
+# including bare 字幕 (safe on the source side — source text is not Vietnamese) plus all
+# compound forms. NEVER matched against trn_text; a Vietnamese output will not contain
+# these unless the model leaked them, which is precisely what Check 9 must catch.
+#
+# Vietnamese prefixes: matched against trn_text only (CREDIT_TRN_RE). Language-specific;
+# no dialogue collision risk. Also appears in CREDIT_SRC_RE so source-language VI credit
+# cues are still caught when the subtitle is already Vietnamese-sourced.
+
+# Matched against src_text: English "... by" attribution forms + Vietnamese credit prefixes
+# + Chinese fansub source markers (翻译, 校对, 字幕組, etc.).
+# CJK markers are SOURCE-SIDE ONLY — see WHY TWO REGEXES comment above.
+CREDIT_SRC_RE = re.compile(
+    r"\b(?:translated|translation|subtitled|subtitles|subbed|sub|synced|encoded|ripped) by\b"
+    r"|dịch bởi|phụ đề|biên dịch|người dịch|hiệu đính|vietsub|dịch thuật"
+    r"|字幕組|字幕组|字幕|翻譯|翻译|校對|校对|時間軸|时间轴|壓制|压制|后期",
+    re.IGNORECASE,
+)
+
+# Matched against trn_text: Vietnamese credit prefixes + English "... by" attribution forms.
+# NO CJK markers — the translated output is Vietnamese; any CJK in trn_text is the leak,
+# not a keyword. (260608-t53 final round)
+CREDIT_TRN_RE = re.compile(
+    r"\b(?:translated|translation|subtitled|subtitles|subbed|sub|synced|encoded|ripped) by\b"
+    r"|dịch bởi|phụ đề|biên dịch|người dịch|hiệu đính|vietsub|dịch thuật",
+    re.IGNORECASE,
+)
+
+# Maximum number of CJK/Hangul/Kana codepoints allowed in the translated text for the
+# credit exemption to fire.  A 2-char fansub handle like "虫二" passes (count=2 ≤ 8).
+# A fully-untranslated body like "字幕翻译制作团队制作感谢" (12 chars) exceeds this
+# and still quarantines, which is the desired conservative-by-design behaviour.
+CJK_CREDIT_EXEMPT_MAX_CJK: int = 8
+
+
+def is_credit_fansub_cue(src_text: str, trn_text: str) -> bool:
+    """Return True iff this cue is a narrowly-detected fansub credit/attribution line.
+
+    Both conditions must hold:
+    1. CREDIT_SRC_RE matches src_text OR CREDIT_TRN_RE matches trn_text.
+       CJK/source-language markers are checked source-side only (CREDIT_SRC_RE).
+       trn_text is checked only against Vietnamese/English markers (CREDIT_TRN_RE).
+       Rationale: the translated output is Vietnamese — a CJK token in trn_text is
+       always the leak itself, never a credit keyword. (260608-t53 final round)
+    2. The total CJK/Hangul/Kana codepoint count in trn_text is ≤ CJK_CREDIT_EXEMPT_MAX_CJK
+       (short proper-name handle, not a fully-untranslated body).
+
+    Uses CJK_LEAK_RE.findall to reuse the existing character-class definition without
+    duplicating the Unicode range. Anchorless match; no backtracking path (ASVS L1 V5).
+    """
+    if not CREDIT_SRC_RE.search(src_text) and not CREDIT_TRN_RE.search(trn_text):
+        return False
+    return len(CJK_LEAK_RE.findall(trn_text)) <= CJK_CREDIT_EXEMPT_MAX_CJK
+
 
 @dataclass
 class GateFailure:
@@ -480,6 +562,8 @@ def validate_subdoc(
 
         # Check 9 (B2/M3): CJK / Hangul / Kana codepoint = untranslated source leak.
         if CJK_LEAK_RE.search(text):
+            if is_credit_fansub_cue(src_sl.text, text):
+                continue
             raise GateError(
                 GateFailure(
                     9,
