@@ -38,12 +38,14 @@ import logging
 import os
 import re
 import tempfile
+import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 from trezarr.llm.client import LLMClient
+from trezarr.llm.metrics import PassStatsCollector
 from trezarr.output._ledger_protocol import LedgerProtocol
 from trezarr.output.ledger import LedgerEntry
 from trezarr.output.write import derive_vi_sidecar_path, write_vi_sidecar
@@ -611,6 +613,7 @@ async def _review_batch(
     llm_client: LLMClient,
     settings: "TrezarrSettings",
     model: "str | None" = None,  # D-113: per-call model override
+    collector: "PassStatsCollector | None" = None,  # 260612-1tm: per-pass metrics
 ) -> "list[str] | None":
     """Review a batch of translated cues against the Series Bible.
 
@@ -649,7 +652,10 @@ async def _review_batch(
         )
 
         # Step 3: LLM call — no response_model (D-57); D-113: forward per-call model override
-        raw_response = await llm_client.call([{"role": "user", "content": prompt}], model=model)
+        # 260612-1tm: forward per-pass collector for duration + token capture
+        raw_response = await llm_client.call(
+            [{"role": "user", "content": prompt}], model=model, collector=collector
+        )
 
         # Step 4: Parse numbered-line response (MEDIUM-4: only multi-line cues accept
         # continuation lines, so trailing reviewer prose is dropped, not spliced in).
@@ -930,6 +936,7 @@ def _make_translate_batch_fn(settings: "TrezarrSettings"):
         glossary: "list[str] | None" = None,
         register: "str | None" = None,  # H1 fix: thread series register into Pass-3
         correction_directive: "str | None" = None,  # IMP-02b FIX 1(a): repair directive as RULE
+        collector: "PassStatsCollector | None" = None,  # 260612-1tm: per-pass metrics
     ) -> list[str]:
         """Translate a single batch with a bounded message-accumulating correction loop (D-18).
 
@@ -1003,7 +1010,8 @@ def _make_translate_batch_fn(settings: "TrezarrSettings"):
             # Step 4a: Call LLMClient — the sole concurrency gate is inside LLMClient._semaphore
             # D-113: forward per-call model override; None = use client's global model
             # Pass-3 stays fast: no thinking= kwarg (Pass-1/Pass-2 get thinking=True per FIX-B)
-            raw_response = await llm_client.call(messages, model=model)
+            # 260612-1tm: forward per-pass collector for duration + token capture
+            raw_response = await llm_client.call(messages, model=model, collector=collector)
 
             try:
                 # Step 4b: Parse + reinsert sentinels — both raise BatchValidationError on failure.
@@ -1063,6 +1071,7 @@ async def _translate_batch(
     glossary: "list[str] | None" = None,
     register: "str | None" = None,  # H1 fix: thread series register into Pass-3
     correction_directive: "str | None" = None,  # IMP-02b FIX 1(a): repair directive as RULE
+    collector: "PassStatsCollector | None" = None,  # 260612-1tm: per-pass metrics
 ) -> list[str]:
     """Public entry point for translating a single batch with the correction loop.
 
@@ -1078,6 +1087,9 @@ async def _translate_batch(
         glossary:             Optional glossary lines for proper noun pinning.
         register:             Optional series register/tone (H1 fix).
         correction_directive: Optional IMP-02b gate-repair correction instruction.
+        collector:            Optional PassStatsCollector for per-call duration + token capture
+                              (260612-1tm). Forwarded to _translate_batch_inner and then to
+                              llm_client.call(). None = no metrics (zero regression).
 
     Returns:
         List of translated text strings.
@@ -1087,7 +1099,8 @@ async def _translate_batch(
     """
     fn = _make_translate_batch_fn(settings)
     return await fn(
-        batch, llm_client, settings, pronoun_hints, model, glossary, register, correction_directive
+        batch, llm_client, settings, pronoun_hints, model, glossary, register,
+        correction_directive, collector,
     )
 
 
@@ -1616,6 +1629,20 @@ async def translate_file(
     ):
         return TranslationResult(status="skipped")
 
+    # 260612-1tm: per-pass metrics collectors + wall-clock durations.
+    # Initialized to zero here so the job_summary line always fires with safe defaults
+    # even if a pass is bypassed (passthrough mode, enable_attribution=False, etc.).
+    # Collectors for Pass 1/2 are wall-clock-only (analyze_file/attribute_batch don't
+    # accept collector= yet); tokens for those passes will show 0 in the summary.
+    _p1_col = PassStatsCollector()
+    _p2_col = PassStatsCollector()
+    _p3_col = PassStatsCollector()
+    _p4_col = PassStatsCollector()
+    _p1_dur: float = 0.0
+    _p2_dur: float = 0.0
+    _p3_dur: float = 0.0
+    _p4_dur: float = 0.0
+
     # Step 4: Record in_progress (in case this run crashes mid-flight)
     await ledger.record(
         LedgerEntry(
@@ -1713,6 +1740,9 @@ async def translate_file(
 
         # PASS 1 BARRIER (D-40, ENG-04) — quarantine ONLY on BibleAnalysisError
         # (logic failure); openai.APIError must propagate (Pitfall B / T-05-06-02)
+        # 260612-1tm: wall-clock timing only (analyze_file/merge_bible_analysis don't
+        # accept collector=; token capture for Pass 1 is deferred to future wiring).
+        _p1_t0 = time.perf_counter()
         try:
             analysis = await analyze_file(
                 source_doc, bible, arr_metadata, llm_client, settings, episode_key
@@ -1738,6 +1768,10 @@ async def translate_file(
                 reason=reason,
             )
 
+        # 260612-1tm: record Pass 1 wall-clock duration and emit per-pass log line.
+        _p1_dur = time.perf_counter() - _p1_t0
+        logger.info("pass=1 duration_s=%.2f file=%s", _p1_dur, path.name)
+
         # Reload Bible so Pass 2/3 see the fresh Address Map (D-48)
         bible = await load_series_bible(session_factory, series_dto.id)
 
@@ -1757,13 +1791,17 @@ async def translate_file(
             # WR-04: TaskGroup cancels siblings on first failure; no orphaned tasks.
             # Attribution degrades gracefully (never raises BatchValidationError),
             # so no ExceptionGroup handling is needed here.
+            # 260612-1tm: wall-clock timing only (attribute_batch doesn't accept collector=)
+            _p2_t0 = time.perf_counter()
             async with asyncio.TaskGroup() as tg:
                 attr_tasks = [
                     tg.create_task(attribute_batch(b, bible, llm_client, settings))
                     for b in attr_batches
                 ]
+            _p2_dur = time.perf_counter() - _p2_t0
             attr_per_batch = [t.result() for t in attr_tasks]
             flat_attributions = [a for batch_attrs in attr_per_batch for a in batch_attrs]
+            logger.info("pass=2 duration_s=%.2f file=%s", _p2_dur, path.name)
         else:
             flat_attributions = []
 
@@ -1855,6 +1893,10 @@ async def translate_file(
                 for _tok in re.findall(r"[^\W\d_]+", _field.lower(), re.UNICODE):
                     if _tok:
                         proper_noun_allowlist.add(_tok)
+    # 260612-1tm: Pass 3 wall-clock + token instrumentation via _p3_col.
+    # _p3_col is threaded into each _translate_batch call so all concurrent batch LLM calls
+    # accumulate into the same collector (asyncio single-threaded → no race).
+    _p3_t0 = time.perf_counter()
     try:
         async with asyncio.TaskGroup() as tg:
             translate_tasks = [
@@ -1867,6 +1909,7 @@ async def translate_file(
                         model,
                         glossary_lines,
                         register_value,
+                        collector=_p3_col,  # 260612-1tm: thread Pass-3 collector
                     )
                 )
                 for i, b in enumerate(batches)
@@ -1892,6 +1935,11 @@ async def translate_file(
 
     if _batch_quarantine is not None:
         return _batch_quarantine
+
+    # 260612-1tm: Pass 3 wall-clock duration + per-pass log line (success path only —
+    # quarantined files already returned above, so this line is always for a completed pass).
+    _p3_dur = time.perf_counter() - _p3_t0
+    logger.info("pass=3 duration_s=%.2f file=%s", _p3_dur, path.name)
 
     # Step 8: Assemble translated SubDoc (Pitfall 8 — never mutate source SubLines)
     #
@@ -2001,7 +2049,9 @@ async def translate_file(
         # except* correctly unwraps ExceptionGroup from TaskGroup (Python 3.11+, CR-03).
         # _review_batch must never raise (D-59); reaching except* indicates a bug.
         # NOTE: `return` is not allowed inside except* — use a flag variable instead.
+        # 260612-1tm: Pass 4 wall-clock + token instrumentation via _p4_col.
         _review_failed = False
+        _p4_t0 = time.perf_counter()
         try:
             async with asyncio.TaskGroup() as tg:
                 review_tasks = [
@@ -2014,6 +2064,7 @@ async def translate_file(
                             llm_client=llm_client,
                             settings=settings,
                             model=model,  # D-113: per-call model override
+                            collector=_p4_col,  # 260612-1tm: thread Pass-4 collector
                         )
                     )
                     for rb in review_batches
@@ -2031,6 +2082,10 @@ async def translate_file(
 
         if _review_failed:
             review_results = [None] * len(review_batches)
+
+        # 260612-1tm: Pass 4 wall-clock duration + per-pass log line.
+        _p4_dur = time.perf_counter() - _p4_t0
+        logger.info("pass=4 duration_s=%.2f file=%s", _p4_dur, path.name)
 
         # CR-02 (D-98/D-99): splice Pass-4 corrections back onto translated_doc.
         # Corrections map to NON-raw cues only; raw (karaoke/drawing) pass-through
@@ -2169,6 +2224,27 @@ async def translate_file(
             # bracket envelope again. Step C idempotency no-ops already-wrapped cues;
             # enable_envelope_preservation=False short-circuits the whole call.
             translated_doc = _preserve_source_envelopes(translated_doc, source_doc, settings)
+
+    # 260612-1tm: job-completion summary log line — structured key=value pairs, grep-friendly.
+    # Pass 1/2 token fields are 0 (collectors not wired into analyze_file/attribute_batch yet).
+    # Pass 3/4 token fields carry actual values when collectors are wired into those calls.
+    # Duration fields use the local wall-clock floats (0.0 for bypassed passes).
+    _p1s = _p1_col.summary()
+    _p2s = _p2_col.summary()
+    _p3s = _p3_col.summary()
+    _p4s = _p4_col.summary()
+    logger.info(
+        "job_summary file=%s "
+        "pass1_calls=%d pass1_prompt_tokens=%d pass1_completion_tokens=%d pass1_duration_s=%.2f "
+        "pass2_calls=%d pass2_prompt_tokens=%d pass2_completion_tokens=%d pass2_duration_s=%.2f "
+        "pass3_calls=%d pass3_prompt_tokens=%d pass3_completion_tokens=%d pass3_duration_s=%.2f "
+        "pass4_calls=%d pass4_prompt_tokens=%d pass4_completion_tokens=%d pass4_duration_s=%.2f",
+        path.name,
+        _p1s.call_count, _p1s.prompt_tokens, _p1s.completion_tokens, _p1_dur,
+        _p2s.call_count, _p2s.prompt_tokens, _p2s.completion_tokens, _p2_dur,
+        _p3s.call_count, _p3s.prompt_tokens, _p3s.completion_tokens, _p3_dur,
+        _p4s.call_count, _p4s.prompt_tokens, _p4s.completion_tokens, _p4_dur,
+    )
 
     # Step 10: Atomic UTF-8 write (D-19)
     output_path = write_vi_sidecar(translated_doc, path)

@@ -179,7 +179,7 @@ async def test_honorific_repair_success(tmp_path: Path) -> None:
     ledger = FakeLedger()
     _pass3_done = False
 
-    async def _fake_llm_call(messages: list, response_model: Any = None, model: Any = None) -> str:
+    async def _fake_llm_call(messages: list, response_model: Any = None, model: Any = None, **kwargs) -> str:
         nonlocal _pass3_done
         if not _pass3_done:
             _pass3_done = True
@@ -229,7 +229,7 @@ async def test_structural_not_repaired(tmp_path: Path) -> None:
 
     ledger = FakeLedger()
 
-    async def _fake_llm_call(messages: list, response_model: Any = None, model: Any = None) -> str:
+    async def _fake_llm_call(messages: list, response_model: Any = None, model: Any = None, **kwargs) -> str:
         # Return a 1-line response for a 2-cue source → Check-1 fires.
         return "[1] Xin chào thế giới"
 
@@ -328,7 +328,7 @@ async def test_budget_exhausted(tmp_path: Path) -> None:
 
     _pass3_done = False
 
-    async def _fake_llm_call(messages: list, response_model: Any = None, model: Any = None) -> str:
+    async def _fake_llm_call(messages: list, response_model: Any = None, model: Any = None, **kwargs) -> str:
         nonlocal _pass3_done
         if not _pass3_done:
             _pass3_done = True
@@ -438,7 +438,7 @@ async def test_repair_preserves_subline_byte_identity(tmp_path: Path) -> None:
 
     _pass3_done = False
 
-    async def _fake_llm_call(messages: list, response_model: Any = None, model: Any = None) -> str:
+    async def _fake_llm_call(messages: list, response_model: Any = None, model: Any = None, **kwargs) -> str:
         nonlocal _pass3_done
         if not _pass3_done:
             _pass3_done = True
@@ -516,7 +516,7 @@ async def test_gate_repair_disabled(tmp_path: Path) -> None:
 
     ledger = FakeLedger()
 
-    async def _fake_llm_call(messages: list, response_model: Any = None, model: Any = None) -> str:
+    async def _fake_llm_call(messages: list, response_model: Any = None, model: Any = None, **kwargs) -> str:
         return _pass3_response_for_5cues(_DEFECTIVE_CUE)
 
     from trezarr.llm.client import LLMClient
@@ -569,7 +569,7 @@ async def test_directive_echo_quarantined(tmp_path: Path) -> None:
     ledger = FakeLedger()
     _pass3_done = False
 
-    async def _fake_llm_call(messages: list, response_model: Any = None, model: Any = None) -> str:
+    async def _fake_llm_call(messages: list, response_model: Any = None, model: Any = None, **kwargs) -> str:
         nonlocal _pass3_done
         if not _pass3_done:
             _pass3_done = True
@@ -700,7 +700,7 @@ async def test_repair_api_error_propagates(tmp_path: Path) -> None:
         body=None,
     )
 
-    async def _fake_llm_call(messages: list, response_model: Any = None, model: Any = None) -> str:
+    async def _fake_llm_call(messages: list, response_model: Any = None, model: Any = None, **kwargs) -> str:
         nonlocal _pass3_done
         if not _pass3_done:
             _pass3_done = True

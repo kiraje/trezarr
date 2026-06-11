@@ -127,7 +127,7 @@ async def test_batch_retry(settings_factory):
 
     call_count = 0
 
-    async def _fake_call(messages, response_model=None, model=None):  # D-113: accept model kwarg
+    async def _fake_call(messages, response_model=None, model=None, **kwargs):  # D-113: accept model kwarg
         nonlocal call_count
         call_count += 1
         if call_count < 2:
@@ -402,7 +402,7 @@ async def test_translate_batch_forwards_glossary_to_prompt(settings_factory):
 
     captured: dict[str, str] = {}
 
-    async def _fake_call(messages, response_model=None, model=None):  # D-113: accept model kwarg
+    async def _fake_call(messages, response_model=None, model=None, **kwargs):  # D-113: accept model kwarg
         captured["prompt"] = messages[0]["content"]
         return "[1] Anh Đào nói đừng"
 
@@ -472,7 +472,7 @@ async def test_reassembly_preserves_raw_cues_at_original_positions(settings_fact
 
     # Mock the LLM client to return translated text for the 2 translatable cues.
     # The karaoke cue is skipped by batching — the LLM sees only cues [1] and [2].
-    async def _fake_llm(messages, response_model=None, model=None):  # D-113: accept model kwarg
+    async def _fake_llm(messages, response_model=None, model=None, **kwargs):  # D-113: accept model kwarg
         # Return numbered-line response for 2 cues only
         return "[1] Xin chào thế giới\n[2] Tạm biệt thế giới"
 
@@ -584,7 +584,7 @@ async def test_ledger_records_series_id_on_success(tmp_path):
     from trezarr.llm.client import LLMClient  # noqa: PLC0415
     llm_client = LLMClient(settings)
 
-    async def _fake_call(messages, response_model=None, model=None):
+    async def _fake_call(messages, response_model=None, model=None, **kwargs):
         return "[1] Được rồi\n[2] Thế giới"
 
     with patch.object(llm_client, "call", side_effect=_fake_call):
@@ -1445,4 +1445,92 @@ def test_r2_resolution_1920x1080_does_not_parse_as_episode():
     )
     assert result2 == "S00E00", (
         f"R2-R3: HD resolution stem with season_number=None must fall to 'S00E00'; got {result2!r}."
+    )
+
+
+# ── 260612-1tm: per-pass timing + job-completion summary log line tests ───────
+
+
+async def test_translate_file_emits_pass3_timing_log(settings_factory, tmp_path, caplog):
+    """translate_file emits a 'pass=3 duration_s=' INFO log line on a normal translation run.
+
+    Pass 3 (translate) always runs; its per-pass timing line must appear in the log.
+    This test is the minimal smoke: no DB / no Bible (passthrough mode).
+    """
+    import logging  # noqa: PLC0415
+    from unittest.mock import patch  # noqa: PLC0415
+    from trezarr.translate.engine import translate_file  # noqa: PLC0415
+    from trezarr.output.ledger import Ledger  # noqa: PLC0415
+    from trezarr.llm.client import LLMClient  # noqa: PLC0415
+
+    src = tmp_path / "Show.S01E01.en.srt"
+    src.write_text(
+        "1\n00:00:01,000 --> 00:00:03,000\nHello\n\n"
+        "2\n00:00:04,000 --> 00:00:06,000\nWorld\n",
+        encoding="utf-8",
+    )
+    quarantine_dir = tmp_path / "quarantine"
+    settings = settings_factory(translate_quarantine_dir=str(quarantine_dir))
+    ledger_path = tmp_path / "ledger.json"
+    ledger = Ledger(ledger_path)
+    llm_client = LLMClient(settings)
+
+    # Both lines use Vietnamese diacritics so validate_subdoc passes at the default threshold.
+    async def _fake_call(messages, **kwargs):
+        return "[1] Được rồi\n[2] Thế giới"
+
+    with caplog.at_level(logging.INFO, logger="trezarr.translate.engine"):
+        with patch.object(llm_client, "call", side_effect=_fake_call):
+            result = await translate_file(src, settings, llm_client, ledger)
+
+    assert result.status == "done", f"Expected status='done', got {result.status!r}"
+
+    log_messages = [r.getMessage() for r in caplog.records]
+    pass3_lines = [m for m in log_messages if "pass=3" in m and "duration_s=" in m]
+    assert pass3_lines, (
+        f"Expected at least one INFO log line containing 'pass=3' and 'duration_s='; "
+        f"found none. Log messages: {log_messages}"
+    )
+
+
+async def test_translate_file_emits_job_summary_log(settings_factory, tmp_path, caplog):
+    """translate_file emits a 'job_summary' INFO log line on a completed translation.
+
+    The summary line must contain 'job_summary', 'file=', and 'pass3_calls='.
+    """
+    import logging  # noqa: PLC0415
+    from unittest.mock import patch  # noqa: PLC0415
+    from trezarr.translate.engine import translate_file  # noqa: PLC0415
+    from trezarr.output.ledger import Ledger  # noqa: PLC0415
+    from trezarr.llm.client import LLMClient  # noqa: PLC0415
+
+    src = tmp_path / "Show.S01E01.en.srt"
+    src.write_text(
+        "1\n00:00:01,000 --> 00:00:03,000\nHello\n\n"
+        "2\n00:00:04,000 --> 00:00:06,000\nWorld\n",
+        encoding="utf-8",
+    )
+    quarantine_dir = tmp_path / "quarantine"
+    settings = settings_factory(translate_quarantine_dir=str(quarantine_dir))
+    ledger_path = tmp_path / "ledger.json"
+    ledger = Ledger(ledger_path)
+    llm_client = LLMClient(settings)
+
+    async def _fake_call(messages, **kwargs):
+        return "[1] Được rồi\n[2] Thế giới"
+
+    with caplog.at_level(logging.INFO, logger="trezarr.translate.engine"):
+        with patch.object(llm_client, "call", side_effect=_fake_call):
+            result = await translate_file(src, settings, llm_client, ledger)
+
+    assert result.status == "done", f"Expected status='done', got {result.status!r}"
+
+    log_messages = [r.getMessage() for r in caplog.records]
+    summary_lines = [
+        m for m in log_messages
+        if "job_summary" in m and "pass3_calls=" in m and "file=" in m
+    ]
+    assert summary_lines, (
+        f"Expected at least one INFO log line containing 'job_summary', 'file=', and "
+        f"'pass3_calls='; found none. Log messages: {log_messages}"
     )

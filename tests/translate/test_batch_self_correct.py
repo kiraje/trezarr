@@ -48,6 +48,7 @@ class FakeLLMClient:
         response_model=None,
         model=None,
         thinking=None,
+        collector=None,  # 260612-1tm: accept collector kwarg (ignored in fake)
     ) -> str:
         self.calls.append(list(messages))  # snapshot for assertion
         response_idx = min(self.call_count, len(self.scripted_responses) - 1)
