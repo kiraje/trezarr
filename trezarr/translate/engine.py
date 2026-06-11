@@ -159,7 +159,14 @@ def derive_episode_key(media_item: object, source_sub_path: "str | Path | None" 
             # has both forms uses the SxxExx form — backward-compatible.
             # Without this fix, Plex stems collapse to S{season:02d}E00 which matches every
             # cold-Bible S00E00 relationship_event — the episode_key collapse BLOCKER (audit B2).
-            m_plex = re.search(r"(\d{1,2})[xX](\d{1,3})", stem)
+            #
+            # Digit-boundary lookarounds prevent resolution/aspect strings from matching:
+            # e.g. "1024x768" → "24x76" sub-match is blocked because '4' is immediately
+            # preceded by the digit '2'. Mirrors library.py:51 which uses the same pattern
+            # ("lookarounds avoid matching resolutions like 1920x1080").
+            # TODO: extract one shared anchored parser from engine.py + library.py (MEDIUM,
+            # tracked as tech-debt — see pipeline-reliability-reviewer R2 MEDIUM finding).
+            m_plex = re.search(r"(?<!\d)(\d{1,2})[xX](\d{1,3})(?!\d)", stem)
             if m_plex:
                 return f"S{int(m_plex.group(1)):02d}E{int(m_plex.group(2)):02d}"
         # Fallback: use season_number if parse fails
