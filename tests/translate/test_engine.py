@@ -1534,3 +1534,81 @@ async def test_translate_file_emits_job_summary_log(settings_factory, tmp_path, 
         f"Expected at least one INFO log line containing 'job_summary', 'file=', and "
         f"'pass3_calls='; found none. Log messages: {log_messages}"
     )
+
+
+# ---------------------------------------------------------------------------
+# 260612-7kt Task 1 — VN-label hint strip in parse_numbered_response
+# (_LEAKED_VN_HINT_RE strips the Vietnamese-label translated-label form)
+# ---------------------------------------------------------------------------
+# E143 cue 148: a weak model translated "speaker says" → "nói" and "addresses as" →
+# "xưng hô".  _LEAKED_HINT_RE is anchored to "speaker says:" and misses this form.
+# _LEAKED_VN_HINT_RE closes the gap with a chained strip in parse_numbered_response.
+# ---------------------------------------------------------------------------
+
+
+def test_parse_strips_vn_label_hint_e143_c148():
+    """E143 cue 148 exact: VN-label hint stripped, dialogue preserved.
+
+    Input: "(tại hạ nói: tại hạ; xưng hô: cô nương) xin cô nương nén bi thương."
+    Expected: "xin cô nương nén bi thương."
+
+    _LEAKED_VN_HINT_RE must match the leading parenthetical containing 'nói:' or
+    'xưng hô:' and strip it, leaving only the actual dialogue.
+    """
+    from trezarr.translate.engine import parse_numbered_response  # noqa: PLC0415
+
+    result = parse_numbered_response(
+        "[1] (tại hạ nói: tại hạ; xưng hô: cô nương) xin cô nương nén bi thương.",
+        1,
+    )
+    assert result == ["xin cô nương nén bi thương."], (
+        f"Expected VN-label hint stripped to leave 'xin cô nương nén bi thương.', got {result!r}. "
+        f"_LEAKED_VN_HINT_RE must match '(... nói: ...; xưng hô: ...)' leading parenthetical."
+    )
+
+
+def test_parse_strips_bare_noi_colon_hint():
+    """Bare 'nói:' label form stripped, dialogue preserved.
+
+    Input: "(nói: em; xưng hô: anh) Mình đi thôi."
+    Expected: "Mình đi thôi."
+    """
+    from trezarr.translate.engine import parse_numbered_response  # noqa: PLC0415
+
+    result = parse_numbered_response(
+        "[1] (nói: em; xưng hô: anh) Mình đi thôi.",
+        1,
+    )
+    assert result == ["Mình đi thôi."], (
+        f"Expected '(nói: em; xưng hô: anh)' stripped leaving 'Mình đi thôi.', got {result!r}"
+    )
+
+
+def test_parse_preserves_envelope_title_card_no_noi_colon():
+    """Envelope title card '(Phàm Nhân Tu Tiên Ký)' is NOT stripped by _LEAKED_VN_HINT_RE.
+
+    Guards the 260607-iab paren-preservation win: the regex must require 'nói:' or
+    'xưng hô:' colon structure.  A title card with no colon is preserved unchanged.
+    """
+    from trezarr.translate.engine import parse_numbered_response  # noqa: PLC0415
+
+    result = parse_numbered_response("[1] (Phàm Nhân Tu Tiên Ký) Cảnh mở đầu.", 1)
+    assert result == ["(Phàm Nhân Tu Tiên Ký) Cảnh mở đầu."], (
+        f"Envelope title-card '(Phàm Nhân Tu Tiên Ký)' must be preserved, got {result!r}"
+    )
+
+
+def test_parse_english_label_hint_still_stripped_regression():
+    """Regression guard: English-label hints are still stripped by _LEAKED_HINT_RE.
+
+    VN_HINT_SCAFFOLD_RE is additive — the original English-label strip must not regress.
+    """
+    from trezarr.translate.engine import parse_numbered_response  # noqa: PLC0415
+
+    result = parse_numbered_response(
+        "[1] (speaker says: muội; addresses as: huynh) Chư vị tu sĩ...",
+        1,
+    )
+    assert result == ["Chư vị tu sĩ..."], (
+        f"English-label hint must still be stripped by _LEAKED_HINT_RE, got {result!r}"
+    )
