@@ -156,6 +156,11 @@ def plan_character_name_terms(
     """
     rendering_by_latin: dict[str, str] = {}
     existing_sources: set[str] = set()
+    # R3 fix (260611-ru6): track which characters already have a LOCKED canonical rendering.
+    # When a character's Latin name is in locked_sources, skip adding a competing locked row
+    # for its CJK/script form — D-04: first-established locked rendering wins per character
+    # entity, across Latin and CJK source_term variants.
+    locked_sources: set[str] = set()
     for t in existing_terms or []:
         src = (getattr(t, "source_term", "") or "").strip()
         if not src:
@@ -164,12 +169,24 @@ def plan_character_name_terms(
         ren = (getattr(t, "vietnamese_rendering", "") or "").strip()
         if ren:
             rendering_by_latin[src.lower()] = ren
+        # Build locked_sources: record Latin names that already have a locked rendering.
+        # Uses duck-typed access per the function contract (works for TermDTO + TermInference).
+        locked_fields = getattr(t, "locked_fields", None) or []
+        if "vietnamese_rendering" in locked_fields:
+            locked_sources.add(src.lower())
 
     specs: "list[NameTermSpec]" = []
     seen: set[str] = set()
     for ch in characters or []:
         latin = (getattr(ch, "original_latin_name", "") or "").strip()
         if not latin:
+            continue
+        # R3 guard: if this character's Latin name already has a locked row in the Term
+        # Dictionary, skip emitting any spec — neither the CJK form nor a second Latin
+        # row should create a competing lock. An existing locked row is canonical; adding
+        # another locked row with a different rendering creates a split that the
+        # translate-prompt glossary cannot resolve without dedup.
+        if latin.lower() in locked_sources:
             continue
         script = (getattr(ch, "original_script_name", "") or "").strip()
         # H2 fix: prefer (1) an existing Term Dictionary rendering for this Latin name, then
@@ -184,6 +201,9 @@ def plan_character_name_terms(
             continue
         specs.append(NameTermSpec(source_term=source, vietnamese_rendering=canonical))
         seen.add(key)
+        # R3: mark this character's Latin name as locked so subsequent CJK/alternate
+        # forms for the same character in the same batch are also skipped.
+        locked_sources.add(latin.lower())
     return specs
 
 
