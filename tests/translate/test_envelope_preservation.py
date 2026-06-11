@@ -425,7 +425,7 @@ async def test_envelope_survives_gate_repair_loop(tmp_path: Path) -> None:
     # cue 1 — returning a CLEAN diacritic-bearing text still WITHOUT parens.
     _defective_title = "Miss Episode Title"  # HONORIFIC_CAPNAME_RE: "Miss" + CapName
 
-    async def _fake_llm_call(messages: list, response_model=None, model=None) -> str:
+    async def _fake_llm_call(messages: list, response_model=None, model=None, **kwargs) -> str:
         return (
             f"[1] {_defective_title}\n"
             f"[2] {_good_vi[0]}\n"

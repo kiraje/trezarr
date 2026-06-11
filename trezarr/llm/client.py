@@ -17,11 +17,14 @@ Exception policy (Pitfall 7 in 01-RESEARCH.md):
 from __future__ import annotations
 
 import asyncio
+import time
 from typing import TYPE_CHECKING
 
 import openai
 from openai import AsyncOpenAI
 from pydantic import BaseModel
+
+from trezarr.llm.metrics import PassStatsCollector
 
 if TYPE_CHECKING:
     from ..config import TrezarrSettings
@@ -77,6 +80,7 @@ class LLMClient:
         response_model: type[BaseModel] | None = None,
         model: str | None = None,   # D-113: per-call model override; None = use self._model
         thinking: bool | None = None,  # FIX-B: per-call reasoning override; None = global default
+        collector: PassStatsCollector | None = None,  # 260612-1tm: per-pass metrics accumulator
     ) -> BaseModel | str:
         """Make an LLM call, applying the configured structured-output tier strategy.
 
@@ -92,6 +96,10 @@ class LLMClient:
                 False — force disabled for this call only (overrides global default).
                 None  — use self._call_kwargs unchanged (zero regression for existing callers).
                 self._call_kwargs is NEVER mutated; effective_call_kwargs is a local variable.
+            collector: Optional PassStatsCollector for per-call duration + token capture
+                (260612-1tm step-0 observability). When provided, record() is called inside
+                _call_with_fallback after each successful SDK call.  When None (default),
+                existing callers get identical behavior — zero regression.
 
         Returns:
             When Tier 1 (json_schema) succeeds with a ``response_model``, the parsed
@@ -111,7 +119,7 @@ class LLMClient:
             raise ValueError("messages must be a non-empty list of chat messages")
 
         async with self._semaphore:  # D-06: enforce concurrency cap — UNCHANGED
-            return await self._call_with_fallback(messages, response_model, model, thinking)
+            return await self._call_with_fallback(messages, response_model, model, thinking, collector)
 
     async def _call_with_fallback(
         self,
@@ -119,6 +127,7 @@ class LLMClient:
         response_model: type[BaseModel] | None,
         model: str | None = None,  # D-113: per-call override; None = use self._model
         thinking: bool | None = None,  # FIX-B: per-call reasoning override; None = global default
+        collector: PassStatsCollector | None = None,  # 260612-1tm: per-call metrics
     ) -> BaseModel | str:
         """Internal dispatch implementing the three-tier degradation (D-04).
 
@@ -142,6 +151,10 @@ class LLMClient:
                 False — build effective_call_kwargs with disabled extra_body only.
                 None  — use self._call_kwargs as-is (zero regression for existing callers).
                 self._call_kwargs is NEVER mutated; effective_call_kwargs is a local per-call variable.
+            collector: Optional PassStatsCollector (260612-1tm).  When provided, record() is
+                called after each successful SDK call with the wall-clock duration and token
+                counts from response.usage (None-guarded).  The collector= param is a pure
+                side-effect; it never influences the return value or exception propagation.
         """
         mode = self._mode
         effective_model = model or self._model  # D-113: per-call override, falls back to global
@@ -168,12 +181,21 @@ class LLMClient:
                 parse_kwargs: dict = {}
                 if response_model is not None:
                     parse_kwargs["response_format"] = response_model
+                _t0 = time.perf_counter()
                 parsed = await self._client.chat.completions.parse(
                     model=effective_model,
                     messages=messages,
                     **parse_kwargs,
                     **effective_call_kwargs,  # thinking-mode toggle (local per-call)
                 )
+                _dur = time.perf_counter() - _t0
+                if collector is not None:
+                    _u = getattr(parsed, "usage", None)
+                    collector.record(
+                        duration_s=_dur,
+                        prompt_tokens=getattr(_u, "prompt_tokens", None),
+                        completion_tokens=getattr(_u, "completion_tokens", None),
+                    )
                 msg = parsed.choices[0].message
                 # CR-02: a model refusal carries no usable output — surface it
                 # instead of silently returning None.
@@ -212,12 +234,21 @@ class LLMClient:
         # call in pinned json_object mode (the deployed configuration).
         if mode in ("auto", "json_object") and response_model is not None:
             try:
+                _t0 = time.perf_counter()
                 resp = await self._client.chat.completions.create(
                     model=effective_model,
                     messages=messages,
                     response_format={"type": "json_object"},
                     **effective_call_kwargs,  # thinking-mode toggle (local per-call)
                 )
+                _dur = time.perf_counter() - _t0
+                if collector is not None:
+                    _u = getattr(resp, "usage", None)
+                    collector.record(
+                        duration_s=_dur,
+                        prompt_tokens=getattr(_u, "prompt_tokens", None),
+                        completion_tokens=getattr(_u, "completion_tokens", None),
+                    )
                 content = resp.choices[0].message.content
                 if content is None:
                     raise RuntimeError("LLM returned empty content (Tier 2)")
@@ -228,11 +259,20 @@ class LLMClient:
                 # mode == "auto": fall through to Tier 3
 
         # ── Tier 3: plain text (always works; caller uses delimited-text protocol) ──
+        _t0 = time.perf_counter()
         resp = await self._client.chat.completions.create(
             model=effective_model,
             messages=messages,
             **effective_call_kwargs,  # thinking-mode toggle (local per-call)
         )
+        _dur = time.perf_counter() - _t0
+        if collector is not None:
+            _u = getattr(resp, "usage", None)
+            collector.record(
+                duration_s=_dur,
+                prompt_tokens=getattr(_u, "prompt_tokens", None),
+                completion_tokens=getattr(_u, "completion_tokens", None),
+            )
         content = resp.choices[0].message.content
         if content is None:
             raise RuntimeError("LLM returned empty content (Tier 3)")
