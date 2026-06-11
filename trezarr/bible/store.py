@@ -1518,6 +1518,13 @@ async def dedup_canonical_name_terms(
     #
     # Primary defence until then: plan_character_name_terms FIX2-III guard prevents the
     # dual-row split from being created in the first place (analyze.py:180+).
+    #
+    # FIX3 atomicity (260611-ru6 LOW): the prior N-writes-in-N-separate-sessions design was
+    # non-atomic (crash mid-loop → partial repair). FIX2 removes the write loop entirely, so
+    # FIX3 is moot for now. When the FK migration enables writes, the implementation MUST
+    # use a single async with session.begin() wrapping all row rewrites and BibleEvent inserts
+    # to guarantee all-or-nothing repair (idempotency makes crash recovery safe but
+    # a single transaction is the stronger guarantee).
     latin_rows = [r for r in locked_rows if _is_latin_only(r.source_term)]
     script_rows = [r for r in locked_rows if not _is_latin_only(r.source_term)]
 
