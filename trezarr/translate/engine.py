@@ -738,6 +738,24 @@ _LEAKED_DIRECTIVE_RE = re.compile(
     re.IGNORECASE,
 )
 
+# 260612-7kt (Finding 1 / D-01) — Vietnamese-label variant of the Pass-3 pronoun-hint strip.
+# Sibling of _LEAKED_HINT_RE (English-label form, anchored to "speaker says:").
+# E143 cue 148: a weak model translated the hint labels into Vietnamese:
+#   "(tại hạ nói: tại hạ; xưng hô: cô nương) xin cô nương nén bi thương."
+#   → stripped: "xin cô nương nén bi thương."
+#   "(nói: em; xưng hô: anh) Mình đi thôi." → "Mình đi thôi."
+#   "(Phàm Nhân Tu Tiên Ký) Cảnh mở đầu." → NOT matched (no nói:/xưng hô:) → preserved
+# Structural discriminator: the role token (`nói` or `xưng hô`) followed by an IMMEDIATE
+# colon — same discriminator as validate.py VN_HINT_SCAFFOLD_RE.
+# [^)]* stops at the first ')' — no nested parens in the hint → no backtracking risk.
+# MOAT INVARIANT: strips ONLY the echoed Vietnamese-label prefix; dialogue pronouns untouched.
+# validate.py Check 8 / VN_HINT_SCAFFOLD_RE is the defense-in-depth backstop for any
+# leaked VN-label hint that this strip does not catch.
+_LEAKED_VN_HINT_RE = re.compile(
+    r"^\s*\(\s*(?:[^():]*(?:nói|xưng\s+hô)\s*:)[^)]*\)\s*",
+    re.IGNORECASE,
+)
+
 
 def parse_numbered_response(
     response: str,
@@ -833,6 +851,13 @@ def parse_numbered_response(
         # translated dialogue pronouns. validate.py Check 8 / HINT_SCAFFOLD_RE remains
         # the defense-in-depth backstop for any leak this strip does not catch.
         text = _LEAKED_HINT_RE.sub("", text)
+        # Strip a LEADING echoed Vietnamese-label pronoun hint (260612-7kt, 2026-06-12).
+        # '(tại hạ nói: tại hạ; xưng hô: cô nương)' is the translated-label variant of
+        # the English hint echo above.  Chained AFTER _LEAKED_HINT_RE (the two are sibling
+        # patterns — English first, Vietnamese second; applying them both is safe because
+        # they match non-overlapping forms). validate.py Check 8 / VN_HINT_SCAFFOLD_RE is
+        # the defense-in-depth backstop for any leaked VN-label hint this strip misses.
+        text = _LEAKED_VN_HINT_RE.sub("", text)
         # Strip a LEADING echoed gate-repair directive (IMP-02b, 2026-06-08).
         # "[CORRECTION REQUIRED] ..." is an English internal-machinery phrase injected as
         # a RULES instruction in the repair prompt. A leading echo collapses to empty →
