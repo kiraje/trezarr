@@ -559,10 +559,29 @@ async def _upsert_term_in_session(
     Returns:
         (TermDictionary_row, list_of_BibleEvent_instances)
     """
-    # SELECT existing row by identity key
+    # SELECT existing row by identity key (case-insensitive on source_term — 260612-7kt).
+    #
+    # WHY func.lower(): analyze.py keys terms by .strip().lower() when building the
+    # in-memory passed-bible glossary, so 'Judgment' and 'judgment' are the same key
+    # at the analysis layer.  Without func.lower() here, a case variant from a different
+    # inference pass creates a second DB row, producing competing renderings.
+    #
+    # ASYMMETRY: Only the WRITE boundary uses case-insensitive resolution.  get_term()
+    # (the public read function used by analyze.py and the API GET endpoint) retains
+    # exact-case semantics — this is intentional so the public API remains predictable.
+    # The canonical row's source_term is preserved as-is (first-inserted form wins the
+    # casing).  If the caller needs the exact casing, it should use get_term().
+    #
+    # CJK safety: SQLite lower() on CJK codepoints is identity (lower("孔苏") == "孔苏");
+    # case-insensitive matching never creates cross-term collisions for CJK source terms.
+    # (Verified: SQLite docs + test_cjk_term_unaffected_by_case_insensitive_lookup.)
+    #
+    # Prevention-only: this guard prevents NEW duplicate rows.  Existing duplicate rows
+    # (created before this fix) are not migrated — user may resolve via API PATCH as was
+    # done for the ru6 Latin/CJK character name conflict.
     stmt = select(TermDictionary).where(
         TermDictionary.series_id == series_id,
-        TermDictionary.source_term == source_term,
+        func.lower(TermDictionary.source_term) == func.lower(source_term),
     )
     existing_row = (await session.execute(stmt)).scalar_one_or_none()
 
