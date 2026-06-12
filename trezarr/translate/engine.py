@@ -772,6 +772,21 @@ _LEAKED_VN_HINT_RE = re.compile(
 )
 
 
+def _log_batch_parse_failure(reason: str, response: str, expected_count: int) -> None:
+    """Diagnostic-only WARNING with a truncated raw-response snippet (260612 E02 4× quarantine).
+
+    Emitted just before parse_numbered_response raises BatchValidationError so the
+    docker logs + job-log DB show WHAT the LLM actually returned — distinguishing
+    "model returned an empty/short payload" from "our strip layers emptied a line".
+    Log-only: no behavior change; the exception path is unchanged.
+    """
+    snippet = repr(response[:500])
+    logger.warning(
+        "batch_parse_failure reason=%s expected_count=%d raw_response_snippet=%s",
+        reason, expected_count, snippet,
+    )
+
+
 def parse_numbered_response(
     response: str,
     expected_count: int,
@@ -845,6 +860,7 @@ def parse_numbered_response(
     # reject empties (the empty check runs on the post-<<BR>> text — B1 fix).
     for n in range(1, expected_count + 1):
         if n not in parsed:
+            _log_batch_parse_failure(f"Missing line [{n}]", response, expected_count)
             raise BatchValidationError(
                 f"Missing line [{n}] in LLM response (expected {expected_count} lines)"
             )
@@ -881,6 +897,9 @@ def parse_numbered_response(
         text = _LEAKED_DIRECTIVE_RE.sub("", text)
         parsed[n] = text
         if not parsed[n].strip():
+            _log_batch_parse_failure(
+                f"Empty/whitespace-only line [{n}]", response, expected_count
+            )
             raise BatchValidationError(f"Empty/whitespace-only text for line [{n}] in LLM response")
 
     if len(parsed) < expected_count:

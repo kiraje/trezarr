@@ -1696,3 +1696,18 @@ def test_parse_preserves_legit_bracket_title_card():
         f"Bracket title card must be preserved; got {result!r}. "
         f"No 'xưng hô:' inside — must not be stripped."
     )
+
+
+def test_batch_parse_failure_logs_raw_snippet_on_empty_line(caplog):
+    """Diagnostic WARNING (260612): empty-line parse failure logs a raw-response snippet."""
+    import logging
+    import pytest as _pytest
+    from trezarr.translate.engine import BatchValidationError, parse_numbered_response
+
+    with caplog.at_level(logging.WARNING, logger="trezarr.translate.engine"):
+        with _pytest.raises(BatchValidationError):
+            parse_numbered_response("[1] \n[2] xin chào", expected_count=2)
+    msgs = [r.message for r in caplog.records if "batch_parse_failure" in r.message]
+    assert msgs, "expected a batch_parse_failure WARNING with raw snippet"
+    assert "raw_response_snippet=" in msgs[0]
+    assert "xin ch" in msgs[0]
