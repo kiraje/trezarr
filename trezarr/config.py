@@ -231,9 +231,14 @@ class TrezarrSettings(BaseSettings):
     # ── Transient-quarantine auto-retry (P0 campaign, 260612-dmh) ────────────
     # When a job quarantines due to a transient LLM response defect (empty/missing
     # lines — BatchValidationError parse-contract family), automatically re-enqueue
-    # it after job_auto_retry_delay_s seconds, up to job_auto_retry_max times.
-    # Set job_auto_retry_max=0 to disable (prod-safe). Gate-check quarantines
-    # (content defects: CJK leak, scaffolding, diacritics) are never auto-retried.
+    # it after job_auto_retry_delay_s seconds. The bound is enforced by the
+    # terminal-count cap: auto-retry stops once the source_path has accumulated
+    # job_auto_retry_max failed/quarantined Job rows IN TOTAL (history included),
+    # i.e. max=2 yields at most 1 auto-retry after the initial run, and a file
+    # with >=2 historical terminal rows gets no auto-retry at all (manual retry
+    # always bypasses). Set job_auto_retry_max=0 to disable (prod-safe).
+    # Gate-check quarantines (content defects: CJK leak, scaffolding, diacritics)
+    # are never auto-retried.
     job_auto_retry_max: int = 2
     job_auto_retry_delay_s: float = 30.0
 
