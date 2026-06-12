@@ -47,7 +47,11 @@ logger = logging.getLogger(__name__)
 # (the webhook route fires poll_and_enqueue, which hard-codes trigger="poll"),
 # so "webhook" here is defensive — kept so a future direct webhook enqueue is
 # capped by default rather than silently uncapped.
-_AUTO_TRIGGERS = frozenset({"poll", "webhook"})
+# "auto-retry" MUST be capped: each auto-retry INSERTs a fresh Job row whose
+# attempts starts at 0, so the per-job attempts gate alone cannot bound the
+# chain — the terminal-count cap here is what makes the retry budget real
+# (260612-dmh review BLOCKER).
+_AUTO_TRIGGERS = frozenset({"poll", "webhook", "auto-retry"})
 
 # Terminal Job statuses that count toward the auto-retry cap. A `done` job means
 # a `.vi` sidecar was written (the item is no longer eligible, so it is never
@@ -604,14 +608,21 @@ async def _execute_job(
                     _sid=series_id,
                     _mij=media_item_json,
                     _delay=settings.job_auto_retry_delay_s,
+                    _max=settings.job_auto_retry_max,
                 ) -> None:
                     await asyncio.sleep(_delay)
+                    # max_auto_attempts engages the terminal-count cap in
+                    # enqueue_job: prior failed/quarantined rows for this
+                    # source_path bound the chain. Without it every re-enqueue
+                    # is a fresh attempts=0 row and the chain never ends
+                    # (260612-dmh review BLOCKER).
                     await enqueue_job(
                         _sf,
                         _sp,
                         series_id=_sid,
                         trigger="auto-retry",
                         media_item=None if _mij is None else SimpleNamespace(**_mij),
+                        max_auto_attempts=_max,
                     )
 
                 t = asyncio.create_task(_delayed_reenqueue())

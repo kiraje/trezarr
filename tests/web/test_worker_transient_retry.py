@@ -344,3 +344,67 @@ async def test_auto_retry_exhausted_stops():
         assert trigger_val != "auto-retry", (
             "enqueue_job must NOT be called with trigger='auto-retry' when auto-retry budget is exhausted"
         )
+
+
+async def test_auto_retry_chain_is_bounded_by_terminal_cap():
+    """260612-dmh review BLOCKER regression guard: the auto-retry chain must be capped.
+
+    Each auto-retry INSERTs a fresh Job row (attempts=0), so the per-job attempts
+    gate alone cannot bound the chain. The bound comes from two things together:
+    (1) trigger='auto-retry' is in _AUTO_TRIGGERS (subject to the terminal-count
+        cap in enqueue_job), and
+    (2) the delayed re-enqueue passes max_auto_attempts=settings.job_auto_retry_max.
+    This test pins both.
+    """
+    from trezarr.web import worker as worker_mod  # noqa: PLC0415
+
+    # (1) auto-retry must be a capped trigger
+    assert "auto-retry" in worker_mod._AUTO_TRIGGERS, (
+        "trigger='auto-retry' must be in _AUTO_TRIGGERS or the terminal-count cap "
+        "never engages and the retry chain is unbounded"
+    )
+
+    # (2) the delayed re-enqueue must pass max_auto_attempts
+    fake_job = _make_fake_job(attempts=0)
+    mock_session_factory = _make_session_factory(fake_job)
+    settings = _make_settings(job_auto_retry_max=2, job_auto_retry_delay_s=0.0)
+
+    async def fake_process_one_item(
+        eligible_item, s, llm_client, ledger, media_roots, *, session_factory=None
+    ):
+        result = MagicMock()
+        result.status = "quarantined"
+        result.reason = "Empty/whitespace-only text for line [1] in LLM response"
+        return result
+
+    mock_enqueue = AsyncMock(return_value=True)
+    captured_coros: list = []
+
+    def fake_create_task(coro):
+        captured_coros.append(coro)
+        return MagicMock()
+
+    with (
+        patch("trezarr.cli.process_one_item", fake_process_one_item),
+        patch("trezarr.web.worker.enqueue_job", mock_enqueue),
+        patch("trezarr.web.worker.asyncio.create_task", fake_create_task),
+        patch("trezarr.web.worker.asyncio.sleep", AsyncMock(return_value=None)),
+    ):
+        await worker_mod._execute_job(
+            job_id=12,
+            session_factory=mock_session_factory,
+            settings=settings,
+            llm_client=MagicMock(),
+            ledger=MagicMock(),
+            media_roots=[],
+        )
+        for coro in captured_coros:
+            await coro
+
+    assert mock_enqueue.called
+    _args, kwargs = mock_enqueue.call_args
+    assert kwargs.get("max_auto_attempts") == 2, (
+        "delayed re-enqueue must pass max_auto_attempts=settings.job_auto_retry_max "
+        "so enqueue_job's terminal-count cap bounds the chain "
+        f"(got {kwargs.get('max_auto_attempts')!r})"
+    )
