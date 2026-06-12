@@ -228,6 +228,15 @@ class TrezarrSettings(BaseSettings):
     # model). A manual retry (trigger=manual / manual-retry) always bypasses this.
     job_max_auto_attempts: int = 5
 
+    # ── Transient-quarantine auto-retry (P0 campaign, 260612-dmh) ────────────
+    # When a job quarantines due to a transient LLM response defect (empty/missing
+    # lines — BatchValidationError parse-contract family), automatically re-enqueue
+    # it after job_auto_retry_delay_s seconds, up to job_auto_retry_max times.
+    # Set job_auto_retry_max=0 to disable (prod-safe). Gate-check quarantines
+    # (content defects: CJK leak, scaffolding, diacritics) are never auto-retried.
+    job_auto_retry_max: int = 2
+    job_auto_retry_delay_s: float = 30.0
+
     def __init__(self, _yaml_file: str | None = None, **data: Any) -> None:
         """Create settings.
 
