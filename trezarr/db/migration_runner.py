@@ -50,8 +50,46 @@ def _do_upgrade(connection, cfg: Config) -> None:
         connection: Synchronous SQLAlchemy connection from run_sync().
         cfg:        Alembic Config with script_location set.
     """
+    # Disable FK enforcement for the MIGRATION connection only (2026-06-12
+    # prod crash-loop): batch "move-and-copy" recreates of a parent table
+    # (e.g. 0005 on `job`) raise `FOREIGN KEY constraint failed` when child
+    # rows (job_log) reference it and the engine listener's PRAGMA
+    # foreign_keys=ON is active. PRAGMA foreign_keys is a no-op inside a
+    # transaction, so it must execute at the raw DBAPI level BEFORE Alembic
+    # begins one — hence the adapted-cursor call (sync-callable; it awaits
+    # the aiosqlite coroutine internally — driver_connection.execute() would
+    # return an un-awaited coroutine and silently do nothing) and the caller
+    # using engine.connect() (no outer BEGIN) instead of engine.begin().
+    cur = connection.connection.cursor()
+    try:
+        cur.execute("PRAGMA foreign_keys")
+        cfg.attributes["_prior_foreign_keys"] = cur.fetchone()[0]
+        cur.execute("PRAGMA foreign_keys=OFF")
+    finally:
+        cur.close()
     cfg.attributes["connection"] = connection
     command.upgrade(cfg, "head")
+
+
+def _restore_foreign_keys(connection, prior: int) -> None:
+    """Restore the migration connection's FK pragma to its pre-upgrade value.
+
+    Runs in a finally: even a failed upgrade must not release a connection
+    whose FK state differs from the engine's configuration back to the pool
+    (the engine may be configured with bible_db_enforce_fk=False — restoring
+    a hard ON would leak enforcement into it just as badly as leaking OFF).
+    Raw-cursor for the same in-transaction no-op reason; rolls back any open
+    transaction first so the PRAGMA takes effect.
+    """
+    try:
+        connection.rollback()
+    except Exception:  # noqa: BLE001 — nothing to roll back is fine
+        pass
+    cur = connection.connection.cursor()
+    try:
+        cur.execute(f"PRAGMA foreign_keys={'ON' if prior else 'OFF'}")
+    finally:
+        cur.close()
 
 
 async def run_migrations_to_head(engine: AsyncEngine) -> None:
@@ -73,8 +111,17 @@ async def run_migrations_to_head(engine: AsyncEngine) -> None:
     # drops all app INFO records, including the per-pass instrumentation).
     cfg.attributes["configure_logger"] = False
     logger.info("Running Alembic migrations to head (alembic.ini: %s)", ALEMBIC_INI)
-    async with engine.begin() as conn:
-        await conn.run_sync(_do_upgrade, cfg)
+    # engine.connect() (NOT begin()): _do_upgrade must apply PRAGMA
+    # foreign_keys=OFF before any transaction starts (no-op inside one);
+    # Alembic manages its own transaction. FK=ON is restored on the same
+    # physical connection before it returns to the pool so a reused
+    # connection can never leak FK-off into the app.
+    async with engine.connect() as conn:
+        try:
+            await conn.run_sync(_do_upgrade, cfg)
+        finally:
+            prior = cfg.attributes.get("_prior_foreign_keys", 1)
+            await conn.run_sync(_restore_foreign_keys, prior)
     logger.info("Alembic migrations complete")
 
 
