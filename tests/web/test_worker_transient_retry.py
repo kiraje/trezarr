@@ -78,11 +78,20 @@ async def test_transient_quarantine_triggers_auto_retry():
     # Patch enqueue_job as an AsyncMock to capture calls without hitting the DB
     mock_enqueue = AsyncMock(return_value=True)
 
+    # Capture the coroutines scheduled via asyncio.create_task so we can
+    # run them synchronously and verify enqueue_job is called inside them.
+    captured_coros: list = []
+
+    def fake_create_task(coro):
+        captured_coros.append(coro)
+        # Return a MagicMock sentinel (task object) — we will run the coros manually
+        return MagicMock()
+
     with (
         patch("trezarr.cli.process_one_item", fake_process_one_item),
         patch("trezarr.web.worker.enqueue_job", mock_enqueue),
-        # Suppress asyncio.create_task so no actual background tasks run
-        patch("trezarr.web.worker.asyncio.create_task", wraps=lambda coro: (coro.close() or MagicMock())),
+        patch("trezarr.web.worker.asyncio.create_task", fake_create_task),
+        patch("trezarr.web.worker.asyncio.sleep", AsyncMock(return_value=None)),
     ):
         await worker_mod._execute_job(
             job_id=10,
@@ -92,6 +101,15 @@ async def test_transient_quarantine_triggers_auto_retry():
             ledger=MagicMock(),
             media_roots=[],
         )
+
+        # asyncio.create_task must have been called (the delayed re-enqueue was scheduled)
+        assert captured_coros, (
+            "asyncio.create_task must be called to schedule the delayed re-enqueue"
+        )
+
+        # Run the captured coroutine(s) inside the patch context so enqueue_job mock is active
+        for coro in captured_coros:
+            await coro
 
     # enqueue_job must have been called with trigger="auto-retry"
     assert mock_enqueue.called, (
@@ -250,10 +268,15 @@ async def test_auto_retry_warning_logged(caplog):
 
     mock_enqueue = AsyncMock(return_value=True)
 
+    def fake_create_task_log(coro):
+        # Close the coro to avoid ResourceWarning; we only need the log assertion
+        coro.close()
+        return MagicMock()
+
     with (
         patch("trezarr.cli.process_one_item", fake_process_one_item),
         patch("trezarr.web.worker.enqueue_job", mock_enqueue),
-        patch("trezarr.web.worker.asyncio.create_task", wraps=lambda coro: (coro.close() or MagicMock())),
+        patch("trezarr.web.worker.asyncio.create_task", fake_create_task_log),
         caplog.at_level(logging.WARNING, logger="trezarr.web.worker"),
     ):
         await worker_mod._execute_job(

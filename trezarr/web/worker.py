@@ -54,6 +54,26 @@ _AUTO_TRIGGERS = frozenset({"poll", "webhook"})
 # re-enqueued); only failed/quarantined items stay eligible and accumulate.
 _TERMINAL_STATUSES = ("failed", "quarantined")
 
+# Transient quarantine reason prefixes/substrings that are eligible for
+# automatic job-level retry (P0 campaign, 260612-dmh). These are all
+# BatchValidationError parse-contract failures — deepseek returning partial,
+# bare-number, or empty numbered-list responses. NOT included: gate-check
+# quarantines (Check 1-12 content defects) where retry burns 20+ min for the
+# same likely outcome (multi-cue gate repair handles those in-run via IMP-02b).
+_TRANSIENT_QUARANTINE_PREFIXES: tuple[str, ...] = (
+    "Empty/whitespace-only text for line [",
+    "Missing line [",
+    "Parsed ",  # "Parsed N lines but expected M"
+)
+
+
+def _is_transient_quarantine(reason: str | None) -> bool:
+    """Return True if reason matches a TRANSIENT quarantine class eligible for auto-retry."""
+    if not reason:
+        return False
+    return any(reason.startswith(prefix) for prefix in _TRANSIENT_QUARANTINE_PREFIXES)
+
+
 # ── Module-level state (process lifetime) ──────────────────────────────────────
 
 # In-process job run-queue — asyncio.Queue is the hot path; job table is the
@@ -554,6 +574,58 @@ async def _execute_job(
                 job.error_reason = str(item_result.error) if item_result.error else "unknown error"
 
             await session.commit()
+
+        # ── Transient auto-retry (P0 campaign, 260612-dmh) ──────────────────────
+        # If the job quarantined due to a BatchValidationError parse-contract failure
+        # (TRANSIENT allowlist), schedule a delayed re-enqueue — unless the budget is
+        # exhausted or the operator has disabled auto-retry (job_auto_retry_max=0).
+        if (
+            item_result.status == "quarantined"
+            and _is_transient_quarantine(item_result.reason)
+            and settings.job_auto_retry_max > 0
+        ):
+            # job.attempts was already incremented at the start of this execution.
+            # Re-read attempts from the committed DB state (job was re-fetched above).
+            current_attempts = job.attempts or 0
+            if current_attempts < settings.job_auto_retry_max:
+                logger.warning(
+                    "job_auto_retry job_id=%d attempt=%d/%d reason=%s — "
+                    "scheduling re-enqueue in %.0fs",
+                    job_id,
+                    current_attempts,
+                    settings.job_auto_retry_max,
+                    item_result.reason,
+                    settings.job_auto_retry_delay_s,
+                )
+
+                async def _delayed_reenqueue(
+                    _sf=session_factory,
+                    _sp=source_path,
+                    _sid=series_id,
+                    _mij=media_item_json,
+                    _delay=settings.job_auto_retry_delay_s,
+                ) -> None:
+                    await asyncio.sleep(_delay)
+                    await enqueue_job(
+                        _sf,
+                        _sp,
+                        series_id=_sid,
+                        trigger="auto-retry",
+                        media_item=None if _mij is None else SimpleNamespace(**_mij),
+                    )
+
+                t = asyncio.create_task(_delayed_reenqueue())
+                _background_tasks.add(t)
+                t.add_done_callback(_background_tasks.discard)
+            else:
+                logger.warning(
+                    "job_auto_retry job_id=%d: auto-retry budget exhausted "
+                    "(%d/%d attempts); will not re-enqueue automatically. "
+                    "Use a manual retry to force.",
+                    job_id,
+                    current_attempts,
+                    settings.job_auto_retry_max,
+                )
 
     except Exception:
         # D-30 batch resilience — one bad job never kills the worker loop

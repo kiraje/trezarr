@@ -51,7 +51,7 @@ class Job(Base):
             name="ck_job_status",
         ),
         CheckConstraint(
-            "trigger IN ('poll','webhook','manual','manual-retry','startup-reconcile')",
+            "trigger IN ('poll','webhook','manual','manual-retry','startup-reconcile','auto-retry')",
             name="ck_job_trigger",
         ),
     )
